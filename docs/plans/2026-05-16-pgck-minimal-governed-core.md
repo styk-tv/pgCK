@@ -36,7 +36,10 @@ Out of scope (separate later plan): JetStream durability beyond a single dedicat
 
 ## Conventions (every task)
 
-- **Never build on macOS.** S5 builds the podman builder; thereafter `just build-ext` rebuilds only `pgck.so`, `podman compose restart postgres` reloads it (image never rebuilt). Local gate before any push: `cargo fmt --all -- --check` (exit 0). clippy/test run in CI.
+- **Never build on macOS.** S5 builds the podman builder; thereafter `just build-ext` rebuilds only `pgck.so`. **Use `just compose-recreate` (down+up) to reload — `podman compose restart` does NOT re-read bind-mount/compose.yml changes.** Image never rebuilt. Local gate before any push: `cargo fmt --all -- --check` (exit 0). clippy/test run in CI.
+- **`CREATE EXTENSION pgck CASCADE`** — always with `CASCADE` (pgck `requires = 'pgrdf, pgcrypto'`; PG validates but does not auto-install deps without CASCADE; pgcrypto is stock contrib).
+- **`ckp.boot()` self-resets the pgRDF shmem cache** (`pgrdf.shmem_reset()` runs first inside it) — a persistent PGDATA can poison pgRDF's process-wide dictionary cache and make `pgrdf.sparql`/SHACL silently match nothing. Test prep does NOT need a manual reset; just call `ckp.boot()`. For a pristine baseline, recreate with a fresh `compose/pg-data`.
+- **Seal payloads are URN-keyed.** A kernel shape's `sh:path` is the full IRI; `ckp.seal` checks `p_body ? '<full-path-IRI>'`. For the demo Greeting use `{"type":"urn:ckp:kernel#Greeting","urn:ckp:kernel#name":"Ada"}` — bare `"name"` is (correctly) rejected as missing-required.
 - **pgRDF v0.5.0 API (authoritative — same surface as v0.4.6):**
   - `pgrdf.add_graph(id BIGINT, iri TEXT) → BIGINT`
   - `pgrdf.parse_turtle(content TEXT, graph_id BIGINT, base_iri TEXT DEFAULT NULL) → BIGINT`
@@ -226,7 +229,7 @@ just pgrdf-fetch && just build-ext && just compose-up
 Then: `until cd compose && podman compose exec postgres pg_isready -U pgck; do sleep 2; done`
 - [ ] **Step 3: Create both**
 ```bash
-cd compose && podman compose exec postgres psql -U pgck -d pgck -c "CREATE EXTENSION pgrdf; CREATE EXTENSION pgck;"
+cd compose && podman compose exec postgres psql -U pgck -d pgck -c "CREATE EXTENSION pgrdf; CREATE EXTENSION pgck CASCADE;"
 ```
 Expected: two `CREATE EXTENSION` lines.
 - [ ] **Step 4: Verify**
@@ -275,7 +278,7 @@ $$;
 ```
 - [ ] **Step 2: Rebuild + recreate + load**
 ```bash
-just build-ext && cd compose && podman compose restart postgres && until podman compose exec postgres pg_isready -U pgck; do sleep 2; done && podman compose exec postgres psql -U pgck -d pgck -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck; CALL ckp.boot(); CALL ckp.load_kernel('/examples/example.kernel.ttl','demo');"
+just build-ext && cd compose && podman compose restart postgres && until podman compose exec postgres pg_isready -U pgck; do sleep 2; done && podman compose exec postgres psql -U pgck -d pgck -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck CASCADE; CALL ckp.boot(); CALL ckp.load_kernel('/examples/example.kernel.ttl','demo');"
 ```
 Expected: `CALL` ×4 (boot, load_kernel, plus the two CREATE/DROP).
 - [ ] **Step 3: Verify graphs populated**
@@ -298,7 +301,7 @@ git commit -m "feat: ckp.boot()+ckp.load_kernel() load core+kernel ontology into
 smoke-s5: pgrdf-fetch build-ext compose-up
     until cd compose && {{run}} compose exec postgres pg_isready -U pgck; do sleep 2; done
     cd compose && {{run}} compose exec postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 \
-      -c "CREATE EXTENSION IF NOT EXISTS pgrdf; DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck;" \
+      -c "CREATE EXTENSION IF NOT EXISTS pgrdf; DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck CASCADE;" \
       -c "CALL ckp.boot(); CALL ckp.load_kernel('/examples/example.kernel.ttl','demo');" \
       -tc "SELECT pgck_version();"
 ```
@@ -417,7 +420,7 @@ requires = 'pgrdf, pgcrypto'
 
 - [ ] **Step 2: Rebuild + recreate + verify auto-create:**
 ```bash
-cd /Users/neoxr/git_conceptkernel/pgCK && just build-ext && just compose-recreate && cd compose && (until podman compose exec postgres pg_isready -U pgck >/dev/null 2>&1; do sleep 2; done) && podman compose exec postgres psql -U pgck -d pgck -c "CREATE EXTENSION IF NOT EXISTS pgrdf; DROP EXTENSION IF EXISTS pgck CASCADE; CREATE EXTENSION pgck;" -tc "SELECT extname FROM pg_extension WHERE extname IN ('pgrdf','pgck','pgcrypto') ORDER BY extname;"
+cd /Users/neoxr/git_conceptkernel/pgCK && just build-ext && just compose-recreate && cd compose && (until podman compose exec postgres pg_isready -U pgck >/dev/null 2>&1; do sleep 2; done) && podman compose exec postgres psql -U pgck -d pgck -c "CREATE EXTENSION IF NOT EXISTS pgrdf; DROP EXTENSION IF EXISTS pgck CASCADE; CREATE EXTENSION pgck CASCADE;" -tc "SELECT extname FROM pg_extension WHERE extname IN ('pgrdf','pgck','pgcrypto') ORDER BY extname;"
 ```
 Expected: three rows — `pgck`, `pgcrypto`, `pgrdf` (pgcrypto auto-created by the requires).
 
@@ -444,7 +447,7 @@ git commit -m "fix: declare pgcrypto dependency (ckp.seal/verify use digest+hmac
 SELECT set_config('ckp.project','demo',false);
 SELECT set_config('ckp.identity_key', md5('demo'), false);
 CALL ckp.bootstrap_kernel();
-SELECT length(ckp.seal('i-greet-1','{"type":"urn:ckp:kernel#Greeting","name":"Ada"}'::jsonb))=64 AS sha_ok;
+SELECT length(ckp.seal('i-greet-1','{"type":"urn:ckp:kernel#Greeting","urn:ckp:kernel#name":"Ada"}'::jsonb))=64 AS sha_ok;
 SELECT count(*)=1 AS inst FROM ckp.instances WHERE id='i-greet-1';
 SELECT count(*)=1 AS led  FROM ckp.ledger    WHERE instance_id='i-greet-1';
 SELECT count(*)=1 AS prf  FROM ckp.proof     WHERE about='i-greet-1';
@@ -478,7 +481,7 @@ SELECT count(*)=0 AS no_bad FROM ckp.instances WHERE id='i-bad-1';
 SELECT set_config('ckp.project','demo',false);
 SELECT set_config('ckp.identity_key', md5('demo'), false);
 CALL ckp.bootstrap_kernel();
-SELECT ckp.seal('i-v-1','{"type":"urn:ckp:kernel#Greeting","name":"Bo"}'::jsonb) IS NOT NULL AS sealed;
+SELECT ckp.seal('i-v-1','{"type":"urn:ckp:kernel#Greeting","urn:ckp:kernel#name":"Bo"}'::jsonb) IS NOT NULL AS sealed;
 SELECT ckp.verify('i-v-1')=true AS clean;
 UPDATE ckp.instances SET body=body||'{"x":1}'::jsonb WHERE id='i-v-1';
 SELECT ckp.verify('i-v-1')=false AS tampered;
@@ -498,7 +501,7 @@ git commit -m "test: ckp.seal atomic-rejects bad Greeting; ckp.verify detects ta
 ```make
 smoke-s4: smoke-s5
     cd compose && {{run}} compose exec postgres psql -U pgck -d pgck \
-      -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck; CALL ckp.boot(); CALL ckp.load_kernel('/examples/example.kernel.ttl','demo');"
+      -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck CASCADE; CALL ckp.boot(); CALL ckp.load_kernel('/examples/example.kernel.ttl','demo');"
     for t in s4_validate s4_seal_ok s4_seal_reject s4_verify; do \
       cd compose && {{run}} compose exec -T postgres psql -U pgck -d pgck \
         -v ON_ERROR_STOP=1 -f - < sql/test/$t.sql || exit 1; cd - >/dev/null; done
@@ -778,7 +781,7 @@ git commit -m "feat: bgworker hosts the embedded NATS server on a dedicated thre
 
 **Files:** none (verification)
 
-- [ ] **Step 1: Rebuild+bounce** `just build-ext && cd compose && podman compose restart postgres && until podman compose exec postgres pg_isready -U pgck; do sleep 2; done && podman compose exec postgres psql -U pgck -d pgck -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck;"`
+- [ ] **Step 1: Rebuild+bounce** `just build-ext && cd compose && podman compose restart postgres && until podman compose exec postgres pg_isready -U pgck; do sleep 2; done && podman compose exec postgres psql -U pgck -d pgck -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck CASCADE;"`
 - [ ] **Step 2: Probe :4222 for the INFO banner from the host**
 ```bash
 printf 'PING\r\n' | nc -w2 127.0.0.1 4222 | head -c 200
@@ -817,7 +820,7 @@ git commit -m "test: raw NATS pub/sub round-trip against embedded pgck server"
 ```make
 smoke-s3: smoke-s4
     cd compose && {{run}} compose exec postgres psql -U pgck -d pgck \
-      -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck;"
+      -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck CASCADE;"
     sleep 3
     printf 'PING\r\n' | nc -w2 127.0.0.1 4222 | grep -q server_name && echo "INFO banner OK"
     bash sql/test/s3_nats_roundtrip.sh
@@ -1033,7 +1036,7 @@ git commit -m "feat: dual-publish result to affordance outTopic + result.<kernel
 ```make
 smoke-s2: smoke-s3
     cd compose && {{run}} compose exec postgres psql -U pgck -d pgck \
-      -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck; CALL ckp.boot(); CALL ckp.load_kernel('/examples/example.kernel.ttl','demo'); SELECT set_config('ckp.project','demo',false); SELECT set_config('ckp.identity_key',md5('demo'),false); CALL ckp.bootstrap_kernel();"
+      -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck CASCADE; CALL ckp.boot(); CALL ckp.load_kernel('/examples/example.kernel.ttl','demo'); SELECT set_config('ckp.project','demo',false); SELECT set_config('ckp.identity_key',md5('demo'),false); CALL ckp.bootstrap_kernel();"
     sleep 3
     cd compose && {{run}} compose exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 -f - < sql/test/s2_affordances.sql
     cd compose && {{run}} compose exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 -f - < sql/test/s2_dispatch_reject.sql
