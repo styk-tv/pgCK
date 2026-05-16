@@ -43,6 +43,13 @@ LANGUAGE plpgsql AS $$
 DECLARE v_core INT := (SELECT v::int FROM ckp.config WHERE k='core_graph_id');
         v_ttl  TEXT;
 BEGIN
+  -- Evict any poisoned entries from pgRDF's process-wide shmem
+  -- dictionary cache before (re)loading. A prior corrupted ingest in a
+  -- persistent PGDATA can leave fingerprint->bad-dict-id slots that
+  -- short-circuit term interning, making pgrdf.sparql / SHACL validation
+  -- silently match nothing (terms resolve to hashes). boot is the
+  -- prepare-substrate step, so the reset belongs here and runs first.
+  PERFORM pgrdf.shmem_reset();
   PERFORM pgrdf.add_graph(v_core, 'urn:ckp:core');
   PERFORM pgrdf.clear_graph(v_core);
   v_ttl := pg_read_file(p_core_ttl_path);
