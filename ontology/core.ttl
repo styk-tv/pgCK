@@ -1,0 +1,76 @@
+@prefix ckp:  <https://conceptkernel.org/ontology/v3.8/core#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+
+#######################################################################
+# CKP CORE ONTOLOGY — shipped inside the `conceptkernel` extension.
+# Loaded into pgRDF graph urn:ckp:core at CREATE EXTENSION.
+# Governs the protocol's OWN operations. No CK.Compliance kernel:
+# every governed write is validated against these shapes at commit.
+#######################################################################
+
+# ---- Classes -------------------------------------------------------
+
+ckp:Kernel      a rdfs:Class ; rdfs:comment "A versioned, ontology-defined unit of behaviour." .
+ckp:Organ       a rdfs:Class ; rdfs:comment "CK | TOOL | DATA." .
+ckp:Affordance  a rdfs:Class ; rdfs:comment "Binds an inbound NATS topic to an action." .
+ckp:LedgerEntry a rdfs:Class ; rdfs:comment "Append-only signed audit record." .
+ckp:Proof       a rdfs:Class ; rdfs:comment "Verifiable attestation about an instance." .
+ckp:Provenance  a rdfs:Class ; rdfs:comment "PROV-O subset for derivation." .
+
+# ---- Properties ----------------------------------------------------
+
+ckp:organKind   a owl:DatatypeProperty .   # "ck" | "tool" | "data"
+ckp:dataSubstrate a owl:DatatypeProperty .  # "jsonb" | "age" | "jsonb,age"
+
+ckp:inTopic     a owl:DatatypeProperty .
+ckp:outTopic    a owl:DatatypeProperty .
+ckp:inShape     a owl:ObjectProperty .
+ckp:sparql      a owl:DatatypeProperty .
+
+ckp:about       a owl:ObjectProperty .
+ckp:bodySha     a owl:DatatypeProperty .
+ckp:sig         a owl:DatatypeProperty .
+ckp:prev        a owl:DatatypeProperty .
+ckp:ts          a owl:DatatypeProperty .
+
+ckp:method      a owl:DatatypeProperty .
+ckp:digest      a owl:DatatypeProperty .
+ckp:verifiedAt  a owl:DatatypeProperty .
+
+# ---- SHACL shapes — the protocol governs itself --------------------
+
+ckp:KernelShape a sh:NodeShape ;
+  sh:targetClass ckp:Kernel ;
+  sh:property [ sh:path rdfs:label   ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path ckp:dataSubstrate ; sh:minCount 1 ;
+                sh:in ( "jsonb" "age" "jsonb,age" ) ] .
+
+ckp:AffordanceShape a sh:NodeShape ;
+  sh:targetClass ckp:Affordance ;
+  sh:property [ sh:path ckp:inTopic ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path ckp:inShape ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
+  sh:property [ sh:path ckp:outTopic ; sh:maxCount 1 ; sh:datatype xsd:string ] .
+
+# A ledger entry MUST carry a non-empty signature and a chain pointer.
+ckp:LedgerEntryShape a sh:NodeShape ;
+  sh:targetClass ckp:LedgerEntry ;
+  sh:property [ sh:path ckp:about   ; sh:minCount 1 ; sh:nodeKind sh:IRI ] ;
+  sh:property [ sh:path ckp:bodySha ; sh:minCount 1 ; sh:datatype xsd:string ;
+                sh:pattern "^[0-9a-f]{64}$" ] ;
+  sh:property [ sh:path ckp:sig     ; sh:minCount 1 ; sh:datatype xsd:string ;
+                sh:minLength 16 ] ;
+  sh:property [ sh:path ckp:ts      ; sh:minCount 1 ; sh:datatype xsd:dateTime ] .
+
+# A proof MUST carry a method and a digest, and be verifiable.
+ckp:ProofShape a sh:NodeShape ;
+  sh:targetClass ckp:Proof ;
+  sh:property [ sh:path ckp:about     ; sh:minCount 1 ; sh:nodeKind sh:IRI ] ;
+  sh:property [ sh:path ckp:method    ; sh:minCount 1 ; sh:datatype xsd:string ;
+                sh:in ( "ed25519+sha256" ) ] ;
+  sh:property [ sh:path ckp:digest    ; sh:minCount 1 ; sh:datatype xsd:string ;
+                sh:pattern "^[0-9a-f]{64}$" ] ;
+  sh:property [ sh:path ckp:verifiedAt ; sh:minCount 1 ; sh:datatype xsd:dateTime ] .

@@ -1,0 +1,23 @@
+@prefix ckp:  <https://conceptkernel.org/ontology/v3.8/core#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix :     <urn:ckp:kernel#> .
+
+# Minimal demo kernel: one class, one shape, one affordance.
+
+:Hello a ckp:Kernel ;
+  rdfs:label "Hello" ;
+  ckp:dataSubstrate "jsonb" .
+
+:Greeting a rdfs:Class .
+
+:GreetingShape a sh:NodeShape ;
+  sh:targetClass :Greeting ;
+  sh:property [ sh:path :name ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path :lang ; sh:datatype xsd:string ] .
+
+:CreateGreeting a ckp:Affordance ;
+  ckp:inTopic  "input.demo.Hello.create" ;
+  ckp:outTopic "event.demo.Hello.created" ;
+  ckp:inShape  :GreetingShape .
