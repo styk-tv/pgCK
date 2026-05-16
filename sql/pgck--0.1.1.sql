@@ -103,13 +103,14 @@ BEGIN
   -- 1. VALIDATE payload against the kernel ontology's required props (materializer logic, inline).
   SELECT string_agg(rp, ', ') INTO v_missing
   FROM (
-    SELECT (t->>'required_prop') AS rp
+    SELECT j->>'required_prop' AS rp
     FROM pgrdf.sparql(format($q$
       PREFIX sh: <http://www.w3.org/ns/shacl#>
       SELECT ?required_prop WHERE {
-        ?s sh:targetClass <%s> ; sh:property ?p .
-        ?p sh:path ?required_prop ; sh:minCount ?n . FILTER(?n >= 1)
-      }$q$, v_type), v_kgraph) AS t
+        GRAPH <urn:ckp:%s/kernel/ck> {
+          ?s sh:targetClass <%s> ; sh:property ?p .
+          ?p sh:path ?required_prop ; sh:minCount ?n . FILTER(?n >= 1) } }
+    $q$, current_setting('ckp.project', true), v_type)) AS j
   ) req
   WHERE NOT (p_body ? rp);
   IF v_missing IS NOT NULL THEN
