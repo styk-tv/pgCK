@@ -8,6 +8,13 @@ license = "Apache-2.0"
 [lib]
 crate-type = ["cdylib", "lib"]
 
+# pgrx 0.12+ requires a small bin target used by `cargo pgrx package`
+# during schema generation and by `cargo pgrx test`. See
+# src/bin/pgrx_embed.rs. Mirrors pgRDF.
+[[bin]]
+name = "pgrx_embed_pgck"
+path = "./src/bin/pgrx_embed.rs"
+
 [features]
 # No default feature — every invocation MUST pick a PG major explicitly
 # (cargo pgrx run pgN, --no-default-features --features pgN). Mirrors
