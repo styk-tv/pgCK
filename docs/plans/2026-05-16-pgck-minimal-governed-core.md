@@ -43,7 +43,7 @@ Out of scope (separate later plan): JetStream durability beyond a single dedicat
   - `pgrdf.clear_graph(id BIGINT) → BIGINT`
   - `pgrdf.materialize(graph_id BIGINT, profile TEXT DEFAULT 'owl-rl') → JSONB`
   - `pgrdf.validate(data_graph_id BIGINT, shapes_graph_id BIGINT, mode TEXT DEFAULT 'native') → JSONB` (top-level bool key `conforms`)
-  - `pgrdf.sparql(q TEXT) → SETOF JSONB` — **ONE arg.** Graph-scope via SPARQL `GRAPH <iri> { … }`. Rows flat JSONB by bare var; read `... FROM pgrdf.sparql(q) AS t(j jsonb)` then `j->>'var'`.
+  - `pgrdf.sparql(q TEXT) → SETOF JSONB` — **ONE arg.** Graph-scope via SPARQL `GRAPH <iri> { … }`. Rows flat JSONB by bare var; read `... FROM pgrdf.sparql(q) AS j` then `j->>'var'`.
 - **Subjects (resolution D.1/D.3):** inbound `input.demo.Hello.create` (its own dedicated JetStream stream — never co-stream event./result.); reply to the affordance `ckp:outTopic` `event.demo.Hello.created` AND mirror `result.Hello`.
 - **Correlation (D.2):** `Trace-Id: tx-{uuid}` header, echoed as body `trace_id`. No separate `i`.
 - **Envelope (D.4):** request `{ "action": "create", "data": {…} }`; result `{ action, data, trace_id, kernel, timestamp }`.
@@ -280,7 +280,7 @@ just build-ext && cd compose && podman compose restart postgres && until podman 
 Expected: `CALL` ×4 (boot, load_kernel, plus the two CREATE/DROP).
 - [ ] **Step 3: Verify graphs populated**
 ```bash
-cd compose && podman compose exec postgres psql -U pgck -d pgck -tc "SELECT count(*) FROM pgrdf.sparql('SELECT ?s WHERE { GRAPH <urn:ckp:core> { ?s a <http://www.w3.org/ns/shacl#NodeShape> } }') AS t(j jsonb); SELECT count(*) FROM pgrdf.sparql('SELECT ?s WHERE { GRAPH <urn:ckp:demo/kernel/ck> { ?s a <http://www.w3.org/ns/shacl#NodeShape> } }') AS t(j jsonb);"
+cd compose && podman compose exec postgres psql -U pgck -d pgck -tc "SELECT count(*) FROM pgrdf.sparql('SELECT ?s WHERE { GRAPH <urn:ckp:core> { ?s a <http://www.w3.org/ns/shacl#NodeShape> } }') AS j; SELECT count(*) FROM pgrdf.sparql('SELECT ?s WHERE { GRAPH <urn:ckp:demo/kernel/ck> { ?s a <http://www.w3.org/ns/shacl#NodeShape> } }') AS j;"
 ```
 Expected: `4` (core shapes) then `1` (`:GreetingShape`).
 - [ ] **Step 4: Commit**
@@ -383,7 +383,7 @@ git commit -m "test: ckp.validate rejects malformed / accepts well-formed ckp:Pr
         GRAPH <urn:ckp:%s/kernel/ck> {
           ?s sh:targetClass <%s> ; sh:property ?p .
           ?p sh:path ?required_prop ; sh:minCount ?n . FILTER(?n >= 1) } }
-    $q$, current_setting('ckp.project', true), v_type)) AS t(j jsonb)
+    $q$, current_setting('ckp.project', true), v_type)) AS j
   ) req
   WHERE NOT (p_body ? rp);
 ```
@@ -819,7 +819,7 @@ BEGIN
       GRAPH <urn:ckp:%s/kernel/ck> {
         ?a a ckp:Affordance ; ckp:inTopic ?it .
         OPTIONAL { ?a ckp:outTopic ?ot } OPTIONAL { ?a ckp:inShape ?sh } } }
-  $q$, p_project)) AS t(j jsonb);
+  $q$, p_project)) AS j;
 END;
 $$;
 ```
