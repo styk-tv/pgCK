@@ -399,6 +399,41 @@ git add sql/pgck--0.1.1.sql
 git commit -m "fix: ckp.seal kernel-shape lookup uses 1-arg GRAPH-scoped pgrdf.sparql"
 ```
 
+### Task T-25b: Declare pgcrypto dependency (inserted — surfaced during T-25)
+
+**Files:** Modify `pgck.control`
+
+`ckp.seal` uses `digest()` + `hmac()` and `ckp.verify` uses `digest()` — all from
+**pgcrypto** — but `pgck.control` only declared `requires = 'pgrdf'`. No seal/verify
+can complete until pgcrypto is installed. pgcrypto is stock contrib in
+`postgres:17.4-bookworm`; declaring it in `requires` makes `CREATE EXTENSION pgck`
+auto-create it.
+
+- [ ] **Step 1:** In `pgck.control`, change `requires = 'pgrdf'` to:
+```
+requires = 'pgrdf, pgcrypto'
+```
+(keep the `# pgRDF must be installed …` comment line above it; add `, pgcrypto` only).
+
+- [ ] **Step 2: Rebuild + recreate + verify auto-create:**
+```bash
+cd /Users/neoxr/git_conceptkernel/pgCK && just build-ext && just compose-recreate && cd compose && (until podman compose exec postgres pg_isready -U pgck >/dev/null 2>&1; do sleep 2; done) && podman compose exec postgres psql -U pgck -d pgck -c "CREATE EXTENSION IF NOT EXISTS pgrdf; DROP EXTENSION IF EXISTS pgck CASCADE; CREATE EXTENSION pgck;" -tc "SELECT extname FROM pg_extension WHERE extname IN ('pgrdf','pgck','pgcrypto') ORDER BY extname;"
+```
+Expected: three rows — `pgck`, `pgcrypto`, `pgrdf` (pgcrypto auto-created by the requires).
+
+- [ ] **Step 3: Smoke a full seal returns a 64-hex sha:**
+```bash
+cd /Users/neoxr/git_conceptkernel/pgCK/compose && podman compose exec postgres psql -U pgck -d pgck -tc "CALL ckp.boot(); CALL ckp.load_kernel('/examples/example.kernel.ttl','demo'); SELECT set_config('ckp.project','demo',false); SELECT set_config('ckp.identity_key',md5('demo'),false); CALL ckp.bootstrap_kernel(); SELECT length(ckp.seal('i-25b','{\"type\":\"urn:ckp:kernel#Greeting\",\"name\":\"Ada\"}'::jsonb));"
+```
+Expected: `64`.
+
+- [ ] **Step 4: Commit:**
+```bash
+cd /Users/neoxr/git_conceptkernel/pgCK
+git add pgck.control
+git commit -m "fix: declare pgcrypto dependency (ckp.seal/verify use digest+hmac)"
+```
+
 ### Task T-24: `ckp.seal` happy path — seal a valid Greeting
 
 **Files:** Create `sql/test/s4_seal_ok.sql`
