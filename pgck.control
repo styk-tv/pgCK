@@ -3,11 +3,6 @@ comment = 'Concept Kernel Protocol runtime in-database: NATS bridge + SHACL vali
 default_version = '0.1.0'
 module_pathname = '$libdir/pgck'
 relocatable = false
-# NOTE: pgCK composes pgRDF at runtime, but `requires = 'pgrdf'` is
-# intentionally omitted for v0.1.0. The governed SQL that calls
-# `pgrdf.*` lives entirely in PL/pgSQL function bodies (parsed lazily,
-# never executed at CREATE EXTENSION), and the only shipped surface is
-# `SELECT pgck_version()`. Re-add `requires = 'pgrdf'` once the governed
-# path is wired AND CI installs the pgRDF release .so into the pgrx test
-# cluster (see docs/specs/2026-05-16-pgck-core-design.md §7).
+# pgRDF must be installed in the same DB (compose bind-mounts it).
+requires = 'pgrdf'
 superuser = true
