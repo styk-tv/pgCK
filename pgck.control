@@ -3,6 +3,6 @@ comment = 'Concept Kernel Protocol runtime in-database: NATS bridge + SHACL vali
 default_version = '0.1.1'
 module_pathname = '$libdir/pgck'
 relocatable = false
-# pgRDF must be installed in the same DB (compose bind-mounts it).
-requires = 'pgrdf'
+# pgRDF + pgcrypto must be available (pgRDF bind-mounted; pgcrypto is stock contrib).
+requires = 'pgrdf, pgcrypto'
 superuser = true
