@@ -10,7 +10,7 @@
 //! background worker: an embedded NATS Core server (hand-rolled, src/nats/,
 //! behind the `embedded-nats` feature) + the affordance compile loop. This
 //! v0.1.0 ships the worker as a quiet skeleton — the NATS half lands per
-//! docs/superpowers/specs/2026-05-16-pgck-core-design.md.
+//! docs/specs/2026-05-16-pgck-core-design.md.
 
 use pgrx::bgworkers::*;
 use pgrx::prelude::*;
@@ -61,6 +61,8 @@ fn pgck_version() -> &'static str {
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
+    use pgrx::prelude::*;
+
     #[pg_test]
     fn version_present() {
         assert_eq!(crate::pgck_version(), "pgck 0.1.0 (rc3)");

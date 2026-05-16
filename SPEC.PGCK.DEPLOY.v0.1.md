@@ -2,7 +2,7 @@
 
 **Status:** DRAFT — v0.1 — 2026-05-16 — build target
 **Companion to:** [`SPEC.CKP.3.8.MINIMAL-rc3.md`](SPEC.CKP.3.8.MINIMAL-rc3.md) (protocol),
-[`docs/superpowers/specs/2026-05-16-pgck-core-design.md`](docs/superpowers/specs/2026-05-16-pgck-core-design.md) (design)
+[`docs/specs/2026-05-16-pgck-core-design.md`](docs/specs/2026-05-16-pgck-core-design.md) (design)
 **Scope:** how pgCK is built, packaged, and deployed — the process discipline. Not the protocol.
 
 ---

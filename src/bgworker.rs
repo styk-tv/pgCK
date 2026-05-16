@@ -1,6 +1,6 @@
 //! pgCK background worker — the NATS half (skeleton for v0.1.0).
 //!
-//! Per docs/superpowers/specs/2026-05-16-pgck-core-design.md:
+//! Per docs/specs/2026-05-16-pgck-core-design.md:
 //!
 //!   * The embedded NATS *server* is a hand-rolled NATS Core module
 //!     (`src/nats/`, behind the `embedded-nats` feature) compiled into

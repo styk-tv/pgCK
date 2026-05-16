@@ -21,7 +21,7 @@ pg17 = ["pgrx/pg17", "pgrx-tests/pg17"]
 pg_test = []
 # The embedded NATS Core server (hand-rolled, src/nats/). Gated the
 # same idiomatic way pgN forwards to pgrx/pgN. See
-# docs/superpowers/specs/2026-05-16-pgck-core-design.md §4.
+# docs/specs/2026-05-16-pgck-core-design.md §4.
 embedded-nats = ["dep:tokio"]
 
 [dependencies]
