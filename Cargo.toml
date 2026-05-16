@@ -25,7 +25,10 @@ pg_test = []
 embedded-nats = ["dep:tokio"]
 
 [dependencies]
-pgrx = "=0.16.0"            # same major as pgRDF
+pgrx = "0.16"               # caret range, exactly as pgRDF — must match
+                            # the cargo-pgrx CLI (setup-pgrx installs
+                            # ^0.16 → 0.16.1; an `=0.16.0` pin makes
+                            # `cargo pgrx test` reject the mismatch).
 # Upstream post-Envoy WSS-leg client only — NOT a server. The embedded
 # in-pod NATS server is the hand-rolled src/nats/ module (design §4).
 async-nats = "0.48"
@@ -38,7 +41,7 @@ sha2 = "0.10"
 ed25519-dalek = "2"          # replaces the HMAC stand-in in ckp.seal
 
 [dev-dependencies]
-pgrx-tests = "=0.16.0"
+pgrx-tests = "0.16"          # caret range, must match pgrx + cargo-pgrx
 
 [profile.dev]
 panic = "unwind"
