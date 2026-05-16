@@ -41,7 +41,7 @@ read-only, beside the stock extensions.
 
 | Artifact | Origin | Mechanism | Rebuilt when |
 |---|---|---|---|
-| `pgrdf.so` / `.control` / `pgrdf--<ver>.sql` | **GitHub release** `styk-tv/pgRDF` | `gh release download v0.4.6 --repo styk-tv/pgRDF` → `pgrdf-0.4.6-pg17-glibc-arm64.tar.gz` → unpack | only on a pgRDF version bump (manual) |
+| `pgrdf.so` / `.control` / `pgrdf--<ver>.sql` | **GitHub release** `styk-tv/pgRDF` | `gh release download v0.5.0 --repo styk-tv/pgRDF` → `pgrdf-0.5.0-pg17-glibc-arm64.tar.gz` → unpack (v0.5.0 final pending; `v0.5.0-rc1` / v0.4.6 fallback) | only on a pgRDF version bump (manual) |
 | `pgck.so` / `pgck.control` / `pgck--0.1.0.sql` | **this repo** | `compose/builder.Containerfile` (podman) → exports to `compose/extensions/pgck/` | on any pgCK source change |
 | `postgres:17.4-bookworm` | Docker Hub | pulled, unmodified | never |
 | `nats:2.12` (dev) | Docker Hub | pulled, unmodified | never; removed at design step 5 |
@@ -61,7 +61,7 @@ amd64).
 
 | Recipe | Does | Runtime |
 |---|---|---|
-| `just pgrdf-fetch` | `gh release download` pgRDF v0.4.6, verify SHA256SUMS, unpack into `compose/extensions/pgrdf/` | host (`gh`) |
+| `just pgrdf-fetch` | `gh release download` pgRDF v0.5.0 (target), verify SHA256SUMS, unpack into `compose/extensions/pgrdf/` | host (`gh`) |
 | `just build-ext` | podman build `compose/builder.Containerfile`; export `pgck.{so,control,sql}` to `compose/extensions/pgck/` | podman |
 | `just compose-up` / `compose-down` | boot / stop the pod (PG + nats dev sidecar) | podman compose |
 | `just smoke` | `pgrdf-fetch` + `build-ext` + `compose-up`; then `CREATE EXTENSION pgrdf; CREATE EXTENSION pgck;` + governed-write + NATS round-trip assertions | podman compose + psql |
