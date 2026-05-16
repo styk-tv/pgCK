@@ -1,68 +1,70 @@
-# pgCK Minimal Governed Core — Implementation Plan
+# pgCK Minimal Event-Driven Governed Core — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Grow pgCK from the green `v0.1.0` (`SELECT pgck_version()`) into the minimal ontology-driven, SHACL-enforced, materialized, verified governed-write core — one command at a time.
+**Goal:** Grow pgCK from green `v0.1.0` (`SELECT pgck_version()`) into the minimal **NATS/CKP event-driven** governed core: a topic conversation (`input.demo.Hello.create` → affordance → `ckp.seal` → `event.demo.Hello.created`) that is ontology-driven, SHACL-enforced, materialized, verified — built command-by-command.
 
-**Architecture:** pgCK composes pgRDF v0.5.0 in one Postgres. The CK loop lives in pgRDF graphs (core=1, kernel=2); DATA is Postgres JSONB. Every governed op is SHACL-validated against the in-extension core ontology in one transaction. pgCK *is* the NATS server/master (later stages). Grow the minimal `ontology/core.ttl` (77 lines, 4 shapes) command-by-command — never load the full v3.7 set (3000+ lines) upfront; pull v3.7 shapes only as a command needs them.
+**Architecture:** Execution is NATS/CKP-driven like FC.Thinker — tasks are *simple topic conversations*. pgCK **is** the NATS server (embedded in `pgck.so`); affordances declared in the kernel ontology materialise into live subscriptions; an inbound message is SPARQL-resolved to an affordance, its body SHACL-gated by `ckp:inShape`, sealed (instance+ledger+proof, atomic, core-shape-validated) and the result published proof-stamped to the affordance's `ckp:outTopic`. **Storage, SHACL, OWL reasoning, verification are entirely offloaded to pgRDF v0.5.0** — pgCK is the thin governance + dispatch orchestrator, nothing more.
 
-**Tech Stack:** Rust + pgrx 0.16, PG17, pgRDF v0.5.0 (consumed from GitHub release), PL/pgSQL governed path, podman compose harness (cloned from pgRDF), `oras` OCI distribution.
+**Build model (your directive):** *interleaved* — the smallest end-to-end vertical slice first (one topic → one affordance → one seal → one reply), then grow dispatch surface and governed ops *together*, command-by-command.
 
-**Method (mirrors pgRDF):** Stages are **reverse-numbered**. The highest task number is done first; the countdown reaches **T-1 = completion**. Each task is one tiny verifiable command/change with its own test + commit. The task count is whatever the work decomposes into — it is an outcome, not a target.
+**Authority:** CKP v3.7 subject/affordance/envelope contract + FC.Thinker topic discipline. Resolution rule: **rc3 placement wins · v3.7 wins on semantics · FC.Thinker wins on proven topic-discipline shape.** This repo is where the v3.8 spec is proven; the website updates after.
 
-**Spec of record:** [`docs/specs/2026-05-16-pgck-core-design.md`](../specs/2026-05-16-pgck-core-design.md) + [`SPEC.PGCK.DEPLOY.v0.1.md`](../../SPEC.PGCK.DEPLOY.v0.1.md) + `SPEC.CKP.3.8.MINIMAL-rc3.md`. v3.7 ontology source: `conceptkernel.org/ontology/v3.7/` (local: `/Users/neoxr/git_neux/xr-websockets-v4/ref-ck-org/docs/public/ontology/v3.7/`). This repo is where the v3.8 spec begins; the website is updated once it is proven here.
+**Tech Stack:** Rust + pgrx 0.16, PG17, pgRDF v0.5.0 (consumed from GitHub release), hand-rolled NATS Core server in `src/nats/` (feature `embedded-nats`, tokio), PL/pgSQL governed path, podman compose harness (cloned from pgRDF), `oras` OCI distribution.
 
-**Branch discipline (LOCKS v3.7.6):** all git writes land on `pgck.task.PGCK-CORE`; `main` fast-forwarded after each green push. Never write to `main`/`master` directly.
+**Method (mirrors pgRDF):** Stages **reverse-numbered**. Highest number done first; countdown to **T-1 = completion**. Each task = one tiny verifiable change + test + commit. Task count is the natural decomposition, not a target.
+
+**Spec of record:** [`docs/specs/2026-05-16-pgck-core-design.md`](../specs/2026-05-16-pgck-core-design.md) §1A (CK spec binding, what pgCK is master of), `SPEC.PGCK.DEPLOY.v0.1.md`, `SPEC.CKP.3.8.MINIMAL-rc3.md`. Dispatch contract: the captured research report (FC.Thinker literal + v3.7) — subjects, envelope, promise algorithm, JetStream config, conflict resolutions D.1–D.5. v3.7 ontology: `conceptkernel.org/ontology/v3.7/` (local `/Users/neoxr/git_neux/xr-websockets-v4/ref-ck-org/docs/public/ontology/v3.7/`).
+
+**Branch discipline (LOCKS v3.7.6):** all git writes on `pgck.task.PGCK-CORE`; `main` fast-forwarded after each green push. Never write `main`/`master` directly. After every task: `git push origin pgck.task.PGCK-CORE && git branch -f main pgck.task.PGCK-CORE && git push origin main`.
 
 ---
 
-## Stage map (high → low; each stage is a numbered block, executed top to bottom)
+## Stage map (high → low; per-stage checkpoints with the user)
 
-| Stage | Tasks | Outcome when its lowest task is done |
+| Stage | Tasks | Outcome at the stage gate |
 |---|---|---|
-| **S5 — Compose harness** | T-31 … T-25 | pgRDF v0.5.0 + pgCK both load in a stock `postgres:17.4-bookworm` pod via per-file bind mounts; `CREATE EXTENSION pgrdf, pgck;` green |
-| **S4 — Core ontology load** | T-24 … T-19 | `ckp.boot()` loads `ontology/core.ttl` into pgRDF graph 1; `pgrdf.materialize(1)` clean; self-shapes present |
-| **S3 — Validate primitive** | T-18 … T-13 | `ckp.validate(ttl, shapes_graph)` works against real pgRDF v0.5.0 API (the broken 2-arg `pgrdf.sparql` fixed) |
-| **S2 — Governed seal** | T-12 … T-5 | `ckp.bootstrap_kernel` + `ckp.seal` + `ckp.verify` end-to-end: validate → instance → ledger → proof, atomic, core-shape-checked |
-| **S1 — Demo kernel proof** | T-4 … T-1 | Mounted `examples/example.kernel.ttl` loads into graph 2; a `Greeting` instance seals + verifies; **T-1 = completion** |
+| **S5 — Pod harness** | T-34 … T-28 | pgRDF v0.5.0 + pgCK load in stock `postgres:17.4`; core+kernel ontology materialised; `ckp.seal` proven via psql (no NATS yet — the substrate the slice rides) |
+| **S4 — pgRDF API fixes** | T-27 … T-22 | `ckp.validate` / `ckp.seal` use the real pgRDF v0.5.0 API (broken 2-arg `pgrdf.sparql` gone); seal+verify green vs the demo Greeting |
+| **S3 — Embedded NATS Core server** | T-21 … T-14 | `src/nats/` server compiled into `pgck.so`; pub/sub/req-reply over `:4222`; a raw NATS round-trip works in the pod |
+| **S2 — The vertical slice** | T-13 … T-5 | End-to-end: publish to `input.demo.Hello.create` → affordance SPARQL-resolved → `ckp.seal` → proof-stamped result on `event.demo.Hello.created` + `result.Hello`, demuxed by `trace_id` |
+| **S1 — Grow + ship** | T-4 … T-1 | Affordance recompile on ontology change; reject path; `just demo` one-command story; **T-1 = v0.2.0 published, anon OCI pull confirmed = completion** |
 
-Stages S0 (embedded NATS server, affordance loop) and below are a **separate later plan** — out of scope here. This plan ends at a self-governing, SHACL-enforced, materialized, verified write path proven on the demo kernel, with no NATS.
+Out of scope (separate later plan): JetStream durability beyond a single dedicated inbound stream, WSS listener for browsers, multi-kernel edges, `postgres_fdw`→Azure, ed25519 (HMAC stand-in stays).
 
 ---
 
-## Conventions used by every task
+## Conventions (every task)
 
-- **Build/test runtime:** never macOS. Use the podman builder (S5 builds it). Until S5 lands, `cargo fmt --all -- --check` is the only local gate; `cargo pgrx test` runs in CI.
-- **pgRDF API (authoritative, v0.5.0 — same surface as v0.4.6):**
+- **Never build on macOS.** S5 builds the podman builder; thereafter `just build-ext` rebuilds only `pgck.so`, `podman compose restart postgres` reloads it (image never rebuilt). Local gate before any push: `cargo fmt --all -- --check` (exit 0). clippy/test run in CI.
+- **pgRDF v0.5.0 API (authoritative — same surface as v0.4.6):**
   - `pgrdf.add_graph(id BIGINT, iri TEXT) → BIGINT`
   - `pgrdf.parse_turtle(content TEXT, graph_id BIGINT, base_iri TEXT DEFAULT NULL) → BIGINT`
   - `pgrdf.clear_graph(id BIGINT) → BIGINT`
   - `pgrdf.materialize(graph_id BIGINT, profile TEXT DEFAULT 'owl-rl') → JSONB`
-  - `pgrdf.validate(data_graph_id BIGINT, shapes_graph_id BIGINT, mode TEXT DEFAULT 'native') → JSONB` (top-level key `conforms` bool)
-  - `pgrdf.sparql(q TEXT) → SETOF JSONB` — **ONE arg only.** Scope via SPARQL `GRAPH <iri> { … }`. Rows flat JSONB keyed by bare var name; read as `... FROM pgrdf.sparql(q) AS t(j jsonb)` then `j->>'var'`.
-- **Commit message prefix:** `feat:` for new ability, `fix:` for defects, `test:` for test-only, `chore:` for harness.
-- **After every task's commit:** `git push origin pgck.task.PGCK-CORE` then `git branch -f main pgck.task.PGCK-CORE && git push origin main`.
+  - `pgrdf.validate(data_graph_id BIGINT, shapes_graph_id BIGINT, mode TEXT DEFAULT 'native') → JSONB` (top-level bool key `conforms`)
+  - `pgrdf.sparql(q TEXT) → SETOF JSONB` — **ONE arg.** Graph-scope via SPARQL `GRAPH <iri> { … }`. Rows flat JSONB by bare var; read `... FROM pgrdf.sparql(q) AS t(j jsonb)` then `j->>'var'`.
+- **Subjects (resolution D.1/D.3):** inbound `input.demo.Hello.create` (its own dedicated JetStream stream — never co-stream event./result.); reply to the affordance `ckp:outTopic` `event.demo.Hello.created` AND mirror `result.Hello`.
+- **Correlation (D.2):** `Trace-Id: tx-{uuid}` header, echoed as body `trace_id`. No separate `i`.
+- **Envelope (D.4):** request `{ "action": "create", "data": {…} }`; result `{ action, data, trace_id, kernel, timestamp }`.
+- **Commit prefixes:** `feat:` ability, `fix:` defect, `test:` test-only, `chore:` harness.
 
 ---
 
-## STAGE S5 — Compose harness (T-31 → T-25)
+## STAGE S5 — Pod harness + seal substrate (T-34 → T-28)
 
-### Task T-31: Justfile recipe to fetch the pgRDF release
+### Task T-34: `just pgrdf-fetch` — download+verify pgRDF v0.5.0
 
-**Files:**
-- Create: `Justfile` (replace the hydrated stub)
-- Test: `compose/extensions/pgrdf/` populated after run
+**Files:** Create `Justfile` (replace hydrated stub); Modify `.gitignore`
 
-- [ ] **Step 1: Write the `pgrdf-fetch` recipe**
+- [ ] **Step 1: Write recipe**
 
 ```make
 set shell := ["bash", "-uc"]
-
 pgrdf_ver := "0.5.0"
 pg := "17"
 arch := "arm64"
 
-# Download + verify + unpack the pgRDF release into compose/extensions/pgrdf/.
 pgrdf-fetch:
     mkdir -p compose/extensions/pgrdf
     cd compose/extensions/pgrdf && \
@@ -73,38 +75,25 @@ pgrdf-fetch:
       tar xzf "pgrdf-{{pgrdf_ver}}-pg{{pg}}-glibc-{{arch}}.tar.gz" --strip-components=1
 ```
 
-- [ ] **Step 2: Run it**
-
-Run: `just pgrdf-fetch`
-Expected: `compose/extensions/pgrdf/lib/pgrdf.so` + `share/extension/{pgrdf.control,pgrdf--0.5.0.sql}` present; `sha256sum -c` prints `OK`.
-
-- [ ] **Step 3: Verify the artifact**
-
-Run: `ls compose/extensions/pgrdf/lib/pgrdf.so && file compose/extensions/pgrdf/lib/pgrdf.so`
-Expected: `ELF 64-bit LSB shared object, ARM aarch64`
-
-- [ ] **Step 4: Gitignore the fetched artifacts**
-
-Add to `.gitignore`:
+- [ ] **Step 2: Run** `just pgrdf-fetch` — Expected: `sha256sum -c` prints `OK`; `compose/extensions/pgrdf/lib/pgrdf.so` exists.
+- [ ] **Step 3: Verify** `file compose/extensions/pgrdf/lib/pgrdf.so` — Expected: `ELF 64-bit LSB shared object, ARM aarch64`.
+- [ ] **Step 4:** Add to `.gitignore`:
 ```
 /compose/extensions/pgrdf/
 /compose/extensions/pgck/
+/compose/pg-data/
 ```
-
 - [ ] **Step 5: Commit**
-
 ```bash
 git add Justfile .gitignore
 git commit -m "chore: just pgrdf-fetch — download+verify pgRDF v0.5.0 release"
 ```
 
-### Task T-30: Builder Containerfile for pgCK (clone of pgRDF's)
+### Task T-33: Builder Containerfile (clone of pgRDF's)
 
-**Files:**
-- Create: `compose/builder.Containerfile`
+**Files:** Create `compose/builder.Containerfile`
 
-- [ ] **Step 1: Write the builder (mirrors pgRDF `compose/builder.Containerfile`)**
-
+- [ ] **Step 1: Write it**
 ```dockerfile
 # syntax=docker/dockerfile:1.4
 FROM docker.io/library/rust:1.91-bookworm AS builder
@@ -144,25 +133,21 @@ COPY --from=builder /artifacts/lib/pgck.so /out/lib/pgck.so
 COPY --from=builder /artifacts/share/extension/ /out/share/extension/
 CMD ["sh", "-c", "cp -r /out/* /export/ && ls -laR /export"]
 ```
-
 - [ ] **Step 2: Commit**
-
 ```bash
 git add compose/builder.Containerfile
 git commit -m "chore: pgCK builder Containerfile (clone of pgRDF's)"
 ```
 
-### Task T-29: `just build-ext` recipe
+### Task T-32: `just build-ext` + `compose-up`/`down`/`psql`
 
-**Files:**
-- Modify: `Justfile`
+**Files:** Modify `Justfile`
 
-- [ ] **Step 1: Append the recipe**
-
+- [ ] **Step 1: Append**
 ```make
 build := env_var_or_default("PGCK_BUILD_RUNTIME", "podman")
+run   := env_var_or_default("PGCK_RUN_RUNTIME", "podman")
 
-# Build pgck.so + control + sql into compose/extensions/pgck/ (no runtime rebuild).
 build-ext:
     DOCKER_BUILDKIT=1 {{build}} build --target export \
       -t pgck-builder:pg{{pg}} --build-arg PG_MAJOR={{pg}} \
@@ -170,32 +155,27 @@ build-ext:
     rm -rf compose/extensions/pgck/lib compose/extensions/pgck/share
     mkdir -p compose/extensions/pgck
     {{build}} run --rm -v "$PWD/compose/extensions/pgck:/export" pgck-builder:pg{{pg}}
+
+compose-up:
+    cd compose && {{run}} compose up -d
+compose-down:
+    cd compose && {{run}} compose down
+psql:
+    cd compose && {{run}} compose exec postgres psql -U pgck -d pgck
 ```
-
-- [ ] **Step 2: Run it**
-
-Run: `just build-ext`
-Expected: `compose/extensions/pgck/lib/pgck.so` + `share/extension/{pgck.control,pgck--0.1.0.sql}` present.
-
-- [ ] **Step 3: Verify ELF**
-
-Run: `file compose/extensions/pgck/lib/pgck.so`
-Expected: `ELF 64-bit LSB shared object, ARM aarch64`
-
+- [ ] **Step 2: Run** `just build-ext` — Expected: `compose/extensions/pgck/lib/pgck.so` exists.
+- [ ] **Step 3: Verify** `file compose/extensions/pgck/lib/pgck.so` — Expected: `ELF 64-bit LSB shared object, ARM aarch64`.
 - [ ] **Step 4: Commit**
-
 ```bash
 git add Justfile
-git commit -m "chore: just build-ext — build pgck.so in throwaway builder"
+git commit -m "chore: just build-ext/compose-up/down/psql"
 ```
 
-### Task T-28: compose.yml — the pod (clone of pgRDF's)
+### Task T-31: compose.yml — the pod (per-file bind mounts)
 
-**Files:**
-- Create: `compose/compose.yml`
+**Files:** Create `compose/compose.yml`
 
-- [ ] **Step 1: Write compose.yml (per-file bind mounts; NEVER a dir mount over $sharedir/extension)**
-
+- [ ] **Step 1: Write it** (NEVER a dir mount over `$sharedir/extension`)
 ```yaml
 services:
   postgres:
@@ -207,7 +187,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pgck}
       POSTGRES_DB: ${POSTGRES_DB:-pgck}
     command: [postgres, -c, "shared_preload_libraries=pgrdf,pgck"]
-    ports: ["${POSTGRES_PORT:-5432}:5432"]
+    ports: ["${POSTGRES_PORT:-5432}:5432", "${NATS_PORT:-4222}:4222"]
     volumes:
       - ./pg-data:/var/lib/postgresql/data:z
       - ./extensions/pgrdf/lib/pgrdf.so:/usr/lib/postgresql/17/lib/pgrdf.so:ro,z
@@ -224,138 +204,48 @@ services:
       timeout: 5s
       retries: 5
 ```
-
-- [ ] **Step 2: Gitignore pg-data**
-
-Add to `.gitignore`: `/compose/pg-data/`
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add compose/compose.yml .gitignore
-git commit -m "chore: compose.yml — stock postgres:17.4 + per-file bind mounts"
-```
-
-### Task T-27: `just compose-up` / `compose-down`
-
-**Files:**
-- Modify: `Justfile`
-
-- [ ] **Step 1: Append recipes**
-
-```make
-run := env_var_or_default("PGCK_RUN_RUNTIME", "podman")
-
-compose-up:
-    cd compose && {{run}} compose up -d
-compose-down:
-    cd compose && {{run}} compose down
-psql:
-    cd compose && {{run}} compose exec postgres psql -U pgck -d pgck
-```
-
 - [ ] **Step 2: Commit**
-
 ```bash
-git add Justfile
-git commit -m "chore: just compose-up/compose-down/psql"
+git add compose/compose.yml
+git commit -m "chore: compose.yml — stock postgres:17.4, per-file bind mounts, :4222 exposed"
 ```
 
-### Task T-26: Boot the pod, create pgRDF
+### Task T-30: Boot pod; create both extensions (re-add `requires='pgrdf'`)
 
-**Files:** none (verification task)
+**Files:** Modify `pgck.control`
 
-- [ ] **Step 1: Bring it up**
-
-Run: `just pgrdf-fetch && just build-ext && just compose-up`
-Then wait: `until cd compose && podman compose exec postgres pg_isready -U pgck; do sleep 2; done`
-
-- [ ] **Step 2: Create pgRDF**
-
-Run: `cd compose && podman compose exec postgres psql -U pgck -d pgck -c "CREATE EXTENSION pgrdf;"`
-Expected: `CREATE EXTENSION`
-
-- [ ] **Step 3: Verify pgRDF version**
-
-Run: `cd compose && podman compose exec postgres psql -U pgck -d pgck -tc "SELECT pgrdf.version();"`
-Expected: a string containing `0.5.0`
-
-- [ ] **Step 4: No commit (verification only). Record outcome in commit msg of T-25.**
-
-### Task T-25: Create pgck beside pgRDF (re-add `requires = 'pgrdf'`)
-
-**Files:**
-- Modify: `pgck.control`
-
-- [ ] **Step 1: Re-add the requires directive**
-
-In `pgck.control`, replace the `# NOTE: … requires … omitted …` comment block + add back:
+- [ ] **Step 1:** In `pgck.control`, replace the `# NOTE: … requires … omitted …` comment block with:
 ```
+# pgRDF must be installed in the same DB (compose bind-mounts it).
 requires = 'pgrdf'
 ```
-(Keep a one-line comment: `# pgRDF must be installed in the same DB (compose bind-mounts it).`)
-
-- [ ] **Step 2: Rebuild + bounce**
-
-Run: `just build-ext && cd compose && podman compose restart postgres && until podman compose exec postgres pg_isready -U pgck; do sleep 2; done`
-
-- [ ] **Step 3: Create both extensions**
-
-Run: `cd compose && podman compose exec postgres psql -U pgck -d pgck -c "CREATE EXTENSION pgrdf; CREATE EXTENSION pgck;"`
-Expected: two `CREATE EXTENSION` lines, no error.
-
-- [ ] **Step 4: Verify pgck**
-
-Run: `cd compose && podman compose exec postgres psql -U pgck -d pgck -tc "SELECT pgck_version();"`
-Expected: `pgck 0.1.0 (rc3)`
-
+- [ ] **Step 2: Bring up**
+```bash
+just pgrdf-fetch && just build-ext && just compose-up
+```
+Then: `until cd compose && podman compose exec postgres pg_isready -U pgck; do sleep 2; done`
+- [ ] **Step 3: Create both**
+```bash
+cd compose && podman compose exec postgres psql -U pgck -d pgck -c "CREATE EXTENSION pgrdf; CREATE EXTENSION pgck;"
+```
+Expected: two `CREATE EXTENSION` lines.
+- [ ] **Step 4: Verify**
+```bash
+cd compose && podman compose exec postgres psql -U pgck -d pgck -tc "SELECT pgrdf.version(); SELECT pgck_version();"
+```
+Expected: a `0.5.0` string then `pgck 0.1.0 (rc3)`.
 - [ ] **Step 5: Commit**
-
 ```bash
 git add pgck.control
 git commit -m "feat: re-add requires='pgrdf'; both extensions load in compose pod"
 ```
 
----
+### Task T-29: `ckp.boot()` + `ckp.load_kernel()` — load core+kernel ontology
 
-## STAGE S4 — Core ontology load (T-24 → T-19)
+**Files:** Modify `sql/pgck--0.1.0.sql`
 
-### Task T-24: `ckp.config` graph-id table (already in SQL — verify + test)
-
-**Files:**
-- Test: `sql/test/s4_config.sql` (create)
-
-- [ ] **Step 1: Write the verification SQL test**
-
+- [ ] **Step 1: Add both procedures** (after `ckp.bootstrap_kernel`)
 ```sql
-\set ON_ERROR_STOP 1
-SELECT v::int = 1 AS core_ok  FROM ckp.config WHERE k='core_graph_id';
-SELECT v::int = 2 AS kgraph_ok FROM ckp.config WHERE k='kernel_graph_id';
-```
-
-- [ ] **Step 2: Run it against the pod**
-
-Run: `cd compose && podman compose exec -T postgres psql -U pgck -d pgck -f - < sql/test/s4_config.sql`
-Expected: `core_ok | t` and `kgraph_ok | t`
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add sql/test/s4_config.sql
-git commit -m "test: ckp.config seeds core=1 kernel=2 graph ids"
-```
-
-### Task T-23: `ckp.boot()` — load core.ttl into graph 1
-
-**Files:**
-- Modify: `sql/pgck--0.1.0.sql` (add `ckp.boot()` procedure)
-- Modify: `compose/compose.yml` (already mounts `/ontology`)
-
-- [ ] **Step 1: Add `ckp.boot()` to the SQL file** (after `ckp.bootstrap_kernel`)
-
-```sql
--- Load the in-extension core ontology into pgRDF graph 1 and materialize it.
--- Idempotent: clears graph 1 first. core.ttl path is the compose mount.
 CREATE OR REPLACE PROCEDURE ckp.boot(p_core_ttl_path TEXT DEFAULT '/ontology/core.ttl')
 LANGUAGE plpgsql AS $$
 DECLARE v_core INT := (SELECT v::int FROM ckp.config WHERE k='core_graph_id');
@@ -368,428 +258,7 @@ BEGIN
   PERFORM pgrdf.materialize(v_core);
 END;
 $$;
-```
 
-- [ ] **Step 2: Rebuild + bounce + recreate**
-
-Run: `just build-ext && cd compose && podman compose restart postgres && until podman compose exec postgres pg_isready -U pgck; do sleep 2; done && podman compose exec postgres psql -U pgck -d pgck -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck;"`
-
-- [ ] **Step 3: Call boot**
-
-Run: `cd compose && podman compose exec postgres psql -U pgck -d pgck -c "CALL ckp.boot();"`
-Expected: `CALL`
-
-- [ ] **Step 4: Verify core graph populated**
-
-Run: `cd compose && podman compose exec postgres psql -U pgck -d pgck -tc "SELECT count(*) FROM pgrdf.sparql('SELECT ?s WHERE { GRAPH <urn:ckp:core> { ?s a <http://www.w3.org/ns/shacl#NodeShape> } }') AS t(j jsonb);"`
-Expected: `4` (KernelShape, AffordanceShape, LedgerEntryShape, ProofShape)
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add sql/pgck--0.1.0.sql
-git commit -m "feat: ckp.boot() loads+materializes core.ttl into pgRDF graph 1"
-```
-
-### Task T-22: `ckp.boot()` is idempotent (test re-run)
-
-**Files:**
-- Test: `sql/test/s4_boot_idempotent.sql` (create)
-
-- [ ] **Step 1: Write the test**
-
-```sql
-\set ON_ERROR_STOP 1
-CALL ckp.boot();
-CALL ckp.boot();
-SELECT count(*) = 4 AS shapes_stable
-FROM pgrdf.sparql('SELECT ?s WHERE { GRAPH <urn:ckp:core> { ?s a <http://www.w3.org/ns/shacl#NodeShape> } }') AS t(j jsonb);
-```
-
-- [ ] **Step 2: Run it**
-
-Run: `cd compose && podman compose exec -T postgres psql -U pgck -d pgck -f - < sql/test/s4_boot_idempotent.sql`
-Expected: `shapes_stable | t`
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add sql/test/s4_boot_idempotent.sql
-git commit -m "test: ckp.boot() is idempotent (re-run keeps 4 shapes)"
-```
-
-### Task T-21: Adopt v3.7 `ckp:Provenance` shape into core.ttl
-
-**Files:**
-- Modify: `ontology/core.ttl`
-- Reference (read-only): `/Users/neoxr/git_neux/xr-websockets-v4/ref-ck-org/docs/public/ontology/v3.7/proof.ttl`
-
-- [ ] **Step 1: Add a minimal Provenance shape** (append to `ontology/core.ttl`, after `ckp:ProofShape`)
-
-```turtle
-# v3.7-derived: PROV-O subset. Minimal — only what ckp.seal records.
-ckp:ProvenanceShape a sh:NodeShape ;
-  sh:targetClass ckp:Provenance ;
-  sh:property [ sh:path prov:wasGeneratedBy ; sh:minCount 1 ; sh:nodeKind sh:IRI ] ;
-  sh:property [ sh:path prov:wasDerivedFrom ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
-```
-
-- [ ] **Step 2: Add the `prov:` prefix** if absent — verify line 6 of `ontology/core.ttl` has `@prefix prov: <http://www.w3.org/ns/prov#> .` (it does). No change needed; confirm.
-
-- [ ] **Step 3: Reload + count shapes = 5**
-
-Run: `just build-ext && cd compose && podman compose restart postgres && until podman compose exec postgres pg_isready -U pgck; do sleep 2; done && podman compose exec postgres psql -U pgck -d pgck -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck; CALL ckp.boot();" && podman compose exec postgres psql -U pgck -d pgck -tc "SELECT count(*) FROM pgrdf.sparql('SELECT ?s WHERE { GRAPH <urn:ckp:core> { ?s a <http://www.w3.org/ns/shacl#NodeShape> } }') AS t(j jsonb);"`
-Expected: `5`
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add ontology/core.ttl
-git commit -m "feat: add v3.7-derived ckp:ProvenanceShape to core ontology"
-```
-
-### Task T-20: `ckp.core_shapes()` helper — list shape IRIs
-
-**Files:**
-- Modify: `sql/pgck--0.1.0.sql`
-- Test: `sql/test/s4_core_shapes.sql` (create)
-
-- [ ] **Step 1: Add the function**
-
-```sql
--- Enumerate the core ontology's SHACL NodeShapes (governance surface).
-CREATE OR REPLACE FUNCTION ckp.core_shapes()
-RETURNS TABLE(shape TEXT) LANGUAGE sql AS $$
-  SELECT j->>'s'
-  FROM pgrdf.sparql(
-    'SELECT ?s WHERE { GRAPH <urn:ckp:core> { ?s a <http://www.w3.org/ns/shacl#NodeShape> } }'
-  ) AS t(j jsonb);
-$$;
-```
-
-- [ ] **Step 2: Write the test**
-
-```sql
-\set ON_ERROR_STOP 1
-SELECT count(*) = 5 AS five_shapes FROM ckp.core_shapes();
-```
-
-- [ ] **Step 3: Rebuild + recreate + run test**
-
-Run: `just build-ext && cd compose && podman compose restart postgres && until podman compose exec postgres pg_isready -U pgck; do sleep 2; done && podman compose exec postgres psql -U pgck -d pgck -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck; CALL ckp.boot();" && podman compose exec -T postgres psql -U pgck -d pgck -f - < sql/test/s4_core_shapes.sql`
-Expected: `five_shapes | t`
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add sql/pgck--0.1.0.sql sql/test/s4_core_shapes.sql
-git commit -m "feat: ckp.core_shapes() enumerates core SHACL shapes"
-```
-
-### Task T-19: Stage S4 gate — `just smoke-s4`
-
-**Files:**
-- Modify: `Justfile`
-
-- [ ] **Step 1: Add the gate recipe**
-
-```make
-# S4 gate: pod up, both extensions, core ontology loaded, 5 shapes.
-smoke-s4: pgrdf-fetch build-ext compose-up
-    until cd compose && {{run}} compose exec postgres pg_isready -U pgck; do sleep 2; done
-    cd compose && {{run}} compose exec postgres psql -U pgck -d pgck \
-      -c "CREATE EXTENSION IF NOT EXISTS pgrdf; DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck; CALL ckp.boot();" \
-      -tc "SELECT count(*) FROM ckp.core_shapes();"
-```
-
-- [ ] **Step 2: Run the gate**
-
-Run: `just smoke-s4`
-Expected: final line prints `5`
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add Justfile
-git commit -m "chore: just smoke-s4 — S4 gate (core ontology loaded, 5 shapes)"
-```
-
----
-
-## STAGE S3 — Validate primitive (T-18 → T-13)
-
-### Task T-18: Fix `ckp.validate` — drop the broken 2-arg `pgrdf.sparql`
-
-**Files:**
-- Modify: `sql/pgck--0.1.0.sql` (the `ckp.validate(ttl, shapes_graph_id)` function)
-
-- [ ] **Step 1: Replace the body** so it uses the real pgRDF API (scratch graph + 2-arg `pgrdf.validate`, no `pgrdf.sparql`)
-
-```sql
-CREATE OR REPLACE FUNCTION ckp.validate(ttl TEXT, shapes_graph_id INT)
-RETURNS BOOLEAN LANGUAGE plpgsql AS $$
-DECLARE
-  scratch_id INT := 9000 + (random()*900)::int;
-  report JSONB;
-BEGIN
-  PERFORM pgrdf.add_graph(scratch_id, format('urn:ckp:scratch:%s', scratch_id));
-  PERFORM pgrdf.clear_graph(scratch_id);
-  PERFORM pgrdf.parse_turtle(ttl, scratch_id, 'urn:ckp:scratch#');
-  report := pgrdf.validate(scratch_id, shapes_graph_id);   -- 2 ARG, returns JSONB
-  PERFORM pgrdf.clear_graph(scratch_id);
-  RETURN COALESCE((report->>'conforms')::boolean, false);
-END;
-$$;
-```
-
-- [ ] **Step 2: Rebuild + recreate**
-
-Run: `just build-ext && cd compose && podman compose restart postgres && until podman compose exec postgres pg_isready -U pgck; do sleep 2; done && podman compose exec postgres psql -U pgck -d pgck -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck; CALL ckp.boot();"`
-
-- [ ] **Step 3: Smoke the function exists**
-
-Run: `cd compose && podman compose exec postgres psql -U pgck -d pgck -tc "SELECT ckp.validate('@prefix x: <urn:x#> . x:a x:b 1 .', 1);"`
-Expected: `t` (an arbitrary triple conforms — no targeted shape violated)
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add sql/pgck--0.1.0.sql
-git commit -m "fix: ckp.validate uses real pgRDF API (2-arg pgrdf.validate, no broken sparql)"
-```
-
-### Task T-17: `ckp.validate` rejects a known core-shape violation (proof shape)
-
-**Files:**
-- Test: `sql/test/s3_validate_rejects.sql` (create)
-
-- [ ] **Step 1: Write the test — a malformed Proof (missing digest+method) must NOT conform vs graph 1**
-
-```sql
-\set ON_ERROR_STOP 1
-SELECT ckp.validate(
-  '@prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> .
-   <urn:ckp:prf:bad> a ckp:Proof ; ckp:about <urn:ckp:i:1> .',
-  1
-) = false AS rejects_bad_proof;
-```
-
-- [ ] **Step 2: Run it**
-
-Run: `cd compose && podman compose exec -T postgres psql -U pgck -d pgck -f - < sql/test/s3_validate_rejects.sql`
-Expected: `rejects_bad_proof | t`
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add sql/test/s3_validate_rejects.sql
-git commit -m "test: ckp.validate rejects a malformed ckp:Proof vs core shape"
-```
-
-### Task T-16: `ckp.validate` accepts a well-formed Proof
-
-**Files:**
-- Test: `sql/test/s3_validate_accepts.sql` (create)
-
-- [ ] **Step 1: Write the test — a complete Proof MUST conform**
-
-```sql
-\set ON_ERROR_STOP 1
-SELECT ckp.validate(
-  '@prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> .
-   @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-   <urn:ckp:prf:ok> a ckp:Proof ;
-     ckp:about <urn:ckp:i:1> ; ckp:method "ed25519+sha256" ;
-     ckp:digest "0000000000000000000000000000000000000000000000000000000000000000" ;
-     ckp:verifiedAt "2026-05-16T00:00:00Z"^^xsd:dateTime .',
-  1
-) = true AS accepts_good_proof;
-```
-
-- [ ] **Step 2: Run it**
-
-Run: `cd compose && podman compose exec -T postgres psql -U pgck -d pgck -f - < sql/test/s3_validate_accepts.sql`
-Expected: `accepts_good_proof | t`
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add sql/test/s3_validate_accepts.sql
-git commit -m "test: ckp.validate accepts a well-formed ckp:Proof"
-```
-
-### Task T-15: `ckp.validate_against(ttl, shape_iri)` — validate vs a single named shape
-
-**Files:**
-- Modify: `sql/pgck--0.1.0.sql`
-
-- [ ] **Step 1: Add the targeted-validate helper** (copies only the named shape into a scratch shapes graph)
-
-```sql
--- Validate `ttl` against ONE named core shape (by IRI). Used by ckp.seal
--- to gate each protocol op against its specific core shape.
-CREATE OR REPLACE FUNCTION ckp.validate_against(ttl TEXT, shape_iri TEXT)
-RETURNS BOOLEAN LANGUAGE plpgsql AS $$
-DECLARE
-  v_core INT := (SELECT v::int FROM ckp.config WHERE k='core_graph_id');
-BEGIN
-  -- The core graph already holds every shape; validating data vs the whole
-  -- core graph only fails on the shape whose targetClass the data matches.
-  -- So targeted validation == validate vs core graph, given typed data.
-  RETURN ckp.validate(ttl, v_core);
-END;
-$$;
-```
-
-- [ ] **Step 2: Rebuild + recreate**
-
-Run: `just build-ext && cd compose && podman compose restart postgres && until podman compose exec postgres pg_isready -U pgck; do sleep 2; done && podman compose exec postgres psql -U pgck -d pgck -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck; CALL ckp.boot();"`
-
-- [ ] **Step 3: Smoke**
-
-Run: `cd compose && podman compose exec postgres psql -U pgck -d pgck -tc "SELECT ckp.validate_against('@prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> . <urn:ckp:k:1> a ckp:Kernel .', 'ckp:KernelShape');"`
-Expected: `f` (a Kernel with no rdfs:label / dataSubstrate violates KernelShape)
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add sql/pgck--0.1.0.sql
-git commit -m "feat: ckp.validate_against(ttl, shape_iri) targeted core validation"
-```
-
-### Task T-14: Stage S3 gate — `just smoke-s3`
-
-**Files:**
-- Modify: `Justfile`
-
-- [ ] **Step 1: Add recipe that runs all S3 tests**
-
-```make
-smoke-s3: smoke-s4
-    cd compose && {{run}} compose exec -T postgres psql -U pgck -d pgck \
-      -v ON_ERROR_STOP=1 -f - < sql/test/s3_validate_rejects.sql
-    cd compose && {{run}} compose exec -T postgres psql -U pgck -d pgck \
-      -v ON_ERROR_STOP=1 -f - < sql/test/s3_validate_accepts.sql
-```
-
-- [ ] **Step 2: Run it**
-
-Run: `just smoke-s3`
-Expected: `rejects_bad_proof | t` then `accepts_good_proof | t`
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add Justfile
-git commit -m "chore: just smoke-s3 — validate primitive gate"
-```
-
-### Task T-13: Mirror S3 into a `pg_test` (CI coverage without pgRDF)
-
-**Files:**
-- Modify: `src/lib.rs` (extend the `tests` module with a doc note only — no pgRDF in CI)
-
-- [ ] **Step 1: Add a guard comment** (CI cannot run the SQL tests — pgRDF absent). Append inside `mod tests`:
-
-```rust
-    // NOTE: ckp.validate / ckp.seal SQL tests require pgRDF in the cluster
-    // and run via `just smoke-s3` / `smoke-s2` against the compose pod, not
-    // `cargo pgrx test`. CI keeps only the pure-Rust pgck_version() test
-    // until pgRDF is installed into the pgrx test cluster (later plan).
-```
-
-- [ ] **Step 2: fmt check**
-
-Run: `cargo fmt --all -- --check`
-Expected: exit 0
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add src/lib.rs
-git commit -m "test: document that S3+ SQL gates run via compose, not cargo pgrx test"
-```
-
----
-
-## STAGE S2 — Governed seal (T-12 → T-5)
-
-### Task T-12: `ckp.bootstrap_kernel` — verify the durable tables exist
-
-**Files:**
-- Test: `sql/test/s2_bootstrap.sql` (create)
-
-- [ ] **Step 1: Write the test**
-
-```sql
-\set ON_ERROR_STOP 1
-CALL ckp.bootstrap_kernel();
-SELECT to_regclass('ckp.instances') IS NOT NULL AS has_instances;
-SELECT to_regclass('ckp.ledger')    IS NOT NULL AS has_ledger;
-SELECT to_regclass('ckp.proof')     IS NOT NULL AS has_proof;
-```
-
-- [ ] **Step 2: Run it**
-
-Run: `cd compose && podman compose exec -T postgres psql -U pgck -d pgck -f - < sql/test/s2_bootstrap.sql`
-Expected: three `t` rows
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add sql/test/s2_bootstrap.sql
-git commit -m "test: ckp.bootstrap_kernel creates instances/ledger/proof"
-```
-
-### Task T-11: Fix `ckp.seal` payload-validation — remove broken 2-arg `pgrdf.sparql`
-
-**Files:**
-- Modify: `sql/pgck--0.1.0.sql` (the `ckp.seal` body, the kernel-shape SPARQL block)
-
-- [ ] **Step 1: Replace the broken required-prop SPARQL** with a one-arg `pgrdf.sparql` over the kernel graph IRI
-
-```sql
-  -- 1. VALIDATE payload's required props from the kernel ontology (graph 2).
-  SELECT string_agg(rp, ', ') INTO v_missing
-  FROM (
-    SELECT j->>'required_prop' AS rp
-    FROM pgrdf.sparql(format($q$
-      PREFIX sh: <http://www.w3.org/ns/shacl#>
-      SELECT ?required_prop WHERE {
-        GRAPH <urn:ckp:%s/kernel/ck> {
-          ?s sh:targetClass <%s> ; sh:property ?p .
-          ?p sh:path ?required_prop ; sh:minCount ?n . FILTER(?n >= 1) } }
-    $q$, current_setting('ckp.project', true), v_type)) AS t(j jsonb)
-  ) req
-  WHERE NOT (p_body ? rp);
-```
-(Replaces the old `FROM pgrdf.sparql(format($q$ … $q$, v_type), v_kgraph) AS t` two-arg call. `v_kgraph` local var may now be unused — leave its DECLARE; harmless.)
-
-- [ ] **Step 2: Rebuild + recreate + bootstrap**
-
-Run: `just build-ext && cd compose && podman compose restart postgres && until podman compose exec postgres pg_isready -U pgck; do sleep 2; done && podman compose exec postgres psql -U pgck -d pgck -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck; CALL ckp.boot(); CALL ckp.bootstrap_kernel(); SELECT set_config('ckp.project','demo',false); SELECT set_config('ckp.identity_key', md5('demo'), false);"`
-
-- [ ] **Step 3: Smoke — seal a typeless body fails cleanly (not a SQL error)**
-
-Run: `cd compose && podman compose exec postgres psql -U pgck -d pgck -tc "SELECT ckp.seal('i-1', '{}'::jsonb);"`
-Expected: `ERROR: ckp.seal: body has no "type"` (clean RAISE, not a `pgrdf.sparql` arity error)
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add sql/pgck--0.1.0.sql
-git commit -m "fix: ckp.seal kernel-shape lookup uses 1-arg GRAPH-scoped pgrdf.sparql"
-```
-
-### Task T-10: Load demo kernel ontology into graph 2
-
-**Files:**
-- Modify: `sql/pgck--0.1.0.sql` (add `ckp.load_kernel(path)`)
-
-- [ ] **Step 1: Add the loader**
-
-```sql
--- Load a kernel TTL into graph 2 (urn:ckp:<project>/kernel/ck) + materialize.
 CREATE OR REPLACE PROCEDURE ckp.load_kernel(p_path TEXT, p_project TEXT DEFAULT 'demo')
 LANGUAGE plpgsql AS $$
 DECLARE v_k INT := (SELECT v::int FROM ckp.config WHERE k='kernel_graph_id');
@@ -804,286 +273,887 @@ BEGIN
 END;
 $$;
 ```
-
-- [ ] **Step 2: Rebuild + recreate + load demo**
-
-Run: `just build-ext && cd compose && podman compose restart postgres && until podman compose exec postgres pg_isready -U pgck; do sleep 2; done && podman compose exec postgres psql -U pgck -d pgck -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck; CALL ckp.boot(); CALL ckp.load_kernel('/examples/example.kernel.ttl','demo');"`
-Expected: `CALL` x3
-
-- [ ] **Step 3: Verify the GreetingShape is in graph 2**
-
-Run: `cd compose && podman compose exec postgres psql -U pgck -d pgck -tc "SELECT count(*) FROM pgrdf.sparql('SELECT ?s WHERE { GRAPH <urn:ckp:demo/kernel/ck> { ?s a <http://www.w3.org/ns/shacl#NodeShape> } }') AS t(j jsonb);"`
-Expected: `1` (`:GreetingShape`)
-
+- [ ] **Step 2: Rebuild + recreate + load**
+```bash
+just build-ext && cd compose && podman compose restart postgres && until podman compose exec postgres pg_isready -U pgck; do sleep 2; done && podman compose exec postgres psql -U pgck -d pgck -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck; CALL ckp.boot(); CALL ckp.load_kernel('/examples/example.kernel.ttl','demo');"
+```
+Expected: `CALL` ×4 (boot, load_kernel, plus the two CREATE/DROP).
+- [ ] **Step 3: Verify graphs populated**
+```bash
+cd compose && podman compose exec postgres psql -U pgck -d pgck -tc "SELECT count(*) FROM pgrdf.sparql('SELECT ?s WHERE { GRAPH <urn:ckp:core> { ?s a <http://www.w3.org/ns/shacl#NodeShape> } }') AS t(j jsonb); SELECT count(*) FROM pgrdf.sparql('SELECT ?s WHERE { GRAPH <urn:ckp:demo/kernel/ck> { ?s a <http://www.w3.org/ns/shacl#NodeShape> } }') AS t(j jsonb);"
+```
+Expected: `4` (core shapes) then `1` (`:GreetingShape`).
 - [ ] **Step 4: Commit**
-
 ```bash
 git add sql/pgck--0.1.0.sql
-git commit -m "feat: ckp.load_kernel(path, project) loads kernel TTL into graph 2"
+git commit -m "feat: ckp.boot()+ckp.load_kernel() load core+kernel ontology into pgRDF"
 ```
 
-### Task T-9: `ckp.seal` happy path — seal a valid Greeting
+### Task T-28: Stage S5 gate — `just smoke-s5`
 
-**Files:**
-- Test: `sql/test/s2_seal_ok.sql` (create)
+**Files:** Modify `Justfile`
 
-- [ ] **Step 1: Write the test**
+- [ ] **Step 1: Add gate**
+```make
+smoke-s5: pgrdf-fetch build-ext compose-up
+    until cd compose && {{run}} compose exec postgres pg_isready -U pgck; do sleep 2; done
+    cd compose && {{run}} compose exec postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 \
+      -c "CREATE EXTENSION IF NOT EXISTS pgrdf; DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck;" \
+      -c "CALL ckp.boot(); CALL ckp.load_kernel('/examples/example.kernel.ttl','demo');" \
+      -tc "SELECT pgck_version();"
+```
+- [ ] **Step 2: Run** `just smoke-s5` — Expected: final line `pgck 0.1.0 (rc3)`, no error.
+- [ ] **Step 3: Commit**
+```bash
+git add Justfile
+git commit -m "chore: just smoke-s5 — pod + both extensions + ontology loaded"
+```
 
+**→ CHECKPOINT: report S5 to user.**
+
+---
+
+## STAGE S4 — pgRDF API fixes + governed seal (T-27 → T-22)
+
+### Task T-27: Fix `ckp.validate` — real pgRDF API
+
+**Files:** Modify `sql/pgck--0.1.0.sql`
+
+- [ ] **Step 1: Replace the function body**
+```sql
+CREATE OR REPLACE FUNCTION ckp.validate(ttl TEXT, shapes_graph_id INT)
+RETURNS BOOLEAN LANGUAGE plpgsql AS $$
+DECLARE scratch_id INT := 9000 + (random()*900)::int; report JSONB;
+BEGIN
+  PERFORM pgrdf.add_graph(scratch_id, format('urn:ckp:scratch:%s', scratch_id));
+  PERFORM pgrdf.clear_graph(scratch_id);
+  PERFORM pgrdf.parse_turtle(ttl, scratch_id, 'urn:ckp:scratch#');
+  report := pgrdf.validate(scratch_id, shapes_graph_id);
+  PERFORM pgrdf.clear_graph(scratch_id);
+  RETURN COALESCE((report->>'conforms')::boolean, false);
+END;
+$$;
+```
+- [ ] **Step 2: Rebuild+recreate** (`just build-ext` + restart + DROP/CREATE pgck + `CALL ckp.boot()`).
+- [ ] **Step 3: Smoke**
+```bash
+cd compose && podman compose exec postgres psql -U pgck -d pgck -tc "SELECT ckp.validate('@prefix x: <urn:x#> . x:a x:b 1 .', 1);"
+```
+Expected: `t`.
+- [ ] **Step 4: Commit**
+```bash
+git add sql/pgck--0.1.0.sql
+git commit -m "fix: ckp.validate uses real pgRDF v0.5.0 API (2-arg validate, no broken sparql)"
+```
+
+### Task T-26: `ckp.validate` rejects bad / accepts good Proof
+
+**Files:** Create `sql/test/s4_validate.sql`
+
+- [ ] **Step 1: Write test**
+```sql
+\set ON_ERROR_STOP 1
+SELECT ckp.validate('@prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> .
+  <urn:ckp:prf:bad> a ckp:Proof ; ckp:about <urn:ckp:i:1> .', 1) = false AS rejects_bad;
+SELECT ckp.validate('@prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> .
+  @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+  <urn:ckp:prf:ok> a ckp:Proof ; ckp:about <urn:ckp:i:1> ; ckp:method "ed25519+sha256" ;
+  ckp:digest "0000000000000000000000000000000000000000000000000000000000000000" ;
+  ckp:verifiedAt "2026-05-16T00:00:00Z"^^xsd:dateTime .', 1) = true AS accepts_good;
+```
+- [ ] **Step 2: Run** `cd compose && podman compose exec -T postgres psql -U pgck -d pgck -f - < sql/test/s4_validate.sql` — Expected: `rejects_bad | t`, `accepts_good | t`.
+- [ ] **Step 3: Commit**
+```bash
+git add sql/test/s4_validate.sql
+git commit -m "test: ckp.validate rejects malformed / accepts well-formed ckp:Proof"
+```
+
+### Task T-25: Fix `ckp.seal` kernel-shape lookup — 1-arg GRAPH-scoped sparql
+
+**Files:** Modify `sql/pgck--0.1.0.sql` (the `ckp.seal` required-prop block)
+
+- [ ] **Step 1: Replace the broken 2-arg sparql block**
+```sql
+  SELECT string_agg(rp, ', ') INTO v_missing
+  FROM (
+    SELECT j->>'required_prop' AS rp
+    FROM pgrdf.sparql(format($q$
+      PREFIX sh: <http://www.w3.org/ns/shacl#>
+      SELECT ?required_prop WHERE {
+        GRAPH <urn:ckp:%s/kernel/ck> {
+          ?s sh:targetClass <%s> ; sh:property ?p .
+          ?p sh:path ?required_prop ; sh:minCount ?n . FILTER(?n >= 1) } }
+    $q$, current_setting('ckp.project', true), v_type)) AS t(j jsonb)
+  ) req
+  WHERE NOT (p_body ? rp);
+```
+- [ ] **Step 2: Rebuild+recreate**; then `SELECT set_config('ckp.project','demo',false); SELECT set_config('ckp.identity_key',md5('demo'),false); CALL ckp.bootstrap_kernel();`
+- [ ] **Step 3: Smoke** (clean RAISE, not arity error)
+```bash
+cd compose && podman compose exec postgres psql -U pgck -d pgck -tc "SELECT ckp.seal('i-1','{}'::jsonb);"
+```
+Expected: `ERROR: ckp.seal: body has no "type"`.
+- [ ] **Step 4: Commit**
+```bash
+git add sql/pgck--0.1.0.sql
+git commit -m "fix: ckp.seal kernel-shape lookup uses 1-arg GRAPH-scoped pgrdf.sparql"
+```
+
+### Task T-24: `ckp.seal` happy path — seal a valid Greeting
+
+**Files:** Create `sql/test/s4_seal_ok.sql`
+
+- [ ] **Step 1: Write test**
 ```sql
 \set ON_ERROR_STOP 1
 SELECT set_config('ckp.project','demo',false);
 SELECT set_config('ckp.identity_key', md5('demo'), false);
 CALL ckp.bootstrap_kernel();
-SELECT length(ckp.seal('i-greet-1',
-  '{"type":"urn:ckp:kernel#Greeting","name":"Ada"}'::jsonb)) = 64 AS sha_returned;
-SELECT count(*) = 1 AS instance_written FROM ckp.instances WHERE id='i-greet-1';
-SELECT count(*) = 1 AS ledger_written   FROM ckp.ledger    WHERE instance_id='i-greet-1';
-SELECT count(*) = 1 AS proof_written    FROM ckp.proof     WHERE about='i-greet-1';
+SELECT length(ckp.seal('i-greet-1','{"type":"urn:ckp:kernel#Greeting","name":"Ada"}'::jsonb))=64 AS sha_ok;
+SELECT count(*)=1 AS inst FROM ckp.instances WHERE id='i-greet-1';
+SELECT count(*)=1 AS led  FROM ckp.ledger    WHERE instance_id='i-greet-1';
+SELECT count(*)=1 AS prf  FROM ckp.proof     WHERE about='i-greet-1';
 ```
-
-- [ ] **Step 2: Run it**
-
-Run: `cd compose && podman compose exec -T postgres psql -U pgck -d pgck -f - < sql/test/s2_seal_ok.sql`
-Expected: `sha_returned|t`, `instance_written|t`, `ledger_written|t`, `proof_written|t`
-
+- [ ] **Step 2: Run** `cd compose && podman compose exec -T postgres psql -U pgck -d pgck -f - < sql/test/s4_seal_ok.sql` — Expected: four `t`.
 - [ ] **Step 3: Commit**
-
 ```bash
-git add sql/test/s2_seal_ok.sql
+git add sql/test/s4_seal_ok.sql
 git commit -m "test: ckp.seal writes instance+ledger+proof for a valid Greeting"
 ```
 
-### Task T-8: `ckp.seal` rejects a Greeting missing the required `name`
+### Task T-23: `ckp.seal` rejects + `ckp.verify` detects tamper
 
-**Files:**
-- Test: `sql/test/s2_seal_reject.sql` (create)
+**Files:** Create `sql/test/s4_seal_reject.sql`, `sql/test/s4_verify.sql`
 
-- [ ] **Step 1: Write the test** (expects a clean RAISE; `name` is `sh:minCount 1` in `:GreetingShape`)
-
+- [ ] **Step 1: Write reject test**
 ```sql
 \set ON_ERROR_STOP 1
 SELECT set_config('ckp.project','demo',false);
-DO $$
-BEGIN
-  PERFORM ckp.seal('i-bad-1', '{"type":"urn:ckp:kernel#Greeting"}'::jsonb);
-  RAISE EXCEPTION 'TEST FAILED: seal should have rejected missing name';
+DO $$ BEGIN
+  PERFORM ckp.seal('i-bad-1','{"type":"urn:ckp:kernel#Greeting"}'::jsonb);
+  RAISE EXCEPTION 'TEST FAILED: should reject missing name';
 EXCEPTION WHEN others THEN
-  IF SQLERRM LIKE '%missing required%' THEN
-    RAISE NOTICE 'PASS: %', SQLERRM;
-  ELSE RAISE; END IF;
-END $$;
-SELECT count(*) = 0 AS no_bad_instance FROM ckp.instances WHERE id='i-bad-1';
+  IF SQLERRM LIKE '%missing required%' THEN RAISE NOTICE 'PASS: %', SQLERRM;
+  ELSE RAISE; END IF; END $$;
+SELECT count(*)=0 AS no_bad FROM ckp.instances WHERE id='i-bad-1';
 ```
-
-- [ ] **Step 2: Run it**
-
-Run: `cd compose && podman compose exec -T postgres psql -U pgck -d pgck -f - < sql/test/s2_seal_reject.sql`
-Expected: `PASS: …missing required: name` notice + `no_bad_instance | t`
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add sql/test/s2_seal_reject.sql
-git commit -m "test: ckp.seal rejects Greeting missing required name (atomic abort)"
-```
-
-### Task T-7: `ckp.verify` — recompute + check ledger digest
-
-**Files:**
-- Test: `sql/test/s2_verify.sql` (create)
-
-- [ ] **Step 1: Write the test** (uses the instance sealed in T-9's pattern)
-
+- [ ] **Step 2: Write verify test**
 ```sql
 \set ON_ERROR_STOP 1
 SELECT set_config('ckp.project','demo',false);
 SELECT set_config('ckp.identity_key', md5('demo'), false);
 CALL ckp.bootstrap_kernel();
-PERFORM ckp.seal('i-verify-1', '{"type":"urn:ckp:kernel#Greeting","name":"Bo"}'::jsonb);
-SELECT ckp.verify('i-verify-1') = true  AS verifies_clean;
-UPDATE ckp.instances SET body = body || '{"tampered":true}'::jsonb WHERE id='i-verify-1';
-SELECT ckp.verify('i-verify-1') = false AS detects_tamper;
+SELECT ckp.seal('i-v-1','{"type":"urn:ckp:kernel#Greeting","name":"Bo"}'::jsonb) IS NOT NULL AS sealed;
+SELECT ckp.verify('i-v-1')=true AS clean;
+UPDATE ckp.instances SET body=body||'{"x":1}'::jsonb WHERE id='i-v-1';
+SELECT ckp.verify('i-v-1')=false AS tampered;
 ```
-
-- [ ] **Step 2: Run it**
-
-Run: `cd compose && podman compose exec -T postgres psql -U pgck -d pgck -f - < sql/test/s2_verify.sql`
-Expected: `verifies_clean | t` and `detects_tamper | t`
-
-- [ ] **Step 3: Commit**
-
+- [ ] **Step 3: Run both** — Expected: `PASS: …missing required: name`, `no_bad|t`; then `sealed|t`, `clean|t`, `tampered|t`.
+- [ ] **Step 4: Commit**
 ```bash
-git add sql/test/s2_verify.sql
-git commit -m "test: ckp.verify confirms clean instance + detects tamper"
+git add sql/test/s4_seal_reject.sql sql/test/s4_verify.sql
+git commit -m "test: ckp.seal atomic-rejects bad Greeting; ckp.verify detects tamper"
 ```
 
-### Task T-6: Core-shape gate on the ledger op inside `ckp.seal` (verify it fires)
+### Task T-22: Stage S4 gate — `just smoke-s4`
 
-**Files:**
-- Test: `sql/test/s2_ledger_core_shape.sql` (create)
+**Files:** Modify `Justfile`
 
-- [ ] **Step 1: Write the test** — confirm a sealed instance's ledger row carries a 64-hex sha + ≥16-char sig (the `ckp:LedgerEntryShape` invariants)
-
-```sql
-\set ON_ERROR_STOP 1
-SELECT set_config('ckp.project','demo',false);
-SELECT set_config('ckp.identity_key', md5('demo'), false);
-CALL ckp.bootstrap_kernel();
-PERFORM ckp.seal('i-led-1', '{"type":"urn:ckp:kernel#Greeting","name":"Cy"}'::jsonb);
-SELECT (body_sha256 ~ '^[0-9a-f]{64}$') AS sha_well_formed,
-       (length(sig) >= 16)              AS sig_min_len
-FROM ckp.ledger WHERE instance_id='i-led-1';
-```
-
-- [ ] **Step 2: Run it**
-
-Run: `cd compose && podman compose exec -T postgres psql -U pgck -d pgck -f - < sql/test/s2_ledger_core_shape.sql`
-Expected: `sha_well_formed | t` and `sig_min_len | t`
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add sql/test/s2_ledger_core_shape.sql
-git commit -m "test: sealed ledger row satisfies ckp:LedgerEntryShape invariants"
-```
-
-### Task T-5: Stage S2 gate — `just smoke-s2`
-
-**Files:**
-- Modify: `Justfile`
-
-- [ ] **Step 1: Add the gate** (boots, loads core+kernel, runs every S2 test)
-
+- [ ] **Step 1: Add gate**
 ```make
-smoke-s2: smoke-s3
+smoke-s4: smoke-s5
     cd compose && {{run}} compose exec postgres psql -U pgck -d pgck \
       -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck; CALL ckp.boot(); CALL ckp.load_kernel('/examples/example.kernel.ttl','demo');"
-    for t in s2_bootstrap s2_seal_ok s2_seal_reject s2_verify s2_ledger_core_shape; do \
+    for t in s4_validate s4_seal_ok s4_seal_reject s4_verify; do \
       cd compose && {{run}} compose exec -T postgres psql -U pgck -d pgck \
         -v ON_ERROR_STOP=1 -f - < sql/test/$t.sql || exit 1; cd - >/dev/null; done
 ```
-
-- [ ] **Step 2: Run it**
-
-Run: `just smoke-s2`
-Expected: every test prints its `t` / PASS lines, no error, exit 0
-
+- [ ] **Step 2: Run** `just smoke-s4` — Expected: all tests pass, exit 0.
 - [ ] **Step 3: Commit**
-
 ```bash
 git add Justfile
-git commit -m "chore: just smoke-s2 — governed seal gate (validate→instance→ledger→proof)"
+git commit -m "chore: just smoke-s4 — governed seal proven via psql (slice substrate)"
 ```
+
+**→ CHECKPOINT: report S4 to user.**
 
 ---
 
-## STAGE S1 — Demo kernel proof + completion (T-4 → T-1)
+## STAGE S3 — Embedded NATS Core server (T-21 → T-14)
 
-### Task T-4: One-command end-to-end demo recipe
+### Task T-21: Cargo wiring — `embedded-nats` feature on by default for dev
 
-**Files:**
-- Modify: `Justfile`
+**Files:** Modify `Cargo.toml`
 
-- [ ] **Step 1: Add `demo` recipe**
-
-```make
-# Full minimal CK story in one command: pod → core → kernel → seal → verify.
-demo: smoke-s2
-    cd compose && {{run}} compose exec postgres psql -U pgck -d pgck \
-      -c "SELECT set_config('ckp.project','demo',false); SELECT set_config('ckp.identity_key', md5('demo'), false); CALL ckp.bootstrap_kernel();" \
-      -c "SELECT ckp.seal('i-demo','{\"type\":\"urn:ckp:kernel#Greeting\",\"name\":\"world\"}'::jsonb) AS sha;" \
-      -c "SELECT ckp.verify('i-demo') AS verified;"
+- [ ] **Step 1:** Change `default = []` → `default = ["embedded-nats"]` and confirm the `embedded-nats = ["dep:tokio"]` + `tokio = { …, optional = true }` lines exist (added in the init phase). Verify `async-nats = "0.48"` present.
+- [ ] **Step 2: fmt** `cargo fmt --all -- --check` — exit 0.
+- [ ] **Step 3: Commit**
+```bash
+git add Cargo.toml
+git commit -m "chore: default feature embedded-nats (dev builds the in-.so NATS server)"
 ```
 
-- [ ] **Step 2: Run it**
+### Task T-20: `src/nats/parser.rs` — NATS Core verb parser
 
-Run: `just demo`
-Expected: a 64-hex `sha` value, then `verified | t`
+**Files:** Create `src/nats/mod.rs`, `src/nats/parser.rs`; Modify `src/lib.rs`
 
+- [ ] **Step 1: `src/nats/mod.rs`**
+```rust
+//! Embedded NATS Core server (hand-rolled). v3.7 + FC.Thinker discipline.
+pub mod parser;
+```
+- [ ] **Step 2: `src/nats/parser.rs`** — parse the client→server verbs (CRLF-framed)
+```rust
+//! NATS Core client→server verb parser. Subset: CONNECT, PING, PONG,
+//! PUB, SUB, UNSUB. (INFO/MSG/+OK/-ERR are server→client; see server.rs.)
+#[derive(Debug, PartialEq)]
+pub enum ClientMsg {
+    Connect(String),
+    Ping,
+    Pong,
+    Sub { subject: String, queue: Option<String>, sid: String },
+    Unsub { sid: String, max: Option<u64> },
+    Pub { subject: String, reply: Option<String>, payload: Vec<u8> },
+}
+
+/// Parse one control line (no payload yet). Returns None if incomplete/unknown.
+pub fn parse_line(line: &str) -> Option<ClientMsg> {
+    let mut it = line.split_whitespace();
+    match it.next()?.to_ascii_uppercase().as_str() {
+        "PING" => Some(ClientMsg::Ping),
+        "PONG" => Some(ClientMsg::Pong),
+        "CONNECT" => Some(ClientMsg::Connect(line[7..].trim().to_string())),
+        "SUB" => {
+            let subject = it.next()?.to_string();
+            let a = it.next()?;
+            let b = it.next();
+            match b {
+                Some(sid) => Some(ClientMsg::Sub { subject, queue: Some(a.to_string()), sid: sid.to_string() }),
+                None => Some(ClientMsg::Sub { subject, queue: None, sid: a.to_string() }),
+            }
+        }
+        "UNSUB" => {
+            let sid = it.next()?.to_string();
+            let max = it.next().and_then(|s| s.parse().ok());
+            Some(ClientMsg::Unsub { sid, max })
+        }
+        "PUB" => {
+            let subject = it.next()?.to_string();
+            let parts: Vec<&str> = it.collect();
+            // PUB <subj> [reply] <#bytes> — payload read separately by caller.
+            let (reply, _n) = if parts.len() == 2 {
+                (Some(parts[0].to_string()), parts[1])
+            } else { (None, parts[0]) };
+            Some(ClientMsg::Pub { subject, reply, payload: Vec::new() })
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test] fn ping() { assert_eq!(parse_line("PING"), Some(ClientMsg::Ping)); }
+    #[test] fn sub_no_queue() {
+        assert_eq!(parse_line("SUB input.demo.Hello.create 1"),
+            Some(ClientMsg::Sub{subject:"input.demo.Hello.create".into(),queue:None,sid:"1".into()}));
+    }
+    #[test] fn pub_with_reply() {
+        assert_eq!(parse_line("PUB a.b _INBOX.1 5"),
+            Some(ClientMsg::Pub{subject:"a.b".into(),reply:Some("_INBOX.1".into()),payload:vec![]}));
+    }
+}
+```
+- [ ] **Step 3:** In `src/lib.rs` add near the other `mod`s: `#[cfg(feature = "embedded-nats")] mod nats;`
+- [ ] **Step 4: fmt + unit test locally** `cargo fmt --all -- --check && cargo test --no-default-features --features embedded-nats parser 2>&1 | tail -3`
+Expected: fmt exit 0; 3 parser tests pass (pure Rust — no PG needed).
+- [ ] **Step 5: Commit**
+```bash
+git add src/nats/mod.rs src/nats/parser.rs src/lib.rs
+git commit -m "feat: src/nats/parser.rs — NATS Core client-verb parser + unit tests"
+```
+
+### Task T-19: `src/nats/router.rs` — subject match + subscription table
+
+**Files:** Create `src/nats/router.rs`; Modify `src/nats/mod.rs`
+
+- [ ] **Step 1: `src/nats/router.rs`** — token wildcard match (`*`, `>`) + sub registry
+```rust
+//! Subject routing: literal + `*` (one token) + `>` (trailing) match,
+//! and a subscription table (sid -> subject pattern).
+use std::collections::HashMap;
+
+pub fn matches(pattern: &str, subject: &str) -> bool {
+    let mut p = pattern.split('.');
+    let mut s = subject.split('.');
+    loop {
+        match (p.next(), s.next()) {
+            (Some(">"), Some(_)) => return true,
+            (Some("*"), Some(_)) => continue,
+            (Some(a), Some(b)) if a == b => continue,
+            (None, None) => return true,
+            _ => return false,
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct Router { subs: HashMap<String, String> } // sid -> pattern
+
+impl Router {
+    pub fn add(&mut self, sid: &str, pattern: &str) { self.subs.insert(sid.into(), pattern.into()); }
+    pub fn remove(&mut self, sid: &str) { self.subs.remove(sid); }
+    /// sids whose pattern matches `subject`.
+    pub fn match_sids(&self, subject: &str) -> Vec<String> {
+        self.subs.iter().filter(|(_, p)| matches(p, subject)).map(|(k, _)| k.clone()).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test] fn literal() { assert!(matches("a.b.c", "a.b.c")); assert!(!matches("a.b", "a.b.c")); }
+    #[test] fn star() { assert!(matches("a.*.c", "a.x.c")); assert!(!matches("a.*.c", "a.x.y")); }
+    #[test] fn gt() { assert!(matches("event.demo.Hello.>", "event.demo.Hello.created")); }
+    #[test] fn route() {
+        let mut r = Router::default();
+        r.add("1", "input.demo.Hello.create");
+        assert_eq!(r.match_sids("input.demo.Hello.create"), vec!["1".to_string()]);
+        assert!(r.match_sids("other").is_empty());
+    }
+}
+```
+- [ ] **Step 2:** Add `pub mod router;` to `src/nats/mod.rs`.
+- [ ] **Step 3: fmt + test** `cargo fmt --all -- --check && cargo test --no-default-features --features embedded-nats router 2>&1 | tail -3` — Expected: fmt 0; 4 tests pass.
+- [ ] **Step 4: Commit**
+```bash
+git add src/nats/router.rs src/nats/mod.rs
+git commit -m "feat: src/nats/router.rs — wildcard subject match + sub table + tests"
+```
+
+### Task T-18: `src/nats/server.rs` — tokio accept loop (skeleton, no SPI)
+
+**Files:** Create `src/nats/server.rs`; Modify `src/nats/mod.rs`
+
+- [ ] **Step 1: `src/nats/server.rs`** — accept connections, INFO/PING/PONG, hold subs in the Router; deliver MSG to matching subscribers. No SPI here.
+```rust
+//! Minimal NATS Core server: TcpListener accept loop on :4222.
+//! Handles INFO/CONNECT/PING/PONG/SUB/UNSUB/PUB and MSG fan-out.
+//! No SPI — the bgworker bridges sealed work (see bgworker.rs).
+use crate::nats::parser::{parse_line, ClientMsg};
+use crate::nats::router::Router;
+use std::sync::{Arc, Mutex};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpListener;
+use tokio::sync::broadcast;
+
+const INFO: &str = "INFO {\"server_name\":\"pgck\",\"version\":\"0.1.0\",\"max_payload\":1048576}\r\n";
+
+#[derive(Clone)]
+struct Delivery { subject: String, reply: Option<String>, payload: Vec<u8> }
+
+pub async fn run(bind: &str) -> std::io::Result<()> {
+    let listener = TcpListener::bind(bind).await?;
+    let (tx, _) = broadcast::channel::<Delivery>(1024);
+    let router = Arc::new(Mutex::new(Router::default()));
+    loop {
+        let (sock, _) = listener.accept().await?;
+        let tx = tx.clone();
+        let mut rx = tx.subscribe();
+        let router = router.clone();
+        tokio::spawn(async move {
+            let (rd, mut wr) = sock.into_split();
+            let mut lines = BufReader::new(rd).lines();
+            if wr.write_all(INFO.as_bytes()).await.is_err() { return; }
+            loop {
+                tokio::select! {
+                    line = lines.next_line() => {
+                        let Ok(Some(l)) = line else { break; };
+                        match parse_line(&l) {
+                            Some(ClientMsg::Ping) => { let _ = wr.write_all(b"PONG\r\n").await; }
+                            Some(ClientMsg::Sub{subject,sid,..}) => router.lock().unwrap().add(&sid,&subject),
+                            Some(ClientMsg::Unsub{sid,..}) => router.lock().unwrap().remove(&sid),
+                            Some(ClientMsg::Pub{subject,reply,..}) => {
+                                let _ = tx.send(Delivery{subject,reply,payload:Vec::new()});
+                            }
+                            _ => {}
+                        }
+                    }
+                    d = rx.recv() => {
+                        let Ok(d) = d else { continue; };
+                        let sids = router.lock().unwrap().match_sids(&d.subject);
+                        for sid in sids {
+                            let hdr = format!("MSG {} {} {}\r\n\r\n", d.subject, sid, d.payload.len());
+                            if wr.write_all(hdr.as_bytes()).await.is_err() { return; }
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+```
+- [ ] **Step 2:** Add `pub mod server;` to `src/nats/mod.rs`.
+- [ ] **Step 3: fmt + compile-check** `cargo fmt --all -- --check && cargo build --no-default-features --features embedded-nats 2>&1 | tail -3`
+Expected: fmt 0; build succeeds (no clippy gate here — CI runs it).
+- [ ] **Step 4: Commit**
+```bash
+git add src/nats/server.rs src/nats/mod.rs
+git commit -m "feat: src/nats/server.rs — minimal NATS Core accept loop + MSG fanout"
+```
+
+### Task T-17: `bgworker.rs` hosts the server on a dedicated thread
+
+**Files:** Modify `src/bgworker.rs`, `src/lib.rs`
+
+- [ ] **Step 1: `src/bgworker.rs`** — spawn the tokio server once (OnceLock-guarded), off the SPI thread
+```rust
+//! Server host. Owns the embedded NATS server lifecycle on a dedicated
+//! thread (never touches SPI). The SPI bridge (seal drain) lands in S2.
+#[cfg(feature = "embedded-nats")]
+use std::sync::OnceLock;
+
+#[cfg(feature = "embedded-nats")]
+static SERVER: OnceLock<()> = OnceLock::new();
+
+/// One scheduler tick. Idempotently starts the NATS server thread.
+pub fn tick() {
+    #[cfg(feature = "embedded-nats")]
+    SERVER.get_or_init(|| {
+        std::thread::spawn(|| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all().build().expect("tokio rt");
+            rt.block_on(async {
+                if let Err(e) = crate::nats::server::run("0.0.0.0:4222").await {
+                    pgrx::log!("pgck: nats server exited: {e}");
+                }
+            });
+        });
+    });
+}
+```
+- [ ] **Step 2: fmt + build** `cargo fmt --all -- --check && cargo build --no-default-features --features embedded-nats 2>&1 | tail -3` — Expected: fmt 0; build ok.
 - [ ] **Step 3: Commit**
+```bash
+git add src/bgworker.rs
+git commit -m "feat: bgworker hosts the embedded NATS server on a dedicated thread"
+```
 
+### Task T-16: Rebuild pod; verify the server listens
+
+**Files:** none (verification)
+
+- [ ] **Step 1: Rebuild+bounce** `just build-ext && cd compose && podman compose restart postgres && until podman compose exec postgres pg_isready -U pgck; do sleep 2; done && podman compose exec postgres psql -U pgck -d pgck -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck;"`
+- [ ] **Step 2: Probe :4222 for the INFO banner from the host**
+```bash
+printf 'PING\r\n' | nc -w2 127.0.0.1 4222 | head -c 200
+```
+Expected: an `INFO {…"server_name":"pgck"…}` line followed by `PONG`.
+- [ ] **Step 3: Record outcome in T-15's commit (no commit here).**
+
+### Task T-15: Raw NATS round-trip test (nats CLI)
+
+**Files:** Create `sql/test/s3_nats_roundtrip.sh`
+
+- [ ] **Step 1: Write the harness** (uses the `nats` CLI already on PATH, v2.x)
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+# Sub in background, pub, expect delivery. pgCK NATS server on :4222.
+nats --server nats://127.0.0.1:4222 sub 'event.demo.Hello.>' --count=1 > /tmp/pgck_rt.out 2>&1 &
+SUB=$!
+sleep 1
+nats --server nats://127.0.0.1:4222 pub 'event.demo.Hello.created' '{"trace_id":"tx-test","data":{"status":"created"}}'
+wait $SUB
+grep -q 'tx-test' /tmp/pgck_rt.out && echo "ROUNDTRIP OK" || { echo "ROUNDTRIP FAIL"; cat /tmp/pgck_rt.out; exit 1; }
+```
+- [ ] **Step 2: Run** `bash sql/test/s3_nats_roundtrip.sh` — Expected: `ROUNDTRIP OK`.
+- [ ] **Step 3: Commit**
+```bash
+git add sql/test/s3_nats_roundtrip.sh
+git commit -m "test: raw NATS pub/sub round-trip against embedded pgck server"
+```
+
+### Task T-14: Stage S3 gate — `just smoke-s3`
+
+**Files:** Modify `Justfile`
+
+- [ ] **Step 1: Add gate**
+```make
+smoke-s3: smoke-s4
+    cd compose && {{run}} compose exec postgres psql -U pgck -d pgck \
+      -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck;"
+    sleep 3
+    printf 'PING\r\n' | nc -w2 127.0.0.1 4222 | grep -q server_name && echo "INFO banner OK"
+    bash sql/test/s3_nats_roundtrip.sh
+```
+- [ ] **Step 2: Run** `just smoke-s3` — Expected: `INFO banner OK`, `ROUNDTRIP OK`.
+- [ ] **Step 3: Commit**
 ```bash
 git add Justfile
-git commit -m "feat: just demo — full minimal governed CK story end-to-end"
+git commit -m "chore: just smoke-s3 — embedded NATS server gate"
 ```
 
-### Task T-3: README — the minimal story
+**→ CHECKPOINT: report S3 to user.**
 
-**Files:**
-- Modify: `README.md` (add a "Quick start (minimal governed core)" section)
+---
 
-- [ ] **Step 1: Add the section** (exact commands a zero-context engineer runs)
+## STAGE S2 — The vertical slice (T-13 → T-5)
 
+### Task T-13: `ckp.affordances()` — SPARQL-resolve affordance rows
+
+**Files:** Modify `sql/pgck--0.1.0.sql`; Create `sql/test/s2_affordances.sql`
+
+- [ ] **Step 1: Add the resolver**
+```sql
+-- Enumerate affordances from the kernel CK graph: inTopic, outTopic, inShape.
+CREATE OR REPLACE FUNCTION ckp.affordances(p_project TEXT DEFAULT 'demo')
+RETURNS TABLE(in_topic TEXT, out_topic TEXT, in_shape TEXT)
+LANGUAGE plpgsql AS $$
+BEGIN
+  RETURN QUERY
+  SELECT j->>'it', j->>'ot', j->>'sh'
+  FROM pgrdf.sparql(format($q$
+    PREFIX ckp: <https://conceptkernel.org/ontology/v3.8/core#>
+    SELECT ?it ?ot ?sh WHERE {
+      GRAPH <urn:ckp:%s/kernel/ck> {
+        ?a a ckp:Affordance ; ckp:inTopic ?it .
+        OPTIONAL { ?a ckp:outTopic ?ot } OPTIONAL { ?a ckp:inShape ?sh } } }
+  $q$, p_project)) AS t(j jsonb);
+END;
+$$;
+```
+- [ ] **Step 2: Test** `sql/test/s2_affordances.sql`
+```sql
+\set ON_ERROR_STOP 1
+SELECT in_topic='input.demo.Hello.create' AS topic_ok,
+       out_topic='event.demo.Hello.created' AS out_ok
+FROM ckp.affordances('demo');
+```
+- [ ] **Step 3: Rebuild+recreate+load; run** — Expected: `topic_ok|t`, `out_ok|t`.
+- [ ] **Step 4: Commit**
+```bash
+git add sql/pgck--0.1.0.sql sql/test/s2_affordances.sql
+git commit -m "feat: ckp.affordances() SPARQL-resolves inTopic/outTopic/inShape"
+```
+
+### Task T-12: `ckp.dispatch(subject, body_json)` — the 8-step cycle, in SQL
+
+**Files:** Modify `sql/pgck--0.1.0.sql`
+
+- [ ] **Step 1: Add dispatch** (steps 4–7 of the v3.7 cycle; authn/authz upstream/seal-time per design §1A)
+```sql
+-- Resolve subject -> affordance, seal data, return the proof-stamped result
+-- envelope. trace_id is the correlation id (v3.7). Caller (bgworker) does
+-- the NATS publish to out_topic + result.<kernel>.
+CREATE OR REPLACE FUNCTION ckp.dispatch(p_subject TEXT, p_msg JSONB,
+                                         p_project TEXT DEFAULT 'demo')
+RETURNS JSONB LANGUAGE plpgsql AS $$
+DECLARE v_out TEXT; v_shape TEXT; v_trace TEXT; v_action TEXT;
+        v_data JSONB; v_id TEXT; v_kernel TEXT := split_part(p_subject,'.',3);
+BEGIN
+  SELECT out_topic, in_shape INTO v_out, v_shape
+  FROM ckp.affordances(p_project) WHERE in_topic = p_subject;
+  IF v_out IS NULL THEN
+    RETURN jsonb_build_object('error', format('no affordance for %s', p_subject));
+  END IF;
+  v_trace  := COALESCE(p_msg->>'trace_id', 'tx-'||gen_random_uuid());
+  v_action := p_msg->>'action';
+  v_data   := p_msg->'data';
+  v_id     := format('i-%s-%s', v_trace, floor(extract(epoch from now()))::bigint);
+  PERFORM ckp.seal(v_id, jsonb_set(v_data, '{type}', '"urn:ckp:kernel#Greeting"'));
+  RETURN jsonb_build_object(
+    'action', v_action,
+    'data', jsonb_build_object('instance_id', v_id, 'status', 'created'),
+    'trace_id', v_trace, 'kernel', v_kernel,
+    'timestamp', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    'out_topic', v_out);
+END;
+$$;
+```
+- [ ] **Step 2: Rebuild+recreate+load**; set `ckp.project`/`ckp.identity_key`; `CALL ckp.bootstrap_kernel();`
+- [ ] **Step 3: Smoke**
+```bash
+cd compose && podman compose exec postgres psql -U pgck -d pgck -tc \
+ "SELECT ckp.dispatch('input.demo.Hello.create','{\"action\":\"create\",\"trace_id\":\"tx-1\",\"data\":{\"name\":\"Ada\"}}'::jsonb)->>'status';"
+```
+Expected: `created`.
+- [ ] **Step 4: Commit**
+```bash
+git add sql/pgck--0.1.0.sql
+git commit -m "feat: ckp.dispatch() — subject->affordance->seal->result envelope"
+```
+
+### Task T-11: `ckp.dispatch` reject path (shape violation → error envelope, no write)
+
+**Files:** Create `sql/test/s2_dispatch_reject.sql`
+
+- [ ] **Step 1: Test** — missing `name` must not seal; dispatch surfaces error
+```sql
+\set ON_ERROR_STOP 1
+SELECT set_config('ckp.project','demo',false);
+SELECT set_config('ckp.identity_key', md5('demo'), false);
+CALL ckp.bootstrap_kernel();
+DO $$ BEGIN
+  PERFORM ckp.dispatch('input.demo.Hello.create',
+    '{"action":"create","trace_id":"tx-bad","data":{}}'::jsonb);
+  RAISE EXCEPTION 'TEST FAILED: dispatch should reject missing name';
+EXCEPTION WHEN others THEN
+  IF SQLERRM LIKE '%missing required%' THEN RAISE NOTICE 'PASS: %', SQLERRM;
+  ELSE RAISE; END IF; END $$;
+SELECT count(*)=0 AS no_write FROM ckp.instances WHERE id LIKE 'i-tx-bad-%';
+```
+- [ ] **Step 2: Run** — Expected: `PASS: …missing required: name`, `no_write|t`.
+- [ ] **Step 3: Commit**
+```bash
+git add sql/test/s2_dispatch_reject.sql
+git commit -m "test: ckp.dispatch rejects shape-violating body atomically"
+```
+
+### Task T-10: bgworker bridge — drain NATS PUB → `ckp.dispatch` → publish
+
+**Files:** Modify `src/nats/server.rs`, `src/bgworker.rs`
+
+- [ ] **Step 1: server.rs** — capture PUB payloads (read the declared byte count) and expose an inbound channel `tokio::sync::mpsc::Sender<(String, Vec<u8>)>` passed into `run`; on a PUB to a subject, send `(subject, payload)`. (Add the payload read: after the `PUB` control line, read `n` bytes + CRLF from the `BufReader`. Replace the `lines()` framing with a manual read of control-line then payload.) Keep MSG fanout for SUB clients.
+- [ ] **Step 2: bgworker.rs** — the SPI side: the dedicated thread owns the server + a `mpsc::Receiver`; the **bgworker main thread** drains it and runs:
+```rust
+// Pseudocode shape — main bgworker loop, per inbound (subject, payload):
+// BackgroundWorker::transaction(|| {
+//   Spi::connect(|c| {
+//     let res = c.select("SELECT ckp.dispatch($1, $2::jsonb)", None,
+//        &[subject.into(), String::from_utf8_lossy(&payload).into()])?;
+//     // res JSONB -> publish to res->>'out_topic' and result.<kernel>
+//   })
+// })
+```
+Implement: a `static INBOX: OnceLock<Mutex<Receiver<(String,Vec<u8>)>>>`; in `tick()` `try_recv()` all pending and for each call `BackgroundWorker::transaction` + `Spi::connect` running `SELECT ckp.dispatch($1,$2::jsonb)`, then hand the returned JSONB (with `out_topic`) back to the server thread via a reply channel for the NATS publish to both `out_topic` and `result.<kernel>`.
+- [ ] **Step 3: fmt + build** `cargo fmt --all -- --check && cargo build --no-default-features --features embedded-nats 2>&1 | tail -3` — Expected: fmt 0; build ok.
+- [ ] **Step 4: Commit**
+```bash
+git add src/nats/server.rs src/bgworker.rs
+git commit -m "feat: bgworker drains NATS PUB -> ckp.dispatch (SPI) -> publish result"
+```
+
+### Task T-9: End-to-end slice test — publish in, sealed, result out
+
+**Files:** Create `sql/test/s2_slice.sh`
+
+- [ ] **Step 1: Harness**
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+S=nats://127.0.0.1:4222
+nats --server $S sub 'event.demo.Hello.created' --count=1 > /tmp/pgck_slice.out 2>&1 &
+SUB=$!; sleep 1
+nats --server $S pub 'input.demo.Hello.create' \
+  '{"action":"create","trace_id":"tx-slice-1","data":{"name":"Ada","lang":"en"}}'
+wait $SUB
+grep -q '"trace_id":"tx-slice-1"' /tmp/pgck_slice.out \
+  && grep -q '"status":"created"' /tmp/pgck_slice.out \
+  && echo "SLICE OK" || { echo "SLICE FAIL"; cat /tmp/pgck_slice.out; exit 1; }
+```
+- [ ] **Step 2: Prep + run** (pod up, ext created, ckp.boot+load_kernel+bootstrap_kernel, GUCs set), then `bash sql/test/s2_slice.sh`
+Expected: `SLICE OK`.
+- [ ] **Step 3: Verify the instance was sealed**
+```bash
+cd compose && podman compose exec postgres psql -U pgck -d pgck -tc \
+ "SELECT count(*) FROM ckp.instances WHERE id LIKE 'i-tx-slice-1-%';"
+```
+Expected: `1`.
+- [ ] **Step 4: Commit**
+```bash
+git add sql/test/s2_slice.sh
+git commit -m "test: end-to-end slice — input.* -> seal -> event.* (trace_id demux)"
+```
+
+### Task T-8: Result mirror to `result.<kernel>` (v3.7 dual-publish)
+
+**Files:** Modify `src/bgworker.rs` (publish to both subjects)
+
+- [ ] **Step 1:** Ensure the reply publish targets BOTH `out_topic` (from dispatch result) and `result.<kernel>` where `<kernel>` = `split_part(subject,'.',3)`. (Confirm the publish loop sends two MSGs.)
+- [ ] **Step 2: Test** extend `sql/test/s2_slice.sh` logic in a new `sql/test/s2_result_mirror.sh` subscribing `result.Hello`:
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+S=nats://127.0.0.1:4222
+nats --server $S sub 'result.Hello' --count=1 > /tmp/pgck_mirror.out 2>&1 &
+SUB=$!; sleep 1
+nats --server $S pub 'input.demo.Hello.create' \
+  '{"action":"create","trace_id":"tx-mir-1","data":{"name":"Bo"}}'
+wait $SUB
+grep -q 'tx-mir-1' /tmp/pgck_mirror.out && echo "MIRROR OK" || { cat /tmp/pgck_mirror.out; exit 1; }
+```
+- [ ] **Step 3: fmt+build+run** — Expected: `MIRROR OK`.
+- [ ] **Step 4: Commit**
+```bash
+git add src/bgworker.rs sql/test/s2_result_mirror.sh
+git commit -m "feat: dual-publish result to affordance outTopic + result.<kernel> (v3.7)"
+```
+
+### Task T-7: Stage S2 gate — `just smoke-s2`
+
+**Files:** Modify `Justfile`
+
+- [ ] **Step 1: Add gate**
+```make
+smoke-s2: smoke-s3
+    cd compose && {{run}} compose exec postgres psql -U pgck -d pgck \
+      -c "DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck; CALL ckp.boot(); CALL ckp.load_kernel('/examples/example.kernel.ttl','demo'); SELECT set_config('ckp.project','demo',false); SELECT set_config('ckp.identity_key',md5('demo'),false); CALL ckp.bootstrap_kernel();"
+    sleep 3
+    cd compose && {{run}} compose exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 -f - < sql/test/s2_affordances.sql
+    cd compose && {{run}} compose exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 -f - < sql/test/s2_dispatch_reject.sql
+    bash sql/test/s2_slice.sh
+    bash sql/test/s2_result_mirror.sh
+```
+- [ ] **Step 2: Run** `just smoke-s2` — Expected: all pass; `SLICE OK`, `MIRROR OK`.
+- [ ] **Step 3: Commit**
+```bash
+git add Justfile
+git commit -m "chore: just smoke-s2 — the vertical slice gate (topic conversation)"
+```
+
+### Task T-6: Mirror parser/router unit tests into CI (`cargo pgrx test` stays green)
+
+**Files:** Modify `.github/workflows/ci.yml`
+
+- [ ] **Step 1:** Add a `nats-unit` job that builds with `--no-default-features --features embedded-nats` and runs `cargo test --no-default-features --features embedded-nats parser router` (pure Rust, no PG). Append:
+```yaml
+  nats-unit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --no-default-features --features embedded-nats parser router
+```
+- [ ] **Step 2: Commit + push; watch CI**
+```bash
+git add .github/workflows/ci.yml
+git commit -m "ci: nats-unit job runs parser+router unit tests (no PG needed)"
+```
+Run: watch `ci.yml` to `success` (fmt+clippy+test+nats-unit).
+- [ ] **Step 3: Confirm green** before T-5.
+
+### Task T-5: `ckp.recompile_affordances()` — live reroute on ontology change
+
+**Files:** Modify `sql/pgck--0.1.0.sql`; Create `sql/test/s2_recompile.sql`
+
+- [ ] **Step 1: Add the function** (re-reads affordances; the server picks up new subjects because dispatch resolves per-message via `ckp.affordances()` — recompile just re-materialises + signals)
+```sql
+-- Re-materialize the kernel graph and return the current affordance count.
+-- Dispatch resolves affordances per-message, so a reloaded kernel TTL
+-- reroutes with no restart.
+CREATE OR REPLACE FUNCTION ckp.recompile_affordances(p_project TEXT DEFAULT 'demo')
+RETURNS BIGINT LANGUAGE plpgsql AS $$
+DECLARE v_k INT := (SELECT v::int FROM ckp.config WHERE k='kernel_graph_id');
+        v_n BIGINT;
+BEGIN
+  PERFORM pgrdf.materialize(v_k);
+  SELECT count(*) INTO v_n FROM ckp.affordances(p_project);
+  RETURN v_n;
+END;
+$$;
+```
+- [ ] **Step 2: Test** `sql/test/s2_recompile.sql`
+```sql
+\set ON_ERROR_STOP 1
+SELECT ckp.recompile_affordances('demo') = 1 AS one_affordance;
+```
+- [ ] **Step 3: Rebuild+recreate+load; run** — Expected: `one_affordance|t`.
+- [ ] **Step 4: Commit**
+```bash
+git add sql/pgck--0.1.0.sql sql/test/s2_recompile.sql
+git commit -m "feat: ckp.recompile_affordances() — re-materialize + count (live reroute)"
+```
+
+**→ CHECKPOINT: report S2 to user (the vertical slice works end-to-end).**
+
+---
+
+## STAGE S1 — Grow + ship (T-4 → T-1)
+
+### Task T-4: One-command story — `just demo`
+
+**Files:** Modify `Justfile`
+
+- [ ] **Step 1: Add recipe**
+```make
+demo: smoke-s2
+    @echo "pgCK minimal CK story: topic conversation in -> governed seal -> proof-stamped out"
+    nats --server nats://127.0.0.1:4222 sub 'event.demo.Hello.created' --count=1 &
+    sleep 1
+    nats --server nats://127.0.0.1:4222 pub 'input.demo.Hello.create' \
+      '{"action":"create","trace_id":"tx-demo","data":{"name":"world"}}'
+    sleep 1
+    cd compose && {{run}} compose exec postgres psql -U pgck -d pgck -tc \
+      "SELECT ckp.verify(id) FROM ckp.instances WHERE id LIKE 'i-tx-demo-%' LIMIT 1;"
+```
+- [ ] **Step 2: Run** `just demo` — Expected: the subscriber prints the proof-stamped `event.demo.Hello.created` envelope; final psql prints `t` (verify).
+- [ ] **Step 3: Commit**
+```bash
+git add Justfile
+git commit -m "feat: just demo — full minimal event-driven governed CK story"
+```
+
+### Task T-3: README quick start + spec sync
+
+**Files:** Modify `README.md`; Modify `docs/specs/2026-05-16-pgck-core-design.md` (mark S0/dispatch realised)
+
+- [ ] **Step 1: README** add:
 ```markdown
-## Quick start — minimal governed core
+## Quick start — minimal event-driven governed core
 
 ```bash
-just pgrdf-fetch     # pgRDF v0.5.0 release artifact
-just build-ext       # build pgck.so (throwaway builder; no runtime rebuild)
-just compose-up      # stock postgres:17.4 + per-file bind mounts
-just demo            # core ontology → demo kernel → seal a Greeting → verify
+just pgrdf-fetch && just build-ext && just compose-up
+just demo   # publish input.demo.Hello.create → seal → proof-stamped event.demo.Hello.created
 ```
 
-`just demo` prints the instance SHA and `verified | t`. That is the whole
-loop: ontology-driven, SHACL-enforced, materialized, verifiable — no NATS.
+pgCK is the NATS server; the affordance in `examples/example.kernel.ttl`
+binds the topic to the SHACL-gated, sealed, verifiable governed write —
+all offloaded to pgRDF. No external broker.
 ```
-
-- [ ] **Step 2: Commit**
-
+- [ ] **Step 2: spec** in the core-design §3 component table, change the `src/nats/` + `src/bgworker.rs` rows from "later phase" to "realised v0.2.0".
+- [ ] **Step 3: Commit**
 ```bash
-git add README.md
-git commit -m "docs: README quick-start for the minimal governed core"
+git add README.md docs/specs/2026-05-16-pgck-core-design.md
+git commit -m "docs: README quick-start + mark dispatch/NATS realised in core-design"
 ```
 
-### Task T-2: Tag `v0.2.0` — the governed core
+### Task T-2: Tag `v0.2.0`
 
-**Files:** none (release task)
+**Files:** none (release)
 
-- [ ] **Step 1: Confirm CI green on `main`**
-
+- [ ] **Step 1: Confirm CI green on main**
 Run: `gh run list --repo styk-tv/pgCK --workflow ci.yml -L 1 --json conclusion -q '.[0].conclusion'`
 Expected: `success`
-
-- [ ] **Step 2: Tag + push**
-
+- [ ] **Step 2: Tag+push**
 ```bash
-git tag -a v0.2.0 -m "pgCK v0.2.0 — minimal ontology-driven SHACL-enforced governed core (no NATS)"
+git tag -a v0.2.0 -m "pgCK v0.2.0 — minimal event-driven governed core (NATS topic conversation -> SHACL-enforced seal -> proof-stamped result)"
 git push origin v0.2.0
 ```
-
-- [ ] **Step 3: Watch the release run to success**
-
+- [ ] **Step 3: Watch release run to success**
 Run: `gh run watch "$(gh run list --repo styk-tv/pgCK --workflow release.yml -L 1 --json databaseId -q '.[0].databaseId')" --repo styk-tv/pgCK`
-Expected: all matrix builds + release job `success`; GitHub Release + `ghcr.io/styk-tv/pgck:0.2.0-*` published.
+Expected: 8 builds + release `success`.
 
-- [ ] **Step 4: No commit (tag only).**
+### Task T-1: Completion — verify published v0.2.0
 
-### Task T-1: Completion — verify the published v0.2.0 governed core
+**Files:** none (acceptance — reaching here = plan complete)
 
-**Files:** none (acceptance task — reaching here = plan complete)
-
-- [ ] **Step 1: Anonymous OCI pull of the new version**
-
+- [ ] **Step 1: Anon OCI pull**
 Run: `docker manifest inspect ghcr.io/styk-tv/pgck:0.2.0-pg17-arm64`
-Expected: a valid OCI manifest, no auth.
-
-- [ ] **Step 2: Final acceptance statement**
-
-Confirm all true:
-- `just demo` is green from a clean checkout (pod boots, core+kernel load, Greeting seals, verify=t).
-- `ckp.seal` rejects a shape-violating payload atomically (no instance/ledger/proof written).
-- `ckp.verify` detects tamper.
-- v0.2.0 published to GitHub Releases + GHCR (anonymous pull confirmed).
-
-- [ ] **Step 3: Update memory + close the plan**
-
-Append to the project memory that the minimal governed core (S5→S1) is complete and the embedded-NATS-server plan is the next document. **T-1 reached → this plan is done.**
+Expected: valid OCI manifest, no auth.
+- [ ] **Step 2: Acceptance — confirm all true:**
+  - `just demo` green from clean checkout: publish `input.demo.Hello.create` → proof-stamped `event.demo.Hello.created` (+ `result.Hello` mirror), demuxed by `trace_id`.
+  - Shape-violating body → error, atomic, no instance/ledger/proof.
+  - `ckp.verify` detects tamper.
+  - v0.2.0 on GitHub Releases + GHCR (anon pull confirmed).
+- [ ] **Step 3:** Append to project memory that the minimal event-driven governed core is complete; next plan = JetStream durable inbound stream + WSS browser listener + multi-kernel edges. **T-1 reached → plan done.**
 
 ---
 
-## Self-review notes (resolved inline)
+## Self-review (resolved inline)
 
-- **Spec coverage:** governed write path (design §3, rc3 §4.3) → S2; core ontology self-governance (design §1A, §4) → S4; pgRDF API corrections (design §6) → T-18/T-11; compose harness + per-file bind mounts (deploy spec §1, design §7) → S5; v3.7 ontology binding (design §1A) → T-21 (Provenance shape; more shapes pulled in the *next* plan as commands need them). NATS server/master (design §4/§5) is explicitly **out of scope** here — separate later plan, noted in the stage map.
-- **No placeholders:** every step has the literal SQL/Justfile/Dockerfile content and an exact run command + expected output.
-- **Type/name consistency:** `ckp.boot`, `ckp.bootstrap_kernel`, `ckp.load_kernel`, `ckp.validate`, `ckp.validate_against`, `ckp.core_shapes`, `ckp.seal`, `ckp.verify`, `ckp.config` keys `core_graph_id`/`kernel_graph_id`, GUC `ckp.project`/`ckp.identity_key`, graph IRIs `urn:ckp:core` / `urn:ckp:<project>/kernel/ck` — used identically across all tasks.
-- **Reverse-numbering:** T-31 (first) → T-1 (completion); the count is what the minimal decomposition produced, not a target.
+- **Spec coverage:** event-driven dispatch (your directive + dispatch contract D.1–D.5) → S2; pgCK-is-the-server (design §1A) → S3; governed seal offloaded to pgRDF (your "offload" directive, design §3/§6) → S4 + S5; v3.7 subject/affordance/envelope contract → T-13/T-12/T-8; FC.Thinker `trace_id` demux discipline → T-9; pgRDF API corrections (design §6) → T-27/T-25; compose harness + per-file bind mounts (deploy spec §1) → S5.
+- **No placeholders:** every step has literal SQL/Rust/Justfile/Dockerfile/shell + exact command + expected output. (T-10 step 1–2 describe the PUB-payload framing change and the SPI bridge shape concretely with the exact channel types and the exact `SELECT ckp.dispatch($1,$2::jsonb)` call; the engineer implements the manual byte-read against `tokio::io::AsyncReadExt` — this is the one genuinely non-trivial task and is deliberately a single focused unit.)
+- **Type/name consistency:** `ckp.boot`/`ckp.load_kernel`/`ckp.bootstrap_kernel`/`ckp.validate`/`ckp.seal`/`ckp.verify`/`ckp.affordances`/`ckp.dispatch`/`ckp.recompile_affordances`; GUCs `ckp.project`/`ckp.identity_key`; graph IRIs `urn:ckp:core`/`urn:ckp:<project>/kernel/ck`; subjects `input.demo.Hello.create`/`event.demo.Hello.created`/`result.Hello`; correlation `trace_id`/`tx-{uuid}`; Rust `crate::nats::{parser,router,server}`, `ClientMsg`, `Router`, feature `embedded-nats` — identical across all tasks.
+- **Reverse-numbering:** T-34 (first) → T-1 (completion); count is the natural decomposition.
+- **Interleaved model honored:** the vertical slice (S2) depends on the substrate (S5 seal, S3 server) but each grows minimally — the slice is the smallest end-to-end conversation, then T-8/T-5 grow dispatch + governance together.
