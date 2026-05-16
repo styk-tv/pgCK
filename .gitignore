@@ -8,3 +8,7 @@ Cargo.lock
 
 # reference symlinks (local-only, not part of the repo)
 /ref-*
+
+/compose/extensions/pgrdf/
+/compose/extensions/pgck/
+/compose/pg-data/

@@ -1,30 +1,13 @@
-# pgCK build — mirrors pgRDF's pgrx toolchain.
 set shell := ["bash", "-uc"]
+pgrdf_ver := "0.5.0"
+pg := "17"
+arch := "arm64"
 
-pg := "pg17"
-
-# Compile the extension.
-build:
-    cargo pgrx package --features {{pg}}
-
-# Install into a pgrx-managed PG (pgRDF must be installed in the same PG).
-install:
-    cargo pgrx install --features {{pg}} --release
-
-# Spin a pgrx test instance and load both extensions.
-run:
-    cargo pgrx run {{pg}} --features {{pg}} <<< "CREATE EXTENSION IF NOT EXISTS pgrdf; CREATE EXTENSION IF NOT EXISTS pgck;"
-
-# Unit + pg_test.
-test:
-    cargo pgrx test --features {{pg}}
-
-# Build the single-pod image (Postgres + pgrdf + age + pgck + embedded NATS).
-image:
-    docker build -f docker/Dockerfile -t pgck-rc3 .
-
-fmt:
-    cargo fmt
-
-lint:
-    cargo clippy --features {{pg}} -- -D warnings
+pgrdf-fetch:
+    mkdir -p compose/extensions/pgrdf
+    cd compose/extensions/pgrdf && \
+      gh release download "v{{pgrdf_ver}}" --repo styk-tv/pgRDF \
+        --pattern "pgrdf-{{pgrdf_ver}}-pg{{pg}}-glibc-{{arch}}.tar.gz" \
+        --pattern "SHA256SUMS" --clobber && \
+      grep "pg{{pg}}-glibc-{{arch}}" SHA256SUMS | sha256sum -c - && \
+      tar xzf "pgrdf-{{pgrdf_ver}}-pg{{pg}}-glibc-{{arch}}.tar.gz" --strip-components=1
