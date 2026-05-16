@@ -5,3 +5,6 @@ Cargo.lock
 .DS_Store
 /.pgrx
 *.swp
+
+# reference symlinks (local-only, not part of the repo)
+/ref-*
