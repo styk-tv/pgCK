@@ -219,7 +219,7 @@ Graph ids by convention: `urn:ckp:core` = 1, kernel CK graph = 2.
   `build-ext`, `compose-up`, `smoke`.
 - **CI (pgCK's own releases, later):** clone pgRDF `release.yml` — matrix `pg × arch` on
   `ubuntu-{22.04, 24.04-arm}`, `cargo pgrx package`, repack to
-  `pgck-<ver>-pg<PG>-glibc-<arch>.tar.gz` (lib/ + share/extension/ + LICENSE/NOTICE/
+  `pgck-<ver>-pg<PG>-glibc-<arch>.tar.gz` (lib/ + share/extension/ + LICENSE [MIT] +
   SHA256SUMS), publish to GitHub Releases. `ci.yml`: fmt + clippy + `cargo pgrx test`
   matrix. Toolchain: stable Rust, pgrx 0.16, PG17, `--no-default-features --features pg17`.
 
