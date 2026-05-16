@@ -69,11 +69,10 @@ $$;
 -- Loads `ttl` into a scratch graph, validates vs shapes_graph_id, returns conforms.
 CREATE OR REPLACE FUNCTION ckp.validate(ttl TEXT, shapes_graph_id INT)
 RETURNS BOOLEAN LANGUAGE plpgsql AS $$
-DECLARE
-  scratch_id INT := 9000 + (random()*900)::int;
-  report JSONB;
+DECLARE scratch_id INT := 9000 + (random()*900)::int; report JSONB;
 BEGIN
   PERFORM pgrdf.add_graph(scratch_id, format('urn:ckp:scratch:%s', scratch_id));
+  PERFORM pgrdf.clear_graph(scratch_id);
   PERFORM pgrdf.parse_turtle(ttl, scratch_id, 'urn:ckp:scratch#');
   report := pgrdf.validate(scratch_id, shapes_graph_id);
   PERFORM pgrdf.clear_graph(scratch_id);
