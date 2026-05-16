@@ -9,16 +9,30 @@ license = "Apache-2.0"
 crate-type = ["cdylib", "lib"]
 
 [features]
-default = ["pg17"]
+# No default feature — every invocation MUST pick a PG major explicitly
+# (cargo pgrx run pgN, --no-default-features --features pgN). Mirrors
+# pgRDF: pgrx's per-PG features are mutually exclusive, so a default
+# makes the wrong thing implicit.
+default = []
+pg14 = ["pgrx/pg14", "pgrx-tests/pg14"]
 pg15 = ["pgrx/pg15", "pgrx-tests/pg15"]
 pg16 = ["pgrx/pg16", "pgrx-tests/pg16"]
 pg17 = ["pgrx/pg17", "pgrx-tests/pg17"]
 pg_test = []
+# The embedded NATS Core server (hand-rolled, src/nats/). Gated the
+# same idiomatic way pgN forwards to pgrx/pgN. See
+# docs/superpowers/specs/2026-05-16-pgck-core-design.md §4.
+embedded-nats = ["dep:tokio"]
 
 [dependencies]
 pgrx = "=0.16.0"            # same major as pgRDF
-async-nats = "0.38"          # NATS client (connects to the embedded server)
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+# Upstream post-Envoy WSS-leg client only — NOT a server. The embedded
+# in-pod NATS server is the hand-rolled src/nats/ module (design §4).
+async-nats = "0.48"
+# Runtime for the embedded server's accept loop + the bgworker bridge.
+# Optional + gated by `embedded-nats`, mirroring pgRDF's forwarding-
+# feature idiom.
+tokio = { version = "1", features = ["rt", "net", "io-util", "sync", "time", "macros"], optional = true }
 serde_json = "1"
 sha2 = "0.10"
 ed25519-dalek = "2"          # replaces the HMAC stand-in in ckp.seal

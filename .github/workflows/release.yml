@@ -1,0 +1,115 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  CARGO_TERM_COLOR: always
+  PGRX_VERSION: "0.16"
+
+# contents:write — GitHub Release tarballs (pgRDF parity).
+# packages:write — push the pgCK extension as an OCI artifact to GHCR.
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ["14", "15", "16", "17"]
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-22.04' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-pgrx
+        with: { pg: "${{ matrix.pg }}" }
+
+      - name: Build extension package
+        run: cargo pgrx package --no-default-features --features pg${{ matrix.pg }} --pg-config /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
+
+      # SPEC.PGCK.DEPLOY.v0.1 §2 layout (pgRDF INSTALL-spec parity):
+      #   pgck-<ver>-pg<PG>-glibc-<arch>.tar.gz
+      #     ├── lib/pgck.so
+      #     ├── share/extension/pgck.control
+      #     ├── share/extension/pgck--<ver>.sql
+      #     ├── LICENSE
+      #     ├── NOTICE
+      #     └── SHA256SUMS
+      - name: Repack to INSTALL-spec layout
+        id: pack
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#v}"
+          PKG="target/release/pgck-pg${{ matrix.pg }}"
+          OUT="pgck-${VER}-pg${{ matrix.pg }}-glibc-${{ matrix.arch }}"
+          mkdir -p "${OUT}/lib" "${OUT}/share/extension"
+          cp "${PKG}/usr/lib/postgresql/${{ matrix.pg }}/lib/pgck.so"            "${OUT}/lib/"
+          cp "${PKG}/usr/share/postgresql/${{ matrix.pg }}/extension/"*.control  "${OUT}/share/extension/"
+          cp "${PKG}/usr/share/postgresql/${{ matrix.pg }}/extension/"*.sql      "${OUT}/share/extension/"
+          cp LICENSE "${OUT}/"
+          cp NOTICE  "${OUT}/"
+          ( cd "${OUT}" && find . -type f ! -name SHA256SUMS -print0 | xargs -0 sha256sum > SHA256SUMS )
+          tar czf "${OUT}.tar.gz" "${OUT}"
+          echo "tarball=${OUT}.tar.gz"  >> "$GITHUB_OUTPUT"
+          echo "dir=${OUT}"             >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pack.outputs.tarball }}
+          path: ${{ steps.pack.outputs.tarball }}
+
+      # --- Publish the extension as an OCI artifact to GHCR --------------
+      # Public, anonymous-pull. The deployment script resolves an exact
+      # (pg, arch) extension build with:
+      #   oras pull ghcr.io/styk-tv/pgck:<ver>-pg<PG>-<arch>
+      # Each tag is a single-platform OCI artifact whose layers are the
+      # pgck.so + control + sql (NOT a runnable image — a transport for
+      # the extension files, per SPEC.PGCK.DEPLOY.v0.1 §2).
+      - name: Install oras
+        uses: oras-project/setup-oras@v1
+
+      - name: Push extension OCI artifact to GHCR
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#v}"
+          DIR="${{ steps.pack.outputs.dir }}"
+          REPO="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/pgck"
+          TAG="${VER}-pg${{ matrix.pg }}-${{ matrix.arch }}"
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+          cd "${DIR}"
+          oras push "${REPO}:${TAG}" \
+            --artifact-type application/vnd.styk.pgck.extension.v1 \
+            --annotation "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --annotation "org.opencontainers.image.description=pgCK PostgreSQL extension (pg${{ matrix.pg }}, ${{ matrix.arch }}, glibc)" \
+            --annotation "org.opencontainers.image.licenses=Apache-2.0" \
+            --annotation "tech.conceptkernel.pgck.version=${VER}" \
+            --annotation "tech.conceptkernel.pgck.pg=${{ matrix.pg }}" \
+            --annotation "tech.conceptkernel.pgck.arch=${{ matrix.arch }}" \
+            lib/pgck.so:application/vnd.styk.pgck.so \
+            share/extension/pgck.control:application/vnd.styk.pgck.control \
+            share/extension/pgck--${VER}.sql:application/vnd.styk.pgck.sql
+
+  release:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts, merge-multiple: true }
+      - name: Generate aggregate SHA256SUMS
+        run: |
+          set -euo pipefail
+          cd artifacts
+          sha256sum pgck-*.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/pgck-*.tar.gz
+            artifacts/SHA256SUMS
+          body_path: RELEASE_NOTES.md
+          generate_release_notes: true

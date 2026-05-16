@@ -1,0 +1,52 @@
+name: setup-pgrx
+description: Install pgrx and a specific Postgres major (PGDG bookworm).
+inputs:
+  pg:
+    description: Postgres major version (14|15|16|17|18)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install PGDG Postgres ${{ inputs.pg }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update
+        sudo apt-get install -y curl ca-certificates gnupg lsb-release \
+          build-essential pkg-config libssl-dev libclang-dev
+        curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+          | sudo gpg --dearmor -o /usr/share/keyrings/postgresql-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/postgresql-archive-keyring.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+          | sudo tee /etc/apt/sources.list.d/pgdg.list
+        sudo apt-get update
+        # Both packages required: -server-dev-N provides pg_config and
+        # headers (`cargo pgrx package` needs these); postgresql-N
+        # provides the actual `initdb` binary that `cargo pgrx init`
+        # invokes when laying out the per-version $PGDATA. Without the
+        # runtime package init fails with `unable to execute:
+        # /usr/lib/postgresql/N/bin/initdb`.
+        sudo apt-get install -y \
+          postgresql-server-dev-${{ inputs.pg }} \
+          postgresql-${{ inputs.pg }}
+        # `cargo pgrx install` (called transitively by
+        # `cargo pgrx test`) writes the built extension to
+        # `pg_config --pkglibdir` and `pg_config --sharedir/extension`,
+        # both of which are root-owned on a PGDG install. Hand
+        # ownership over to the workflow runner so the rest of the
+        # tooling runs without sudo.
+        sudo chown -R "$USER" \
+          "/usr/lib/postgresql/${{ inputs.pg }}/lib" \
+          "/usr/share/postgresql/${{ inputs.pg }}/extension"
+
+    - name: Install cargo-pgrx
+      shell: bash
+      # PGRX_VERSION default matches the workspace pin in
+      # Cargo.toml (`pgrx = "0.16"`). The default fallback (0.17)
+      # diverges from the runtime version and ICEs at init time
+      # (see specs/ERRATA.v0.2.md E-006 for pgrx 0.17+ status).
+      run: cargo install cargo-pgrx --locked --version "^${PGRX_VERSION:-0.16}"
+
+    - name: cargo pgrx init
+      shell: bash
+      run: cargo pgrx init --pg${{ inputs.pg }} /usr/lib/postgresql/${{ inputs.pg }}/bin/pg_config

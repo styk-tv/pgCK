@@ -1,0 +1,7 @@
+pgCK — PostgreSQL Concept Kernel extension
+Copyright 2026 Peter Styk / conceptkernel.org
+
+This product includes software developed as part of the
+Concept Kernel Protocol (CKP). It composes pgRDF
+(https://github.com/styk-tv/pgRDF), distributed separately under
+the Apache License 2.0.
