@@ -1,4 +1,4 @@
-//! pgCK background worker — the NATS half (skeleton for v0.1.0).
+//! pgCK background worker — the NATS half (skeleton for v0.1.1).
 //!
 //! Per docs/specs/2026-05-16-pgck-core-design.md:
 //!
@@ -11,7 +11,7 @@
 //!     `BackgroundWorker::transaction(|| Spi::run("SELECT ckp.seal..."))`
 //!     per inbound message, bridged by an mpsc channel.
 //!
-//! v0.1.0 ships this as a quiet, fmt/clippy-clean skeleton so the
+//! v0.1.1 ships this as a quiet, fmt/clippy-clean skeleton so the
 //! distribution pipeline (GitHub Release + GHCR OCI artifact) is proven
 //! end-to-end. The server + bridge are filled in per the implementation
 //! plan; the governed write path (`ckp.seal`) it will call already works.
@@ -20,5 +20,5 @@
 /// No-op until the embedded NATS Core server and the affordance bridge
 /// are wired (core design §4, §5).
 pub fn tick() {
-    // intentionally empty for v0.1.0
+    // intentionally empty for v0.1.1
 }

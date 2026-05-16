@@ -21,6 +21,20 @@ build-ext:
     rm -rf compose/extensions/pgck/lib compose/extensions/pgck/share
     mkdir -p compose/extensions/pgck
     {{build}} run --rm -v "$PWD/compose/extensions/pgck:/export" pgck-builder:pg{{pg}}
+    # A warm BuildKit /work/target cache can retain stale per-version
+    # pgck--<old>.sql files (cargo pgrx package's *.sql cp glob copies
+    # them all). Keep only the current default_version's SQL so the
+    # compose per-file bind mount + CREATE EXTENSION resolve cleanly.
+    cd compose/extensions/pgck/share/extension && \
+      ver=$(grep -oE "default_version = '[^']+'" pgck.control | cut -d"'" -f2) && \
+      find . -name 'pgck--*.sql' ! -name "pgck--$ver.sql" -delete
+
+# Recreate the pod (down+up) — picks up compose.yml mount changes.
+compose-recreate:
+    # `podman compose restart` does NOT re-read volume/mount changes;
+    # use this after build-ext when a version bump renamed pgck--<ver>.sql.
+    cd compose && {{run}} compose down
+    cd compose && {{run}} compose up -d
 
 compose-up:
     cd compose && {{run}} compose up -d

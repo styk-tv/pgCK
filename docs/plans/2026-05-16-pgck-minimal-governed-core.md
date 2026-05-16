@@ -195,7 +195,7 @@ services:
       - ./extensions/pgrdf/share/extension/pgrdf--0.5.0.sql:/usr/share/postgresql/17/extension/pgrdf--0.5.0.sql:ro,z
       - ./extensions/pgck/lib/pgck.so:/usr/lib/postgresql/17/lib/pgck.so:ro,z
       - ./extensions/pgck/share/extension/pgck.control:/usr/share/postgresql/17/extension/pgck.control:ro,z
-      - ./extensions/pgck/share/extension/pgck--0.1.0.sql:/usr/share/postgresql/17/extension/pgck--0.1.0.sql:ro,z
+      - ./extensions/pgck/share/extension/pgck--0.1.1.sql:/usr/share/postgresql/17/extension/pgck--0.1.1.sql:ro,z
       - ../ontology:/ontology:ro,z
       - ../examples:/examples:ro,z
     healthcheck:
@@ -242,7 +242,7 @@ git commit -m "feat: re-add requires='pgrdf'; both extensions load in compose po
 
 ### Task T-29: `ckp.boot()` + `ckp.load_kernel()` — load core+kernel ontology
 
-**Files:** Modify `sql/pgck--0.1.0.sql`
+**Files:** Modify `sql/pgck--0.1.1.sql`
 
 - [ ] **Step 1: Add both procedures** (after `ckp.bootstrap_kernel`)
 ```sql
@@ -285,7 +285,7 @@ cd compose && podman compose exec postgres psql -U pgck -d pgck -tc "SELECT coun
 Expected: `4` (core shapes) then `1` (`:GreetingShape`).
 - [ ] **Step 4: Commit**
 ```bash
-git add sql/pgck--0.1.0.sql
+git add sql/pgck--0.1.1.sql
 git commit -m "feat: ckp.boot()+ckp.load_kernel() load core+kernel ontology into pgRDF"
 ```
 
@@ -317,7 +317,7 @@ git commit -m "chore: just smoke-s5 — pod + both extensions + ontology loaded"
 
 ### Task T-27: Fix `ckp.validate` — real pgRDF API
 
-**Files:** Modify `sql/pgck--0.1.0.sql`
+**Files:** Modify `sql/pgck--0.1.1.sql`
 
 - [ ] **Step 1: Replace the function body**
 ```sql
@@ -342,7 +342,7 @@ cd compose && podman compose exec postgres psql -U pgck -d pgck -tc "SELECT ckp.
 Expected: `t`.
 - [ ] **Step 4: Commit**
 ```bash
-git add sql/pgck--0.1.0.sql
+git add sql/pgck--0.1.1.sql
 git commit -m "fix: ckp.validate uses real pgRDF v0.5.0 API (2-arg validate, no broken sparql)"
 ```
 
@@ -370,7 +370,7 @@ git commit -m "test: ckp.validate rejects malformed / accepts well-formed ckp:Pr
 
 ### Task T-25: Fix `ckp.seal` kernel-shape lookup — 1-arg GRAPH-scoped sparql
 
-**Files:** Modify `sql/pgck--0.1.0.sql` (the `ckp.seal` required-prop block)
+**Files:** Modify `sql/pgck--0.1.1.sql` (the `ckp.seal` required-prop block)
 
 - [ ] **Step 1: Replace the broken 2-arg sparql block**
 ```sql
@@ -395,7 +395,7 @@ cd compose && podman compose exec postgres psql -U pgck -d pgck -tc "SELECT ckp.
 Expected: `ERROR: ckp.seal: body has no "type"`.
 - [ ] **Step 4: Commit**
 ```bash
-git add sql/pgck--0.1.0.sql
+git add sql/pgck--0.1.1.sql
 git commit -m "fix: ckp.seal kernel-shape lookup uses 1-arg GRAPH-scoped pgrdf.sparql"
 ```
 
@@ -802,7 +802,7 @@ git commit -m "chore: just smoke-s3 — embedded NATS server gate"
 
 ### Task T-13: `ckp.affordances()` — SPARQL-resolve affordance rows
 
-**Files:** Modify `sql/pgck--0.1.0.sql`; Create `sql/test/s2_affordances.sql`
+**Files:** Modify `sql/pgck--0.1.1.sql`; Create `sql/test/s2_affordances.sql`
 
 - [ ] **Step 1: Add the resolver**
 ```sql
@@ -833,13 +833,13 @@ FROM ckp.affordances('demo');
 - [ ] **Step 3: Rebuild+recreate+load; run** — Expected: `topic_ok|t`, `out_ok|t`.
 - [ ] **Step 4: Commit**
 ```bash
-git add sql/pgck--0.1.0.sql sql/test/s2_affordances.sql
+git add sql/pgck--0.1.1.sql sql/test/s2_affordances.sql
 git commit -m "feat: ckp.affordances() SPARQL-resolves inTopic/outTopic/inShape"
 ```
 
 ### Task T-12: `ckp.dispatch(subject, body_json)` — the 8-step cycle, in SQL
 
-**Files:** Modify `sql/pgck--0.1.0.sql`
+**Files:** Modify `sql/pgck--0.1.1.sql`
 
 - [ ] **Step 1: Add dispatch** (steps 4–7 of the v3.7 cycle; authn/authz upstream/seal-time per design §1A)
 ```sql
@@ -880,7 +880,7 @@ cd compose && podman compose exec postgres psql -U pgck -d pgck -tc \
 Expected: `created`.
 - [ ] **Step 4: Commit**
 ```bash
-git add sql/pgck--0.1.0.sql
+git add sql/pgck--0.1.1.sql
 git commit -m "feat: ckp.dispatch() — subject->affordance->seal->result envelope"
 ```
 
@@ -1035,7 +1035,7 @@ Run: watch `ci.yml` to `success` (fmt+clippy+test+nats-unit).
 
 ### Task T-5: `ckp.recompile_affordances()` — live reroute on ontology change
 
-**Files:** Modify `sql/pgck--0.1.0.sql`; Create `sql/test/s2_recompile.sql`
+**Files:** Modify `sql/pgck--0.1.1.sql`; Create `sql/test/s2_recompile.sql`
 
 - [ ] **Step 1: Add the function** (re-reads affordances; the server picks up new subjects because dispatch resolves per-message via `ckp.affordances()` — recompile just re-materialises + signals)
 ```sql
@@ -1061,7 +1061,7 @@ SELECT ckp.recompile_affordances('demo') = 1 AS one_affordance;
 - [ ] **Step 3: Rebuild+recreate+load; run** — Expected: `one_affordance|t`.
 - [ ] **Step 4: Commit**
 ```bash
-git add sql/pgck--0.1.0.sql sql/test/s2_recompile.sql
+git add sql/pgck--0.1.1.sql sql/test/s2_recompile.sql
 git commit -m "feat: ckp.recompile_affordances() — re-materialize + count (live reroute)"
 ```
 

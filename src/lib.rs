@@ -9,7 +9,7 @@
 //! ships as bootstrap SQL (PL/pgSQL) and works today. The Rust focus is the
 //! background worker: an embedded NATS Core server (hand-rolled, src/nats/,
 //! behind the `embedded-nats` feature) + the affordance compile loop. This
-//! v0.1.0 ships the worker as a quiet skeleton — the NATS half lands per
+//! v0.1.1 ships the worker as a quiet skeleton — the NATS half lands per
 //! docs/specs/2026-05-16-pgck-core-design.md.
 
 use pgrx::bgworkers::*;
@@ -21,7 +21,7 @@ pgrx::pg_module_magic!();
 mod bgworker;
 
 // Ship the working governed-write path as the extension's bootstrap SQL.
-extension_sql_file!("../sql/pgck--0.1.0.sql", name = "pgck_bootstrap");
+extension_sql_file!("../sql/pgck--0.1.1.sql", name = "pgck_bootstrap");
 
 /// Registered at load time (shared_preload_libraries = 'pgck').
 /// Spawns the pgCK background worker.
@@ -35,7 +35,7 @@ pub extern "C-unwind" fn _PG_init() {
         .load();
 }
 
-/// Background worker entrypoint. Quiet skeleton for v0.1.0: it parks on the
+/// Background worker entrypoint. Quiet skeleton for v0.1.1: it parks on the
 /// latch and exits cleanly on SIGTERM. The embedded NATS Core server + the
 /// affordance bridge loop are added per the core design (see `bgworker`).
 #[no_mangle]
@@ -55,7 +55,7 @@ pub extern "C-unwind" fn pgck_bridge_main(_arg: pg_sys::Datum) {
 /// `SELECT pgck_version();`
 #[pg_extern]
 fn pgck_version() -> &'static str {
-    "pgck 0.1.0 (rc3)"
+    "pgck 0.1.1 (rc3)"
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -65,7 +65,7 @@ mod tests {
 
     #[pg_test]
     fn version_present() {
-        assert_eq!(crate::pgck_version(), "pgck 0.1.0 (rc3)");
+        assert_eq!(crate::pgck_version(), "pgck 0.1.1 (rc3)");
     }
 }
 
