@@ -38,6 +38,33 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE PROCEDURE ckp.boot(p_core_ttl_path TEXT DEFAULT '/ontology/core.ttl')
+LANGUAGE plpgsql AS $$
+DECLARE v_core INT := (SELECT v::int FROM ckp.config WHERE k='core_graph_id');
+        v_ttl  TEXT;
+BEGIN
+  PERFORM pgrdf.add_graph(v_core, 'urn:ckp:core');
+  PERFORM pgrdf.clear_graph(v_core);
+  v_ttl := pg_read_file(p_core_ttl_path);
+  PERFORM pgrdf.parse_turtle(v_ttl, v_core, 'urn:ckp:core#');
+  PERFORM pgrdf.materialize(v_core);
+END;
+$$;
+
+CREATE OR REPLACE PROCEDURE ckp.load_kernel(p_path TEXT, p_project TEXT DEFAULT 'demo')
+LANGUAGE plpgsql AS $$
+DECLARE v_k INT := (SELECT v::int FROM ckp.config WHERE k='kernel_graph_id');
+        v_iri TEXT := format('urn:ckp:%s/kernel/ck', p_project);
+        v_ttl TEXT;
+BEGIN
+  PERFORM pgrdf.add_graph(v_k, v_iri);
+  PERFORM pgrdf.clear_graph(v_k);
+  v_ttl := pg_read_file(p_path);
+  PERFORM pgrdf.parse_turtle(v_ttl, v_k, 'urn:ckp:kernel#');
+  PERFORM pgrdf.materialize(v_k);
+END;
+$$;
+
 -- ---- SHACL gate: validate arbitrary turtle against a shapes graph ----
 -- Loads `ttl` into a scratch graph, validates vs shapes_graph_id, returns conforms.
 CREATE OR REPLACE FUNCTION ckp.validate(ttl TEXT, shapes_graph_id INT)
