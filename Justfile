@@ -28,3 +28,10 @@ compose-down:
     cd compose && {{run}} compose down
 psql:
     cd compose && {{run}} compose exec postgres psql -U pgck -d pgck
+
+smoke-s5: pgrdf-fetch build-ext compose-up
+    until cd compose && {{run}} compose exec postgres pg_isready -U pgck; do sleep 2; done
+    cd compose && {{run}} compose exec postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 \
+      -c "CREATE EXTENSION IF NOT EXISTS pgrdf; DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck;" \
+      -c "CALL ckp.boot(); CALL ckp.load_kernel('/examples/example.kernel.ttl','demo');" \
+      -tc "SELECT pgck_version();"
