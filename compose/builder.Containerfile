@@ -25,7 +25,7 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,target=/work/target,sharing=locked \
-    cargo pgrx package --no-default-features --features pg${PG_MAJOR} \
+    cargo pgrx package --no-default-features --features pg${PG_MAJOR},embedded-nats \
       --pg-config "$(which pg_config)" && \
     mkdir -p /artifacts/lib /artifacts/share/extension && \
     cp /work/target/release/pgck-pg${PG_MAJOR}/usr/lib/postgresql/${PG_MAJOR}/lib/pgck.so /artifacts/lib/ && \

@@ -4,6 +4,7 @@ pg := "17"
 arch := "arm64"
 build := env_var_or_default("PGCK_BUILD_RUNTIME", "podman")
 run   := env_var_or_default("PGCK_RUN_RUNTIME", "podman")
+compose_project := env_var_or_default("PGCK_COMPOSE_PROJECT", "pgck")
 
 pgrdf-fetch:
     mkdir -p compose/extensions/pgrdf
@@ -33,19 +34,28 @@ build-ext:
 compose-recreate:
     # `podman compose restart` does NOT re-read volume/mount changes;
     # use this after build-ext when a version bump renamed pgck--<ver>.sql.
-    cd compose && {{run}} compose down
-    cd compose && {{run}} compose up -d
+    cd compose && {{run}} compose -p {{compose_project}} down
+    cd compose && {{run}} compose -p {{compose_project}} up -d
 
 compose-up:
-    cd compose && {{run}} compose up -d
+    cd compose && {{run}} compose -p {{compose_project}} up -d
 compose-down:
-    cd compose && {{run}} compose down
+    cd compose && {{run}} compose -p {{compose_project}} down
 psql:
-    cd compose && {{run}} compose exec postgres psql -U pgck -d pgck
+    cd compose && {{run}} compose -p {{compose_project}} exec postgres psql -U pgck -d pgck
+
+smoke-s4: pgrdf-fetch build-ext compose-up
+    until cd compose && {{run}} compose -p {{compose_project}} exec postgres pg_isready -U pgck; do sleep 2; done
+    cd compose && {{run}} compose -p {{compose_project}} exec postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 \
+      -c "DROP EXTENSION IF EXISTS pgck CASCADE; CREATE EXTENSION pgck CASCADE;"
+    cd compose && {{run}} compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s4_validate.sql
+    cd compose && {{run}} compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s4_seal_ok.sql
+    cd compose && {{run}} compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s4_seal_reject.sql
+    cd compose && {{run}} compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s4_verify.sql
 
 smoke-s5: pgrdf-fetch build-ext compose-up
-    until cd compose && {{run}} compose exec postgres pg_isready -U pgck; do sleep 2; done
-    cd compose && {{run}} compose exec postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 \
-      -c "CREATE EXTENSION IF NOT EXISTS pgrdf; DROP EXTENSION IF EXISTS pgck; CREATE EXTENSION pgck;" \
+    until cd compose && {{run}} compose -p {{compose_project}} exec postgres pg_isready -U pgck; do sleep 2; done
+    cd compose && {{run}} compose -p {{compose_project}} exec postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 \
+      -c "CREATE EXTENSION IF NOT EXISTS pgrdf CASCADE; DROP EXTENSION IF EXISTS pgck CASCADE; CREATE EXTENSION pgck CASCADE;" \
       -c "CALL ckp.boot(); CALL ckp.load_kernel('/examples/example.kernel.ttl','demo');" \
       -tc "SELECT pgck_version();"
