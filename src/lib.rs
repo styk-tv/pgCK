@@ -19,6 +19,8 @@ use std::time::Duration;
 pgrx::pg_module_magic!();
 
 mod bgworker;
+#[cfg(feature = "embedded-nats")]
+mod nats;
 
 // Ship the working governed-write path as the extension's bootstrap SQL.
 extension_sql_file!("../sql/pgck--0.1.1.sql", name = "pgck_bootstrap");
