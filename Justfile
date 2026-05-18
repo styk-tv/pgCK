@@ -44,8 +44,8 @@ compose-down:
 psql:
     cd compose && {{run}} compose -p {{compose_project}} exec postgres psql -U pgck -d pgck
 
-smoke-s4: pgrdf-fetch build-ext compose-up
-    until cd compose && {{run}} compose -p {{compose_project}} exec postgres pg_isready -U pgck; do sleep 2; done
+smoke-s4: pgrdf-fetch build-ext compose-recreate
+    until (cd compose && {{run}} compose -p {{compose_project}} exec postgres pg_isready -U pgck); do sleep 2; done
     cd compose && {{run}} compose -p {{compose_project}} exec postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 \
       -c "DROP EXTENSION IF EXISTS pgck CASCADE; CREATE EXTENSION pgck CASCADE;"
     cd compose && {{run}} compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s4_validate.sql
@@ -53,8 +53,8 @@ smoke-s4: pgrdf-fetch build-ext compose-up
     cd compose && {{run}} compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s4_seal_reject.sql
     cd compose && {{run}} compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s4_verify.sql
 
-smoke-s5: pgrdf-fetch build-ext compose-up
-    until cd compose && {{run}} compose -p {{compose_project}} exec postgres pg_isready -U pgck; do sleep 2; done
+smoke-s5: pgrdf-fetch build-ext compose-recreate
+    until (cd compose && {{run}} compose -p {{compose_project}} exec postgres pg_isready -U pgck); do sleep 2; done
     cd compose && {{run}} compose -p {{compose_project}} exec postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 \
       -c "CREATE EXTENSION IF NOT EXISTS pgrdf CASCADE; DROP EXTENSION IF EXISTS pgck CASCADE; CREATE EXTENSION pgck CASCADE;" \
       -c "CALL ckp.boot(); CALL ckp.load_kernel('/examples/example.kernel.ttl','demo');" \

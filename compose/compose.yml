@@ -1,7 +1,8 @@
+name: pgck
+
 services:
   postgres:
     image: docker.io/library/postgres:17.4-bookworm
-    container_name: pgck-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-pgck}
