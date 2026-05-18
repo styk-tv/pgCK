@@ -18,6 +18,7 @@ pub enum ClientMsg {
     Pub {
         subject: String,
         reply: Option<String>,
+        payload_len: usize,
         payload: Vec<u8>,
     },
 }
@@ -26,54 +27,66 @@ pub enum ClientMsg {
 /// caller after the control line has been parsed.
 pub fn parse_line(line: &str) -> Option<ClientMsg> {
     let mut it = line.split_whitespace();
+    let verb = it.next()?;
+    let args: Vec<_> = it.collect();
 
-    match it.next()?.to_ascii_uppercase().as_str() {
-        "PING" => Some(ClientMsg::Ping),
-        "PONG" => Some(ClientMsg::Pong),
-        "CONNECT" => Some(ClientMsg::Connect(line[7..].trim().to_string())),
-        "SUB" => {
-            let subject = it.next()?.to_string();
-            let a = it.next()?;
-            let b = it.next();
-
-            match b {
-                Some(sid) => Some(ClientMsg::Sub {
-                    subject,
-                    queue: Some(a.to_string()),
-                    sid: sid.to_string(),
-                }),
-                None => Some(ClientMsg::Sub {
-                    subject,
-                    queue: None,
-                    sid: a.to_string(),
-                }),
-            }
-        }
-        "UNSUB" => {
-            let sid = it.next()?.to_string();
-            let max = it.next().and_then(|s| s.parse().ok());
-
-            Some(ClientMsg::Unsub { sid, max })
-        }
-        "PUB" => {
-            let subject = it.next()?.to_string();
-            let parts: Vec<_> = it.collect();
-            let (reply, count) = match parts.as_slice() {
-                [count] => (None, *count),
-                [reply, count] => (Some((*reply).to_string()), *count),
-                _ => return None,
-            };
-
-            let _payload_len: usize = count.parse().ok()?;
-
-            Some(ClientMsg::Pub {
-                subject,
-                reply,
+    match verb.to_ascii_uppercase().as_str() {
+        "PING" if args.is_empty() => Some(ClientMsg::Ping),
+        "PONG" if args.is_empty() => Some(ClientMsg::Pong),
+        "CONNECT" => parse_connect(line),
+        "SUB" => match args.as_slice() {
+            [subject, sid] => Some(ClientMsg::Sub {
+                subject: (*subject).to_string(),
+                queue: None,
+                sid: (*sid).to_string(),
+            }),
+            [subject, queue, sid] => Some(ClientMsg::Sub {
+                subject: (*subject).to_string(),
+                queue: Some((*queue).to_string()),
+                sid: (*sid).to_string(),
+            }),
+            _ => None,
+        },
+        "UNSUB" => match args.as_slice() {
+            [sid] => Some(ClientMsg::Unsub {
+                sid: (*sid).to_string(),
+                max: None,
+            }),
+            [sid, max] => Some(ClientMsg::Unsub {
+                sid: (*sid).to_string(),
+                max: Some(max.parse().ok()?),
+            }),
+            _ => None,
+        },
+        "PUB" => match args.as_slice() {
+            [subject, payload_len] => Some(ClientMsg::Pub {
+                subject: (*subject).to_string(),
+                reply: None,
+                payload_len: payload_len.parse().ok()?,
                 payload: Vec::new(),
-            })
-        }
+            }),
+            [subject, reply, payload_len] => Some(ClientMsg::Pub {
+                subject: (*subject).to_string(),
+                reply: Some((*reply).to_string()),
+                payload_len: payload_len.parse().ok()?,
+                payload: Vec::new(),
+            }),
+            _ => None,
+        },
         _ => None,
     }
+}
+
+fn parse_connect(line: &str) -> Option<ClientMsg> {
+    let trimmed = line.trim_start();
+    let verb_end = trimmed.find(char::is_whitespace)?;
+    let remainder = trimmed[verb_end..].trim();
+
+    if remainder.is_empty() {
+        return None;
+    }
+
+    Some(ClientMsg::Connect(remainder.to_string()))
 }
 
 #[cfg(test)]
@@ -98,14 +111,73 @@ mod tests {
     }
 
     #[test]
+    fn sub_with_queue() {
+        assert_eq!(
+            parse_line("SUB input.demo.Hello.create workers 1"),
+            Some(ClientMsg::Sub {
+                subject: "input.demo.Hello.create".into(),
+                queue: Some("workers".into()),
+                sid: "1".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn sub_rejects_extra_tokens() {
+        assert_eq!(parse_line("SUB a workers 1 extra"), None);
+    }
+
+    #[test]
     fn pub_with_reply() {
         assert_eq!(
             parse_line("PUB a.b _INBOX.1 5"),
             Some(ClientMsg::Pub {
                 subject: "a.b".into(),
                 reply: Some("_INBOX.1".into()),
+                payload_len: 5,
                 payload: vec![],
             })
         );
+    }
+
+    #[test]
+    fn pub_retains_payload_len() {
+        assert_eq!(
+            parse_line("PUB a.b 6"),
+            Some(ClientMsg::Pub {
+                subject: "a.b".into(),
+                reply: None,
+                payload_len: 6,
+                payload: vec![],
+            })
+        );
+    }
+
+    #[test]
+    fn unsub_rejects_invalid_max() {
+        assert_eq!(parse_line("UNSUB 1 nope"), None);
+    }
+
+    #[test]
+    fn ping_rejects_trailing_tokens() {
+        assert_eq!(parse_line("PING junk"), None);
+    }
+
+    #[test]
+    fn pong_rejects_trailing_tokens() {
+        assert_eq!(parse_line("PONG junk"), None);
+    }
+
+    #[test]
+    fn connect_parses_remainder_without_magic_slice() {
+        assert_eq!(
+            parse_line("  CONNECT {\"verbose\": false}"),
+            Some(ClientMsg::Connect("{\"verbose\": false}".into()))
+        );
+    }
+
+    #[test]
+    fn connect_rejects_missing_remainder() {
+        assert_eq!(parse_line("CONNECT"), None);
     }
 }
