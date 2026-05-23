@@ -11,7 +11,7 @@ services:
     command: [postgres, -c, "shared_preload_libraries=pgrdf,pgck"]
     ports: ["${POSTGRES_PORT:-5432}:5432", "${NATS_PORT:-4222}:4222"]
     volumes:
-      - ./pg-data:/var/lib/postgresql/data:z
+      - ${PGDATA_MOUNT:-./pg-data:/var/lib/postgresql/data:z}
       - ./extensions/pgrdf/lib/pgrdf.so:/usr/lib/postgresql/17/lib/pgrdf.so:ro,z
       - ./extensions/pgrdf/share/extension/pgrdf.control:/usr/share/postgresql/17/extension/pgrdf.control:ro,z
       - ./extensions/pgrdf/share/extension/pgrdf--0.5.0.sql:/usr/share/postgresql/17/extension/pgrdf--0.5.0.sql:ro,z
@@ -25,3 +25,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+volumes:
+  pgdata:

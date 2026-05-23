@@ -11,14 +11,15 @@
 
 pgCK clones pgRDF's process verbatim: a stock `postgres:17.4-bookworm` pod that is
 **never rebuilt**, into which the pgRDF GitHub-release artifact and the locally-built
-pgCK artifact are dropped via per-file bind mounts, socket-wired to a NATS sidecar
-(dev) that is replaced by an in-`.so` embedded NATS Core server (shipped).
+pgCK artifact are dropped via per-file bind mounts, with the raw NATS Core listener
+now embedded directly in `pgck.so` and exposed from the Postgres container on `:4222`.
 
 ## 1. The deployment unit
 
-The deployable unit is a **pod**, not an image. Locally it is a `podman compose`
-project; in production it is an Azure Container App with the same container set. The
-pod's Postgres container is unmodified upstream `postgres:17.4-bookworm`.
+The deployable unit is a **pod**, not an image. Locally it is a `docker compose`
+project run against the `colima` Docker context; in production it is an Azure
+Container App with the same container set. The pod's Postgres container is unmodified
+upstream `postgres:17.4-bookworm`.
 
 ```
 pod
@@ -29,7 +30,7 @@ pod
 │         compose/extensions/pgck/lib/pgck.so            → /usr/lib/postgresql/17/lib/pgck.so
 │         compose/extensions/pgck/share/extension/*      → /usr/share/postgresql/17/extension/
 │         ontology/core.ttl, examples/*.ttl              → /fixtures (read-only)
-└── nats:2.12                     DEV ONLY — retired once src/nats/ embedded server ships
+│     ⇇ port 4222 exposed from the embedded NATS listener hosted by pgCK
 ```
 
 **Hard rule:** per-file bind mounts only. A directory mount over
@@ -42,16 +43,15 @@ read-only, beside the stock extensions.
 | Artifact | Origin | Mechanism | Rebuilt when |
 |---|---|---|---|
 | `pgrdf.so` / `.control` / `pgrdf--<ver>.sql` | **GitHub release** `styk-tv/pgRDF` | `gh release download v0.5.0 --repo styk-tv/pgRDF` → `pgrdf-0.5.0-pg17-glibc-arm64.tar.gz` → unpack (v0.5.0 final pending; `v0.5.0-rc1` / v0.4.6 fallback) | only on a pgRDF version bump (manual) |
-| `pgck.so` / `pgck.control` / `pgck--0.1.0.sql` | **this repo** | `compose/builder.Containerfile` (podman) → exports to `compose/extensions/pgck/` | on any pgCK source change |
+| `pgck.so` / `pgck.control` / `pgck--0.1.1.sql` | **this repo** | `compose/builder.Containerfile` (docker on Colima) → `cargo pgrx package --no-default-features --features pg17,embedded-nats` → exports to `compose/extensions/pgck/` | on any pgCK source change |
 | `postgres:17.4-bookworm` | Docker Hub | pulled, unmodified | never |
-| `nats:2.12` (dev) | Docker Hub | pulled, unmodified | never; removed at design step 5 |
 
 pgCK is **never built on macOS**. The builder is a linux/glibc container; the host
-only orchestrates podman and holds the exported artifacts.
+only orchestrates Docker-on-Colima and holds the exported artifacts.
 
 ## 3. Arch
 
-Local host is arm64 macOS; podman runs arm64 linux containers natively. Use the
+Local host is arm64 macOS; Colima runs arm64 linux containers natively. Use the
 **arm64** pgRDF release asset (`pgrdf-0.4.6-pg17-glibc-arm64.tar.gz`) and build pgCK
 arm64. pgCK's own release CI (clone of pgRDF `release.yml`) produces the full
 `pg{14,15,16,17} × {amd64,arm64}` matrix for downstream/Azure (Azure Container Apps =
@@ -62,11 +62,12 @@ amd64).
 | Recipe | Does | Runtime |
 |---|---|---|
 | `just pgrdf-fetch` | `gh release download` pgRDF v0.5.0 (target), verify SHA256SUMS, unpack into `compose/extensions/pgrdf/` | host (`gh`) |
-| `just build-ext` | podman build `compose/builder.Containerfile`; export `pgck.{so,control,sql}` to `compose/extensions/pgck/` | podman |
-| `just compose-up` / `compose-down` | boot / stop the pod (PG + nats dev sidecar) | podman compose |
-| `just smoke` | `pgrdf-fetch` + `build-ext` + `compose-up`; then `CREATE EXTENSION pgrdf; CREATE EXTENSION pgck;` + governed-write + NATS round-trip assertions | podman compose + psql |
+| `just build-ext` | docker build `compose/builder.Containerfile`; export `pgck.{so,control,sql}` to `compose/extensions/pgck/` | docker on Colima |
+| `just compose-up` / `compose-down` / `compose-recreate` | boot / stop / fully recreate the Postgres-only pod | docker compose on Colima |
+| `just smoke-s4` | `pgrdf-fetch` + `build-ext` + `compose-recreate`; then `CREATE EXTENSION pgck CASCADE;` + governed-write assertions | docker compose on Colima + psql |
+| `just smoke-s3` | `smoke-s4`; then probe the embedded `:4222` banner and run a raw `nats sub` / `nats pub` round-trip | docker compose on Colima + `nc` + `nats` |
 
-Iteration loop: edit pgCK → `just build-ext` → `podman compose restart postgres`
+Iteration loop: edit pgCK → `just build-ext` → `docker compose restart postgres`
 (or `compose-down`/`compose-up` for a clean cluster). The Postgres image is never
 rebuilt; only the bind-mounted `.so` changes.
 
@@ -81,18 +82,18 @@ rebuilt; only the bind-mounted `.so` changes.
    `pgrdf.materialize(2)`.
 5. `CALL ckp.bootstrap_kernel();` creates `instances` / `ledger` / `proof` (local
    tables now; `postgres_fdw` → Azure later, call sites unchanged).
-6. bgworker connects to NATS (dev sidecar `localhost:4222` now; embedded `:4222`
-   listener later), SPARQL-enumerates affordances, subscribes; marks ready.
+6. bgworker starts the embedded NATS listener on `:4222`; the governed SPI dispatch
+   bridge, affordance subscriptions, and WSS client attach later.
 
 ## 6. Dev → prod parity
 
-| Concern | Local (podman compose) | Production (Azure Container Apps) |
+| Concern | Local (docker compose on Colima) | Production (Azure Container Apps) |
 |---|---|---|
 | Pod | compose project | Container App, multi-container |
 | Postgres | `postgres:17.4-bookworm`, bind mounts | same image; artifacts via init container / volume |
 | pgRDF artifact | gh release, arm64 | gh release, amd64 |
 | pgCK artifact | builder container, arm64 | release CI, amd64 |
-| NATS | sidecar (dev) → embedded in `.so` (shipped) | embedded in `.so`; upstream WSS↔NATS = separate component, Envoy SecurityPolicy in front |
+| NATS | embedded in `.so`; raw `:4222` listener proven by `smoke-s3` | embedded in `.so`; upstream WSS↔NATS = separate component, Envoy SecurityPolicy in front |
 | Secrets | none (local tables) | `/secrets/azure.conn` mount; `postgres_fdw` → Azure-managed PG |
 
 The topology is identical; only artifact arch and the durable data plane (local

@@ -24,10 +24,10 @@ scaffold:
 
 | Hydrated scaffold assumed | This design |
 |---|---|
-| `nats-server` spawned as a child process (`std::process::Command`) | **NATS embedded as a hand-rolled Core server compiled into `pgck.so`**, feature-gated like `pg17`; a stock `nats-server` sidecar is used **for the dev loop only** |
+| `nats-server` spawned as a child process (`std::process::Command`) | **NATS embedded as a hand-rolled Core server compiled into `pgck.so`**, feature-gated like `pg17` and hosted directly by the bgworker; no separate local sidecar broker |
 | Custom Docker image built per change; extension named `conceptkernel` | **Stock `postgres:17.4-bookworm`, never rebuilt**; per-file bind mounts; extension named `pgck` |
 | pgRDF built from source | pgRDF **consumed from its GitHub release** (target `pgrdf-0.5.0-pg17-glibc-arm64.tar.gz`; v0.5.0 final pending, `v0.5.0-rc1` available, v0.4.6 is the last stable fallback); never built here |
-| Build on macOS | **Never built on macOS.** pgCK clones pgRDF's local podman builder + GitHub Actions release process verbatim |
+| Build on macOS | **Never built on macOS.** pgCK uses a Linux builder container locally via Docker on Colima, plus a GitHub Actions release process |
 
 ## 1A. Concept Kernel specification binding (authoritative)
 
@@ -62,27 +62,26 @@ durability realised as the Postgres seal-txn, not JetStream); `input.` / `result
 fan-out, ephemeral). Non-normative-in-v3.7: `stream.*` (deferred chapter — optional);
 back-pressure (acknowledged 3.7 gap — pgCK's bounded channel is net-new).
 
-## 2. Topology — Azure Container Apps sidecar, podman-emulated
+## 2. Topology — Azure Container App pod, docker-compose-on-Colima emulated
 
-One pod, multiple containers, socket-wired. Identical shape locally (podman compose)
-and in production (Azure Container Apps):
+One pod, socket-wired. In the local S3 loop the compose harness is **Postgres only**
+because the raw NATS listener now runs inside `pgck.so`; in production Azure still has
+the upstream WSS gateway/Envoy containers in front of the database pod.
 
 ```
-POD (podman compose locally ≅ Azure Container App in prod)
+POD (docker compose on Colima locally; Azure Container App in prod)
 ┌────────────────────────────────────────────────────────────────────┐
 │ container: postgres:17.4-bookworm   (stock, NEVER rebuilt)           │
 │   shared_preload_libraries = pgrdf,pgck                              │
 │   per-file :ro bind mounts (host compose/extensions/{pgrdf,pgck}/):  │
 │     pgrdf.so / pgrdf.control / pgrdf--<ver>.sql  ← gh release v0.5.0 │
-│     pgck.so  / pgck.control  / pgck--0.1.0.sql   ← pgck builder cntr │
+│     pgck.so  / pgck.control  / pgck--0.1.1.sql   ← pgck builder cntr │
 │   DATA: Postgres JSONB instances / ledger / proof (ontology-typed)   │
 │                                                                      │
 │   pgck bgworker = THE NATS SERVER (embedded in pgck.so) + client     │
 │     · web/user class  ── NATS-WSS from gateway (nats.ws) ──▶ :443/ws  │
 │     · concept-kernel   ── direct native NATS ──▶ :4222               │
 │     · queue/sync/security/events — pgCK is master of all of it       │
-│ container: nats:2.12   (DEV SIDECAR ONLY, :4222)                     │
-│   dev loop only; retired once the embedded server (src/nats/) lands  │
 └──────────────────────────────────────────────────────────────────────┘
    Envoy SecurityPolicy (TLS + OIDC-JWT verify) sits UPSTREAM of the
    WSS ingress — authentication only. pgCK trusts the post-Envoy
@@ -91,8 +90,9 @@ POD (podman compose locally ≅ Azure Container App in prod)
 
 Invariants:
 
-- **No VM** (no Colima), **no macOS build**, **no runtime-container rebuild**. Iterating
-  pgCK rebuilds only `pgck.so` in a throwaway builder container, then bounces Postgres.
+- **No host-native build**, **no runtime-container rebuild**. Iterating pgCK rebuilds
+  only `pgck.so` in a throwaway Linux builder container running on Colima, then
+  bounces Postgres.
 - **Per-file bind mounts only** — never a directory mount over `$sharedir/extension`
   (that shadows `plpgsql.control` and crash-loops `initdb` on a fresh data dir; this is
   a documented pgRDF failure mode).
@@ -115,13 +115,13 @@ Each unit has one purpose, a defined interface, and is independently testable.
 |---|---|---|---|
 | pgRDF `.so` | RDF graphs, SPARQL, SHACL, OWL2RL | `pgrdf.*` SQL | **gh release download** (not built) |
 | `ontology/core.ttl` | self-governing CKP shapes (Kernel/Organ/Affordance/LedgerEntry/Proof/Provenance) | loaded into pgRDF graph 1 at bring-up | ships in pgCK repo |
-| Governed core `sql/pgck--0.1.0.sql` | validate → instance → ledger → proof, atomic, core-shape-checked | `ckp.bootstrap_kernel` / `ckp.validate` / `ckp.seal` / `ckp.verify` | PL/pgSQL via `extension_sql_file!`; **pgRDF API defects fixed** |
+| Governed core `sql/pgck--0.1.1.sql` | validate → instance → ledger → proof, atomic, core-shape-checked | `ckp.bootstrap_kernel` / `ckp.validate` / `ckp.seal` / `ckp.verify` | PL/pgSQL via `extension_sql_file!`; **pgRDF API defects fixed** |
 | Affordance resolver (SQL) | SPARQL the kernel CK graph → topic/shape/out-topic rows | `ckp.affordances()` | PL/pgSQL over pgRDF graph 2 |
-| `compose/builder.Containerfile` | builds `pgck.so` + control + sql for linux glibc | exports to `compose/extensions/pgck/` | podman, cloned from pgRDF |
-| `compose/compose.yml` | the pod: PG + nats dev sidecar + per-file bind mounts | `podman compose up` | cloned from pgRDF |
-| `Justfile` | `build-ext` / `compose-up` / `smoke` / `pgrdf-fetch` | task surface | cloned from pgRDF idiom |
-| `src/nats/` (`parser.rs` / `router.rs` / `server.rs`) | the embedded NATS Core **server** pgCK *is* — accepts the web/user (WSS) and concept-kernel (direct) classes; pub/sub/req-reply/wildcards/queue groups | binds `:4222` + WSS; hand-rolled, feature `embedded-nats` | later phase |
-| `src/bgworker.rs` | **server host**: owns the embedded NATS server lifecycle + the single-threaded queue drain → SPI `ckp.seal` → publish; affordance recompile | tokio thread ↔ bounded mpsc ↔ SPI main thread | repurposed (not a "client bridge"); `Command::spawn` removed |
+| `compose/builder.Containerfile` | builds `pgck.so` + control + sql for linux glibc | exports to `compose/extensions/pgck/` | docker on Colima |
+| `compose/compose.yml` | the local pod: PG + per-file bind mounts; `4222` exposed from Postgres because the listener is embedded | `docker compose up` on Colima | cloned from pgRDF, reconciled for S3 |
+| `Justfile` | `build-ext` / `compose-up` / `compose-recreate` / `smoke-s4` / `smoke-s3` / `pgrdf-fetch` | task surface | cloned from pgRDF idiom |
+| `src/nats/` (`parser.rs` / `router.rs` / `server.rs`) | the embedded NATS Core **server** pgCK *is* — today the raw TCP `:4222` listener with pub/sub and wildcards; WSS later | binds `:4222`; hand-rolled, feature `embedded-nats` | **realized in S3** |
+| `src/bgworker.rs` | **server host**: owns the embedded NATS server lifecycle; later it also owns the single-threaded queue drain → SPI `ckp.seal` → publish | tokio thread ↔ bounded mpsc ↔ SPI main thread | repurposed (not a "client bridge"); `Command::spawn` removed |
 | pgCK `release.yml` | pgCK's own GH-release matrix (pg × arch) | tag-triggered | clone of pgRDF `release.yml`; later |
 
 ## 4. The embedded NATS server (shipped end-state)
@@ -176,8 +176,8 @@ inside `BackgroundWorker::transaction(|| ...)`. Therefore:
 
 - A **dedicated `std::thread`** (spawned once, `OnceLock`-guarded, hosted by
   `bgworker.rs`) owns a tokio current-thread runtime + **the embedded NATS server's
-  listeners** (`:4222` native + the WSS listener; a stock `nats-server` dev sidecar
-  stands in until `src/nats/` lands). It never calls SPI.
+  listeners**. S3 ships the raw native `:4222` listener; the WSS listener is deferred.
+  It never calls SPI.
 - The **main bgworker thread** keeps `wait_latch` / `tick` / `recompile_affordances`
   and, per inbound message drained from a **bounded** `mpsc` channel (the bounded
   channel is the DB-protecting back-pressure point — net-new vs v3.7), runs
@@ -188,6 +188,7 @@ inside `BackgroundWorker::transaction(|| ...)`. Therefore:
   affordance's action, and the sovereign write boundary; non-conformance aborts the
   transaction. Authentication is already done upstream at Envoy.
 - Results flow back over the channel to the server thread, published on `ckp:outTopic`.
+- That bridge is still deferred; S3 only hosts the listener.
 - SIGTERM cleanly drops the runtime/listeners; SIGHUP triggers `recompile_affordances`.
 
 ## 6. pgRDF composition — corrected API usage
@@ -212,11 +213,13 @@ Graph ids by convention: `urn:ckp:core` = 1, kernel CK graph = 2.
 ## 7. Build & test method (cloned from pgRDF, verbatim)
 
 - **Local:** `compose/builder.Containerfile` runs `cargo pgrx package --no-default-features
-  --features pg17` inside a `rust:bookworm` + PGDG-postgres-17 image; exports
-  `pgck.so` / `pgck.control` / `pgck--0.1.0.sql` to `compose/extensions/`. The runtime
-  `postgres:17.4-bookworm` container is never rebuilt — it bind-mounts those artifacts
-  plus the downloaded pgRDF release artifacts per-file. `Justfile`: `pgrdf-fetch`,
-  `build-ext`, `compose-up`, `smoke`.
+  --features pg17,embedded-nats` inside a `rust:bookworm` + PGDG-postgres-17 image
+  through Docker on the `colima` context; it exports `pgck.so` / `pgck.control` /
+  `pgck--0.1.1.sql` to `compose/extensions/`. The runtime
+  `postgres:17.4-bookworm` container is never rebuilt — it bind-mounts those
+  artifacts plus the downloaded pgRDF release artifacts per-file. `Justfile`:
+  `pgrdf-fetch`, `build-ext`, `compose-up`, `compose-recreate`, `smoke-s4`,
+  `smoke-s3`.
 - **CI (pgCK's own releases, later):** clone pgRDF `release.yml` — matrix `pg × arch` on
   `ubuntu-{22.04, 24.04-arm}`, `cargo pgrx package`, repack to
   `pgck-<ver>-pg<PG>-glibc-<arch>.tar.gz` (lib/ + share/extension/ + LICENSE [MIT] +
@@ -226,17 +229,17 @@ Graph ids by convention: `urn:ckp:core` = 1, kernel CK graph = 2.
 ## 8. Sequencing
 
 1. Reconcile naming (`conceptkernel` → `pgck` in `docker/`, entrypoint, README); fix the
-   pgRDF API defects in `sql/pgck--0.1.0.sql` and `src/bgworker.rs`.
+   pgRDF API defects in `sql/pgck--0.1.1.sql` and `src/bgworker.rs`.
 2. Clone pgRDF's harness: `compose/builder.Containerfile`, `compose/compose.yml`
-   (PG17 + nats dev sidecar + per-file bind mounts), `Justfile`; script the pgRDF
-   release download (`gh release download v0.5.0 --repo styk-tv/pgRDF`).
+   (PG17 + per-file bind mounts), `Justfile`; script the pgRDF release download
+   (`gh release download v0.5.0 --repo styk-tv/pgRDF`).
 3. Prove the governed core green in the pod against the demo kernel — no NATS path yet
    (`ckp.bootstrap_kernel` / `ckp.seal` / `ckp.verify`).
-4. Wire the NATS client: rewrite `src/bgworker.rs` to the dedicated-thread + tokio +
-   mpsc + SPI model against the sidecar `nats-server`; prove an
+4. Hand-roll `src/nats/` Core server behind `embedded-nats`; host it from the bgworker
+   dedicated thread; prove raw `:4222` banner + pub/sub round-trip inside the pod.
+5. Wire the governed SPI bridge: rewrite `src/bgworker.rs` to the dedicated-thread +
+   tokio + mpsc + SPI model behind the embedded server; prove an
    `input.demo.Hello.create` → `ckp.seal` → `event.demo.Hello.created` round-trip.
-5. Hand-roll `src/nats/` Core server behind `embedded-nats`; swap the sidecar out;
-   re-prove the round-trip.
 6. Drop the deployment-organizing SPEC; clone `release.yml` for pgCK.
 
 Deferred (call-site-compatible later, per rc3 §10): `postgres_fdw` → Azure swap; the
@@ -244,14 +247,16 @@ live CK-graph reroute trigger (AFTER-STATEMENT on the pgRDF quad table).
 
 ## 9. Success criteria
 
-- The pod boots from `podman compose up` with stock `postgres:17.4-bookworm`, no image
+- The pod boots from `docker compose up` on Colima with stock
+  `postgres:17.4-bookworm`, no image
   rebuild, both extensions loaded (`CREATE EXTENSION pgrdf; CREATE EXTENSION pgck;`).
 - `ckp.seal` on the demo kernel produces a validated instance + signed ledger row +
   proof row, atomically, each core-shape-validated; `ckp.verify` returns true; a
   malformed payload aborts the transaction.
-- An `input.demo.Hello.create` NATS message round-trips through the bgworker to
-  `ckp.seal` and emits `event.demo.Hello.created` — first against the sidecar
-  `nats-server`, then against the embedded `src/nats/` server with the sidecar removed.
+- The embedded NATS listener answers on `:4222`, returns the `INFO` banner + `PONG`,
+  and a raw `nats sub` / `nats pub` round-trip succeeds against `pgck` itself.
+- A later S2/S5 increment wires `input.demo.Hello.create` through the bgworker to
+  `ckp.seal` and emits `event.demo.Hello.created`.
 - `cargo pgrx test --no-default-features --features pg17` is green in the builder
   container; fmt + clippy clean.
 

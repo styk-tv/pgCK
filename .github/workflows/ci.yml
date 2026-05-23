@@ -17,6 +17,16 @@ jobs:
         with: { components: rustfmt }
       - run: cargo fmt --all -- --check
 
+  nats-unit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-pgrx
+        with: { pg: "17" }
+      - run: cargo test --no-default-features --features pg17,embedded-nats nats::parser::tests
+      - run: cargo test --no-default-features --features pg17,embedded-nats nats::router::tests
+
   clippy:
     runs-on: ubuntu-22.04
     strategy:

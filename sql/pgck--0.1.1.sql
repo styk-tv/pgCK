@@ -1,4 +1,4 @@
--- pgck 0.1.0 — governed-write core (PL/pgSQL; shipped via pgrx extension_sql_file!).
+-- pgck 0.1.1 — governed-write core (PL/pgSQL; shipped via pgrx extension_sql_file!).
 -- Works today against local tables; swap to postgres_fdw → Azure with no call-site change.
 -- NATS bridge (embedded server + WSS client) is the Rust bgworker — see src/bgworker.rs.
 

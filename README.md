@@ -44,7 +44,8 @@ pgCK is invoked through the **ordinary PostgreSQL wire protocol** — any client
 ## Status
 
 - ✅ **Governed write path works today** (PL/pgSQL, ships as the extension's bootstrap SQL): `ckp.bootstrap_kernel` / `ckp.validate` / `ckp.seal` / `ckp.verify`. Validate → instance → signed ledger → verifiable proof, atomic, each protocol op SHACL-validated against the **core** ontology or it aborts. No CK.Compliance kernel — governance is core.
-- 🔨 **Rust focus (this repo's reason to exist):** the `pgrx` background worker — embedded NATS server + WSS client + affordance compile loop (`ckp.subscribe` / `ckp.publish` / `ckp.recompile_affordances`) + the CK-graph change trigger that reroutes live.
+- ✅ **S3 embedded NATS server lands locally:** the `pgrx` background worker now hosts the raw NATS Core listener on `:4222`, with parser/router/server unit coverage and a compose-level `smoke-s3` round-trip gate.
+- 🔨 **Next Rust focus:** wire the governed SPI dispatch bridge, WSS client, affordance compile loop (`ckp.subscribe` / `ckp.publish` / `ckp.recompile_affordances`), and the CK-graph change trigger that reroutes live.
 - ⏭ ed25519 (replace the HMAC stand-in in `ckp.seal`); `postgres_fdw` → Azure swap (call sites unchanged).
 
 ## Layout
@@ -54,19 +55,77 @@ pgCK/
   SPEC.CKP.3.8.MINIMAL-rc3.md   spec of record
   Cargo.toml  pgck.control  Justfile  rust-toolchain.toml
   src/lib.rs            pgrx entry: _PG_init, bgworker registration, ckp.* externs
-  src/bgworker.rs       embedded NATS server + WSS client + affordance loop (skeleton)
-  sql/pgck--0.1.0.sql   governed write path (works now, PL/pgSQL)
+  src/bgworker.rs       embedded NATS listener host (S3); SPI dispatch bridge later
+  sql/pgck--0.1.1.sql   governed write path (works now, PL/pgSQL)
   ontology/core.ttl     CKP core ontology + SHACL shapes (protocol governs itself)
   docker/               single-pod image + entrypoint
   examples/             demo kernel ttl
 ```
 
-## Build (mirrors pgRDF)
+## Local build loop
+
+The active local loop is **Docker on the `colima` context only**. `just` will start
+Colima if needed and run `docker build` / `docker compose` against that context.
+
+It builds Linux extension artifacts into `compose/extensions/pgck/` and mounts them
+into the isolated compose stack.
 
 ```bash
-just build      # cargo pgrx — compile the extension
-just install    # install into a local PG with pgrdf present
-just run        # pgrx test instance: CREATE EXTENSION pgrdf, pgck;
+just pgrdf-fetch     # download released pgRDF artifacts into compose/extensions/pgrdf
+just build-ext       # build pgck.so + control/sql into compose/extensions/pgck
+just compose-up      # start the local stack
+just compose-recreate
+just smoke-s4        # governed SQL gate
+just smoke-s3        # governed SQL + embedded NATS gate
+just psql            # psql into the compose postgres
 ```
 
-The governed core is exercisable without the bgworker; the bgworker is the NATS half and the active build target.
+The expected local bootstrap is:
+
+```bash
+colima start
+docker context use colima
+```
+
+Verified locally on **2026-05-19** with the `colima` Docker context:
+
+- Linux containers in Colima can bind-mount the macOS workspace and write artifacts
+  back onto the host path.
+- `compose/builder.Containerfile` builds successfully under Colima.
+- The export image writes `pgck.so`, `pgck.control`, and `pgck--0.1.1.sql` back to
+  the mounted host directory on the host filesystem.
+
+Host bind mounts such as `compose/extensions/`, `compose/dev-certs/`, and the repo
+workspace live on the macOS host. Docker image layers, build cache, and named volumes
+still consume Colima VM disk.
+
+## Local browser WSS loop
+
+For cross-laptop browser testing, the repo now carries a **separate local-only NATS
+WSS stack**. It does not publish anything and it does not replace the current pgCK
+compose loop. It uses the same Docker-on-Colima local runtime.
+
+Generate local dev certs first. Include the LAN DNS name or IP that the other laptop
+will use to reach this machine:
+
+```bash
+PGCK_WSS_CERT_HOSTS=localhost,my-macbook.local \
+PGCK_WSS_CERT_IPS=127.0.0.1,192.168.1.50 \
+just nats-wss-certs
+```
+
+Then boot the browser-facing NATS service:
+
+```bash
+just nats-wss-up
+just smoke-nats-wss
+```
+
+Local defaults:
+
+- TCP NATS: `nats://dev:devpass-change-me@<host>:4222`
+- Browser WSS: `wss://<host>:8443`
+- Monitoring: `http://<host>:8222/varz`
+
+The generated CA certificate lives at `compose/dev-certs/ca.pem`. Trust that CA on the
+other laptop before attempting browser WSS connections.

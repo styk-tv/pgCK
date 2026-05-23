@@ -12,3 +12,5 @@ Cargo.lock
 /compose/extensions/pgrdf/
 /compose/extensions/pgck/
 /compose/pg-data/
+/compose/dev-certs/
+/fixtures/WIP/
