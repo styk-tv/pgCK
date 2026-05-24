@@ -13,6 +13,7 @@ use crate::nats::router::Router;
 
 const INFO: &str =
     "INFO {\"server_name\":\"pgck\",\"version\":\"0.1.2\",\"max_payload\":1048576}\r\n";
+const MAX_PAYLOAD: usize = 1024 * 1024;
 
 #[derive(Clone, Debug)]
 struct Delivery {
@@ -105,6 +106,13 @@ async fn read_client_message(
         ..
     } = message
     {
+        if payload_len > MAX_PAYLOAD {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("payload exceeds max_payload of {MAX_PAYLOAD} bytes"),
+            ));
+        }
+
         payload.resize(payload_len, 0);
         reader.read_exact(payload).await?;
 
@@ -155,7 +163,7 @@ mod tests {
     use std::net::SocketAddr;
     use std::time::Duration;
 
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
     use tokio::net::{tcp::OwnedReadHalf, tcp::OwnedWriteHalf, TcpListener, TcpStream};
     use tokio::task::JoinHandle;
     use tokio::time::timeout;
@@ -171,6 +179,7 @@ mod tests {
         assert!(info.starts_with("INFO "));
         assert!(info.contains("\"server_name\":\"pgck\""));
         assert!(info.contains("\"version\":\"0.1.2\""));
+        assert!(info.contains(&format!("\"max_payload\":{}", super::MAX_PAYLOAD)));
 
         writer.write_all(b"PING\r\n").await.unwrap();
         assert_eq!(read_line(&mut reader).await, "PONG\r\n");
@@ -232,6 +241,69 @@ mod tests {
         )
         .await
         .is_err());
+
+        server.abort();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn oversized_pub_is_rejected_immediately() {
+        let (server, addr) = spawn_server().await;
+        let (mut reader, mut writer) = connect(addr).await;
+        let _ = read_line(&mut reader).await;
+
+        let payload_len = super::MAX_PAYLOAD + 1;
+        writer
+            .write_all(format!("PUB event.demo.too-big {}\r\n", payload_len).as_bytes())
+            .await
+            .unwrap();
+
+        let mut buf = [0_u8; 1];
+        let bytes_read = timeout(Duration::from_millis(200), reader.read(&mut buf))
+            .await
+            .expect("server should reject oversized PUB without waiting for a payload body")
+            .unwrap();
+        assert_eq!(bytes_read, 0, "oversized PUB should close the connection");
+
+        server.abort();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn max_payload_pub_is_accepted() {
+        let (server, addr) = spawn_server().await;
+        let (mut subscriber_reader, mut subscriber_writer) = connect(addr).await;
+        let _ = read_line(&mut subscriber_reader).await;
+
+        subscriber_writer
+            .write_all(b"SUB event.demo.max 1\r\n")
+            .await
+            .unwrap();
+        subscriber_writer.write_all(b"PING\r\n").await.unwrap();
+        assert_eq!(read_line(&mut subscriber_reader).await, "PONG\r\n");
+
+        let payload = vec![b'a'; super::MAX_PAYLOAD];
+        let (_publisher_reader, mut publisher_writer) = connect(addr).await;
+        publisher_writer
+            .write_all(format!("PUB event.demo.max {}\r\n", payload.len()).as_bytes())
+            .await
+            .unwrap();
+        publisher_writer.write_all(&payload).await.unwrap();
+        publisher_writer.write_all(b"\r\n").await.unwrap();
+
+        assert_eq!(
+            read_line(&mut subscriber_reader).await,
+            format!("MSG event.demo.max 1 {}\r\n", super::MAX_PAYLOAD)
+        );
+
+        let mut received = vec![0_u8; super::MAX_PAYLOAD + 2];
+        timeout(
+            Duration::from_secs(3),
+            subscriber_reader.read_exact(&mut received),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(&received[..super::MAX_PAYLOAD], payload.as_slice());
+        assert_eq!(&received[super::MAX_PAYLOAD..], b"\r\n");
 
         server.abort();
     }
