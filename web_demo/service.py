@@ -27,6 +27,7 @@ from web_demo.board import (
 DEFAULT_BOARD_PROJECT = "goal_task_board"
 DEFAULT_BOARD_KERNEL_TTL_PATH = "/examples/goal-task-board.kernel.ttl"
 DEFAULT_BOARD_KERNEL_GRAPH_ID = "20"
+DEFAULT_BOARD_IDENTITY_KEY_SUFFIX = "-identity-key"
 DEFAULT_BOARD_NATS_URL = "nats://127.0.0.1:4223"
 DEFAULT_NATS_SUBJECT = "broadcast.demo.display"
 
@@ -131,6 +132,11 @@ class PsqlPgckGateway:
             "PGCK_BOARD_KERNEL_GRAPH_ID",
             DEFAULT_BOARD_KERNEL_GRAPH_ID,
         )
+        self._identity_key = (
+            os.getenv("PGCK_BOARD_IDENTITY_KEY")
+            or os.getenv("PGCK_IDENTITY_KEY")
+            or f"{self._project}{DEFAULT_BOARD_IDENTITY_KEY_SUFFIX}"
+        )
         self._sql_runner = sql_runner or self._run_psql
 
     def bootstrap(self) -> None:
@@ -140,6 +146,8 @@ class PsqlPgckGateway:
             "CALL ckp.bootstrap_kernel(); "
             "CALL ckp.boot(); "
             f"INSERT INTO ckp.config(k,v) VALUES ('kernel_graph_id',{_sql_quote(self._kernel_graph_id)}) "
+            "ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v; "
+            f"INSERT INTO ckp.config(k,v) VALUES ('identity_key',{_sql_quote(self._identity_key)}) "
             "ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v; "
             f"CALL ckp.load_kernel({_sql_quote(self._kernel_ttl_path)}, {_sql_quote(self._project)});"
         )
@@ -188,7 +196,8 @@ class PsqlPgckGateway:
 
     def list_tasks(self) -> list[dict[str, Any]]:
         return self._run_json(
-            " ".join(
+            self._session_prefix()
+            + " ".join(
                 [
                     "SELECT COALESCE(json_agg(row_to_json(task_rows) ORDER BY task_rows.queue_seq), '[]'::json)",
                     "FROM (",
@@ -307,7 +316,7 @@ class PsqlPgckGateway:
     def _session_prefix(self) -> str:
         return (
             f"SELECT set_config('ckp.project', {_sql_quote(self._project)}, false); "
-            f"SELECT set_config('ckp.identity_key', md5({_sql_quote(self._project)}), false); "
+            f"SELECT set_config('ckp.identity_key', {_sql_quote(self._identity_key)}, false); "
         )
 
     def _run_psql(self, sql: str) -> str:
@@ -320,7 +329,7 @@ class PsqlPgckGateway:
             "-h",
             os.getenv("PGHOST", "127.0.0.1"),
             "-p",
-            os.getenv("PGPORT", "5432"),
+            os.getenv("PGPORT") or os.getenv("POSTGRES_PORT", "5432"),
             "-U",
             os.getenv("PGUSER", "pgck"),
             "-d",

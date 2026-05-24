@@ -20,8 +20,8 @@
 ckp:Kernel      a rdfs:Class ; rdfs:comment "A versioned, ontology-defined unit of behaviour." .
 ckp:Organ       a rdfs:Class ; rdfs:comment "CK | TOOL | DATA." .
 ckp:Affordance  a rdfs:Class ; rdfs:comment "Binds an inbound NATS topic to an action." .
-ckp:LedgerEntry a rdfs:Class ; rdfs:comment "Append-only signed audit record." .
-ckp:Proof       a rdfs:Class ; rdfs:comment "Verifiable attestation about an instance." .
+ckp:LedgerEntry a rdfs:Class ; rdfs:comment "Append-only HMAC-authenticated audit record." .
+ckp:Proof       a rdfs:Class ; rdfs:comment "Verifiable HMAC-backed attestation about an instance." .
 ckp:Provenance  a rdfs:Class ; rdfs:comment "PROV-O subset for derivation." .
 
 # ---- Properties ----------------------------------------------------
@@ -62,7 +62,7 @@ ckp:AffordanceShape a sh:NodeShape ;
   sh:property [ sh:path ckp:inShape ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
   sh:property [ sh:path ckp:outTopic ; sh:maxCount 1 ; sh:datatype xsd:string ] .
 
-# A ledger entry MUST carry a non-empty signature and a chain pointer.
+# A ledger entry MUST carry a non-empty HMAC signature and a chain pointer.
 ckp:LedgerEntryShape a sh:NodeShape ;
   sh:targetClass ckp:LedgerEntry ;
   sh:property [ sh:path ckp:about   ; sh:minCount 1 ; sh:nodeKind sh:IRI ] ;
@@ -72,12 +72,12 @@ ckp:LedgerEntryShape a sh:NodeShape ;
                 sh:minLength 16 ] ;
   sh:property [ sh:path ckp:ts      ; sh:minCount 1 ; sh:datatype xsd:dateTime ] .
 
-# A proof MUST carry a method and a digest, and be verifiable.
+# A proof MUST carry the shipped HMAC method and a digest, and be verifiable.
 ckp:ProofShape a sh:NodeShape ;
   sh:targetClass ckp:Proof ;
   sh:property [ sh:path ckp:about     ; sh:minCount 1 ; sh:nodeKind sh:IRI ] ;
   sh:property [ sh:path ckp:method    ; sh:minCount 1 ; sh:datatype xsd:string ;
-                sh:in ( "ed25519+sha256" ) ] ;
+                sh:in ( "hmac+sha256" ) ] ;
   sh:property [ sh:path ckp:digest    ; sh:minCount 1 ; sh:datatype xsd:string ;
                 sh:pattern "^[0-9a-f]{64}$" ] ;
   sh:property [ sh:path ckp:verifiedAt ; sh:minCount 1 ; sh:datatype xsd:dateTime ] .

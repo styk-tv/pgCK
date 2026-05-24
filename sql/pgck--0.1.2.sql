@@ -76,7 +76,9 @@ $$;
 -- Loads `ttl` into a scratch graph, validates vs shapes_graph_id, returns conforms.
 CREATE OR REPLACE FUNCTION ckp.validate(ttl TEXT, shapes_graph_id INT)
 RETURNS BOOLEAN LANGUAGE plpgsql AS $$
-DECLARE scratch_id INT := 9000 + (random()*900)::int; report JSONB;
+DECLARE
+  scratch_id INT := 1000000000 + pg_backend_pid();
+  report JSONB;
 BEGIN
   PERFORM pgrdf.add_graph(scratch_id, format('urn:ckp:scratch:%s', scratch_id));
   PERFORM pgrdf.clear_graph(scratch_id);
@@ -94,6 +96,10 @@ RETURNS TEXT LANGUAGE plpgsql AS $$
 DECLARE
   v_core   INT := (SELECT v::int FROM ckp.config WHERE k='core_graph_id');
   v_kgraph INT := (SELECT v::int FROM ckp.config WHERE k='kernel_graph_id');
+  v_identity_key TEXT := COALESCE(
+    NULLIF(current_setting('ckp.identity_key', true), ''),
+    (SELECT v FROM ckp.config WHERE k='identity_key')
+  );
   v_type   TEXT := p_body->>'type';
   v_missing TEXT;
   v_sha    TEXT;
@@ -105,6 +111,10 @@ DECLARE
 BEGIN
   IF v_type IS NULL THEN
     RAISE EXCEPTION 'ckp.seal: body has no "type"';
+  END IF;
+
+  IF v_identity_key IS NULL OR v_identity_key = '' THEN
+    RAISE EXCEPTION 'ckp.seal: no identity key configured';
   END IF;
 
   -- 1. VALIDATE payload against the kernel ontology's required props (materializer logic, inline).
@@ -126,7 +136,7 @@ BEGIN
 
   -- 2. MATERIALIZE durable instance (local now; Azure via FDW after import).
   v_sha := encode(digest(convert_to(p_body::text,'UTF8'),'sha256'),'hex');
-  v_sig := encode(hmac(v_sha, current_setting('ckp.identity_key', true), 'sha256'),'hex'); -- ed25519 swap later
+  v_sig := encode(hmac(v_sha, v_identity_key, 'sha256'),'hex');
   SELECT max(seq) INTO v_prev FROM ckp.ledger;
 
   INSERT INTO ckp.instances(id, body) VALUES (p_instance_id, p_body)
@@ -151,13 +161,13 @@ BEGIN
     @prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> .
     @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
     <urn:ckp:prf:%s> a ckp:Proof ;
-      ckp:about <%s> ; ckp:method "ed25519+sha256" ; ckp:digest "%s" ;
+      ckp:about <%s> ; ckp:method "hmac+sha256" ; ckp:digest "%s" ;
       ckp:verifiedAt "%s"^^xsd:dateTime .$t$,
     p_instance_id, p_instance_id, v_sha, to_char(v_now,'YYYY-MM-DD"T"HH24:MI:SS"Z"'));
   IF NOT ckp.validate(v_prf_ttl, v_core) THEN
     RAISE EXCEPTION 'ckp.seal: proof fails ckp:ProofShape (core governance)';
   END IF;
-  INSERT INTO ckp.proof(about, method, digest) VALUES (p_instance_id,'ed25519+sha256',v_sha);
+  INSERT INTO ckp.proof(about, method, digest) VALUES (p_instance_id,'hmac+sha256',v_sha);
 
   RETURN v_sha;  -- all committed atomically by the caller's transaction
 END;
@@ -166,13 +176,61 @@ $$;
 -- ---- independent verification ----
 CREATE OR REPLACE FUNCTION ckp.verify(p_instance_id TEXT)
 RETURNS BOOLEAN LANGUAGE plpgsql AS $$
-DECLARE v_body JSONB; v_recompute TEXT; v_stored TEXT;
+DECLARE
+  v_body JSONB;
+  v_identity_key TEXT := COALESCE(
+    NULLIF(current_setting('ckp.identity_key', true), ''),
+    (SELECT v FROM ckp.config WHERE k='identity_key')
+  );
+  v_recompute TEXT;
+  v_ledger_seq BIGINT;
+  v_ledger_sha TEXT;
+  v_ledger_sig TEXT;
+  v_prev_seq BIGINT;
+  v_expected_prev BIGINT;
+  v_proof_method TEXT;
+  v_proof_digest TEXT;
+  v_expected_sig TEXT;
 BEGIN
+  IF v_identity_key IS NULL OR v_identity_key = '' THEN
+    RETURN false;
+  END IF;
+
   SELECT body INTO v_body FROM ckp.instances WHERE id = p_instance_id;
-  IF v_body IS NULL THEN RETURN false; END IF;
+  IF v_body IS NULL THEN
+    RETURN false;
+  END IF;
+
+  SELECT seq, body_sha256, sig, prev_seq
+  INTO v_ledger_seq, v_ledger_sha, v_ledger_sig, v_prev_seq
+  FROM ckp.ledger
+  WHERE instance_id = p_instance_id
+  ORDER BY seq DESC
+  LIMIT 1;
+
+  SELECT method, digest
+  INTO v_proof_method, v_proof_digest
+  FROM ckp.proof
+  WHERE about = p_instance_id
+  ORDER BY id DESC
+  LIMIT 1;
+
+  IF v_ledger_seq IS NULL
+     OR v_ledger_sha IS NULL
+     OR v_ledger_sig IS NULL
+     OR v_proof_method IS NULL
+     OR v_proof_digest IS NULL THEN
+    RETURN false;
+  END IF;
+
   v_recompute := encode(digest(convert_to(v_body::text,'UTF8'),'sha256'),'hex');
-  SELECT body_sha256 INTO v_stored FROM ckp.ledger
-    WHERE instance_id = p_instance_id ORDER BY seq DESC LIMIT 1;
-  RETURN v_recompute = v_stored;
+  v_expected_sig := encode(hmac(v_recompute, v_identity_key, 'sha256'),'hex');
+  SELECT max(seq) INTO v_expected_prev FROM ckp.ledger WHERE seq < v_ledger_seq;
+
+  RETURN v_prev_seq IS NOT DISTINCT FROM v_expected_prev
+     AND v_proof_method = 'hmac+sha256'
+     AND v_recompute = v_ledger_sha
+     AND v_ledger_sha = v_proof_digest
+     AND v_ledger_sig = v_expected_sig;
 END;
 $$;
