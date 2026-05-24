@@ -17,7 +17,6 @@ from web_demo.board import (
     KernelColumn,
     board_snapshot_payload,
     build_goal_body,
-    build_task_body,
     goal_record_from_mapping,
     iso_now,
     task_record_from_mapping,
@@ -215,25 +214,6 @@ class PsqlPgckGateway:
         ) or []
 
     def create_task(self, payload: dict[str, Any]) -> dict[str, Any]:
-        next_identity = self._run_json(
-            " ".join(
-                [
-                    "SELECT json_build_object(",
-                    "  'next_task',",
-                    "  'FC-T-' || lpad((",
-                    f"    COALESCE(MAX(COALESCE(NULLIF(regexp_replace(body->>{_sql_quote(TASK_FIELD_TO_IRI['task_id'])}, '[^0-9]', '', 'g'), ''), '0')::int), 0) + 1",
-                    "  )::text, 4, '0'),",
-                    "  'next_queue',",
-                    f"  COALESCE(MAX(COALESCE(NULLIF(body->>{_sql_quote(TASK_FIELD_TO_IRI['queue_seq'])}, ''), '0')::int), 0) + 1",
-                    ")",
-                    "FROM ckp.instances",
-                    f"WHERE body->>'type' = {_sql_quote(TASK_TYPE_IRI)};",
-                ]
-            )
-        )
-
-        task_id = next_identity["next_task"]
-        queue_seq = int(next_identity["next_queue"])
         created_at = payload.get("created_at") or iso_now()
         created_by = payload.get("created_by", "owner")
         title = str(payload["title"])
@@ -241,45 +221,75 @@ class PsqlPgckGateway:
         target_kernel = str(payload["target_kernel"])
         detail = str(payload.get("detail", ""))
         priority = int(payload["priority"])
-
-        body = build_task_body(
-            task_id=task_id,
-            title=title,
-            part_of_goal=goal_id,
-            target_kernel=target_kernel,
-            lifecycle_state="pending",
-            priority=priority,
-            queue_seq=queue_seq,
-            created_at=created_at,
-            detail=detail,
-            created_by=created_by,
+        created_by_body = (
+            "'{}'::jsonb"
+            if created_by in (None, "")
+            else f"jsonb_build_object({_sql_quote(TASK_FIELD_TO_IRI['created_by'])}, {_sql_quote(created_by)})"
+        )
+        detail_body = (
+            "'{}'::jsonb"
+            if detail == ""
+            else f"jsonb_build_object({_sql_quote(TASK_FIELD_TO_IRI['detail'])}, {_sql_quote(detail)})"
         )
 
         return self._run_json(
             self._session_prefix()
             + " ".join(
                 [
-                    "WITH sealed AS (",
-                    f"  SELECT ckp.seal({_sql_quote(task_id)}, {_sql_quote(_compact_json(body))}::jsonb) AS proof_digest",
+                    "WITH lock AS (",
+                    "  SELECT pg_advisory_xact_lock(",
+                    "    hashtext('pgck:create_task'),",
+                    "    hashtext(current_setting('ckp.project', true))",
+                    "  )",
+                    "), allocated AS (",
+                    "  SELECT",
+                    "    'FC-T-' || lpad((",
+                    f"      COALESCE(MAX(COALESCE(NULLIF(regexp_replace(i.body->>{_sql_quote(TASK_FIELD_TO_IRI['task_id'])}, '[^0-9]', '', 'g'), ''), '0')::int), 0) + 1",
+                    "    )::text, 4, '0') AS task_id,",
+                    f"    COALESCE(MAX(COALESCE(NULLIF(i.body->>{_sql_quote(TASK_FIELD_TO_IRI['queue_seq'])}, ''), '0')::int), 0) + 1 AS queue_seq",
+                    "  FROM lock",
+                    f"  LEFT JOIN ckp.instances AS i ON i.body->>'type' = {_sql_quote(TASK_TYPE_IRI)}",
+                    "), body AS (",
+                    "  SELECT",
+                    "    allocated.task_id,",
+                    "    allocated.queue_seq,",
+                    "    jsonb_build_object(",
+                    f"      'type', {_sql_quote(TASK_TYPE_IRI)},",
+                    f"      {_sql_quote(TASK_FIELD_TO_IRI['task_id'])}, allocated.task_id,",
+                    f"      {_sql_quote(TASK_FIELD_TO_IRI['title'])}, {_sql_quote(title)},",
+                    f"      {_sql_quote(TASK_FIELD_TO_IRI['part_of_goal'])}, {_sql_quote(goal_id)},",
+                    f"      {_sql_quote(TASK_FIELD_TO_IRI['target_kernel'])}, {_sql_quote(target_kernel)},",
+                    f"      {_sql_quote(TASK_FIELD_TO_IRI['lifecycle_state'])}, 'pending',",
+                    f"      {_sql_quote(TASK_FIELD_TO_IRI['priority'])}, {priority},",
+                    f"      {_sql_quote(TASK_FIELD_TO_IRI['queue_seq'])}, allocated.queue_seq,",
+                    f"      {_sql_quote(TASK_FIELD_TO_IRI['created_at'])}, {_sql_quote(created_at)}",
+                    f"    ) || {created_by_body} || {detail_body} AS payload",
+                    "  FROM allocated",
+                    "), sealed AS (",
+                    "  SELECT ckp.seal(body.task_id, body.payload) AS proof_digest,",
+                    "         body.task_id,",
+                    "         body.queue_seq",
+                    "  FROM body",
                     "), verified AS (",
-                    f"  SELECT ckp.verify({_sql_quote(task_id)}) AS verified FROM sealed",
+                    "  SELECT ckp.verify(sealed.task_id) AS verified FROM sealed",
                     ")",
                     "SELECT json_build_object(",
-                    f"  'task_id', {_sql_quote(task_id)},",
+                    "  'task_id', sealed.task_id,",
                     f"  'title', {_sql_quote(title)},",
                     f"  'part_of_goal', {_sql_quote(goal_id)},",
                     f"  'target_kernel', {_sql_quote(target_kernel)},",
                     "  'lifecycle_state', 'pending',",
                     f"  'priority', {priority},",
-                    f"  'queue_seq', {queue_seq},",
+                    "  'queue_seq', sealed.queue_seq,",
                     f"  'created_at', {_sql_quote(created_at)},",
                     "  'shape_valid', true,",
                     "  'sealed', true,",
                     "  'verified', (SELECT verified FROM verified),",
-                    "  'proof_digest', (SELECT proof_digest FROM sealed),",
+                    "  'proof_digest', sealed.proof_digest,",
                     f"  'detail', {_sql_quote(detail)},",
                     f"  'created_by', {_sql_quote(created_by)}",
-                    ");",
+                    ")",
+                    "FROM sealed;",
                 ]
             )
         )
