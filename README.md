@@ -2,7 +2,7 @@
 
 **pgCK** is a PostgreSQL extension (Rust / `pgrx`, same setup as [pgRDF](https://github.com/styk-tv/pgRDF)) that **bridges from inside Postgres**: it is the Concept Kernel Protocol runtime as a database extension — NATS bridge + SHACL validator + materializer, in one place, one transaction boundary.
 
-Spec of record: [`SPEC.CKP.3.8.MINIMAL-rc3.md`](SPEC.CKP.3.8.MINIMAL-rc3.md).
+Public runtime reference lives in this README, [`RELEASE_NOTES.md`](RELEASE_NOTES.md), and the shipped runtime files under `compose/`, `ontology/`, `examples/`, `sql/`, and `web_demo/`. Working draft specs, planning notes, and helper material are intentionally kept in a local-only `_WIP/` directory and are not part of the public repo surface.
 
 ## What it is
 
@@ -50,17 +50,26 @@ pgCK is invoked through the **ordinary PostgreSQL wire protocol** — any client
 
 ## Layout
 
+The public repo surface keeps runtime files at the root. `_WIP/` is reserved for local-only draft material and is intentionally ignored.
+
 ```
 pgCK/
-  SPEC.CKP.3.8.MINIMAL-rc3.md   spec of record
+  README.md  RELEASE_NOTES.md
+  .vscode/tasks.json    VS Code task-driven local loop
   Cargo.toml  pgck.control  Justfile  rust-toolchain.toml
-  src/lib.rs            pgrx entry: _PG_init, bgworker registration, ckp.* externs
-  src/bgworker.rs       embedded NATS listener host (S3); SPI dispatch bridge later
-  sql/pgck--0.1.1.sql   governed write path (works now, PL/pgSQL)
-  ontology/core.ttl     CKP core ontology + SHACL shapes (protocol governs itself)
+  compose/              Colima-targeted compose runtime + browser NATS/WSS stack
   docker/               single-pod image + entrypoint
-  examples/             demo kernel ttl
+  examples/             demo kernel ttl files
+  ontology/             `core.ttl` plus initial split modeling slices
+  sql/                  extension SQL + smoke gates
+  src/                  pgrx entrypoints and embedded NATS runtime
+  tests/                runtime and web-demo checks
+  web_demo/             FastAPI API + web UI (`web_demo/app.py`)
 ```
+
+Historical planning and design drafts have been moved out of the public surface and into local-only `_WIP/`.
+
+`ontology/core.ttl` remains the runtime-authoritative ontology loaded by `ckp.boot()`. The new split files under `ontology/*.ttl` are the first manual modeling pass for rc-07/rc-08 linkage work and are not yet wired into boot-time loading. The Goal/Task board demo still uses transitional string and projection fields for runtime convenience; those fields are current runtime state, not canonical long-term graph truth.
 
 ## Local build loop
 
@@ -73,11 +82,20 @@ into the isolated compose stack.
 ```bash
 just pgrdf-fetch     # download released pgRDF artifacts into compose/extensions/pgrdf
 just build-ext       # build pgck.so + control/sql into compose/extensions/pgck
-just compose-up      # start the local stack
+just compose-up      # detached CLI bring-up
+just compose-up-fg   # foreground attach; matches VS Code task behavior
 just compose-recreate
+just compose-recreate-fg
 just smoke-s4        # governed SQL gate
 just smoke-s3        # governed SQL + embedded NATS gate
 just psql            # psql into the compose postgres
+```
+
+If host port `5432` is already occupied on your machine, export `POSTGRES_PORT`
+before running the compose, smoke, or `psql` tasks. For example:
+
+```bash
+export POSTGRES_PORT=55432
 ```
 
 The expected local bootstrap is:
@@ -87,17 +105,38 @@ colima start
 docker context use colima
 ```
 
-Verified locally on **2026-05-19** with the `colima` Docker context:
+Verified locally on **2026-05-23** with the `colima` Docker context:
 
 - Linux containers in Colima can bind-mount the macOS workspace and write artifacts
   back onto the host path.
 - `compose/builder.Containerfile` builds successfully under Colima.
-- The export image writes `pgck.so`, `pgck.control`, and `pgck--0.1.1.sql` back to
+- The export image writes `pgck.so`, `pgck.control`, and `pgck--0.1.2.sql` back to
   the mounted host directory on the host filesystem.
 
-Host bind mounts such as `compose/extensions/`, `compose/dev-certs/`, and the repo
-workspace live on the macOS host. Docker image layers, build cache, and named volumes
-still consume Colima VM disk.
+Runtime bind mounts such as `compose/extensions/`, `compose/dev-certs/`, `ontology/`,
+and `examples/` live on the macOS host under the repo workspace. PostgreSQL data now
+defaults to the named Docker volume `pgdata`, which avoids Colima bind-mount ownership
+failures while keeping the kernel-loading paths host-mounted under `/Users/neoxr/...`.
+Docker image layers, build cache, and named volumes still consume Colima VM disk.
+
+## VS Code tasks
+
+The repo ships `.vscode/tasks.json` for a foreground, task-driven local loop. The long-running tasks use foreground processes rather than detached compose commands, so closing the VS Code terminal stops the service:
+
+- `pgck: colima-up`
+- `pgck: build-ext`
+- `pgck: compose-up`
+- `pgck: compose-down`
+- `pgck: compose-recreate`
+- `pgck: smoke-s4`
+- `pgck: smoke-s3`
+- `pgck: psql`
+- `pgck: nats-wss-up`
+- `pgck: nats-wss-down`
+- `pgck: smoke-nats-wss`
+- `pgck: webui`
+
+`pgck: webui` runs the same FastAPI app that serves both the browser UI and the API surface.
 
 ## Local browser WSS loop
 
@@ -117,7 +156,8 @@ just nats-wss-certs
 Then boot the browser-facing NATS service:
 
 ```bash
-just nats-wss-up
+just nats-wss-up        # detached CLI bring-up
+just nats-wss-up-fg     # foreground attach; matches VS Code task behavior
 just smoke-nats-wss
 ```
 

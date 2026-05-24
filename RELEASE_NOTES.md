@@ -1,9 +1,9 @@
 # pgCK release notes
 
 pgCK — the Concept Kernel Protocol runtime as a PostgreSQL extension
-(Rust/`pgrx`, composes pgRDF). See
-[`SPEC.CKP.3.8.MINIMAL-rc3.md`](SPEC.CKP.3.8.MINIMAL-rc3.md) (protocol) and
-[`SPEC.PGCK.DEPLOY.v0.1.md`](SPEC.PGCK.DEPLOY.v0.1.md) (build & deployment).
+(Rust/`pgrx`, composes pgRDF). Historical protocol and deployment drafts
+are kept in the local-only `_WIP/` workspace; the public runtime surface is
+this file plus the repo runtime directories and README.
 
 ## Distribution
 
@@ -19,12 +19,19 @@ Each `v*` tag publishes, for every `pg{14,15,16,17} × {amd64,arm64}`:
    `application/vnd.styk.pgck.extension.v1`); pull with `oras`:
 
    ```sh
-   oras pull ghcr.io/styk-tv/pgck:0.1.1-pg17-arm64
+   oras pull ghcr.io/styk-tv/pgck:0.1.2-pg17-arm64
    ```
 
    This is a transport for the extension files, not a runnable image —
-   they are bind-mounted onto a stock `postgres:17` per
-   `SPEC.PGCK.DEPLOY.v0.1`.
+   they are bind-mounted onto a stock `postgres:17` via the local runtime
+   workflow described in `README.md`.
+
+## v0.1.2 — aggregated browser + board surface
+
+- **Board/browser MVP**: ships `web_demo/` (FastAPI API + browser UI), `examples/goal-task-board.kernel.ttl`, and pytest coverage for board payloads, gateway bootstrapping, live service behavior, and HTTP/UI endpoints.
+- **Browser transport companion**: ships `compose/compose.nats-wss.yml`, `compose/nats/nats-server.conf`, `scripts/generate-dev-certs.sh`, and `just nats-wss-*` / `smoke-nats-wss` for the local TCP+WSS loop.
+- **Runtime surface cleanup**: public runtime references now live in `README.md` and `RELEASE_NOTES.md`; deleted tracked specs under the repo root and `docs/` are intentionally retired from the shipped surface.
+- **Ontology staging**: split `ontology/*.ttl` files land as alpha modeling input while `ckp.boot()` still loads `ontology/core.ttl` as the authoritative runtime ontology.
 
 ## v0.1.1 — pod harness + ontology load (S5 substrate)
 
@@ -34,7 +41,7 @@ stock `postgres:17.4` beside pgRDF v0.5.0.
 
 - **Compose harness** (cloned from pgRDF): `just pgrdf-fetch` (downloads
   + SHA-verifies pgRDF v0.5.0 release), `just build-ext` (builds
-  `pgck.so` in a throwaway podman builder — runtime image never
+  `pgck.so` in a throwaway Docker builder on the `colima` context — runtime image never
   rebuilt), `compose.yml` (stock `postgres:17.4-bookworm`, per-file
   bind mounts, `:4222` exposed), `just smoke-s5` (full idempotent
   bring-up gate).
