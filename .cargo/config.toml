@@ -1,2 +1,3 @@
+# macOS cdylib builds leave pgrx/Postgres symbols unresolved until runtime.
 [target.'cfg(target_os="macos")']
 rustflags = ["-Clink-arg=-Wl,-undefined,dynamic_lookup"]
