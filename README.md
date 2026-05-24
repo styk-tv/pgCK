@@ -22,7 +22,7 @@ pgCK does not replace pgRDF — it **composes** it. pgRDF holds the ontology + r
 
 - **Embedded NATS server** (not just a client): pgCK runs an in-pod NATS server that is the message fabric for **every concept kernel in the pod for the project**. Kernels publish/subscribe locally with no external broker.
 - **NATS client**: pgCK also runs a NATS client that takes messages **from the gateway over WSS** and feeds them straight into the database governed path. The gateway → pod hop is plain NATS-over-WSS; pgCK is the consumer that lands it in Postgres.
-- **Security boundary is upstream, in Envoy**: TLS termination + **OIDC-JWT** verification happen in an **Envoy `SecurityPolicy`** at the **Azure Container App front**. Only authenticated, authorised NATS traffic reaches the pod. pgCK trusts the post-Envoy stream; it does not re-implement auth — it enforces *governance* (SHACL, signing, proof), not authentication.
+- **Security boundary is upstream, in Envoy**: TLS termination + **OIDC-JWT** verification happen in an **Envoy `SecurityPolicy`** at the **Azure Container App front**. Only authenticated, authorised NATS traffic reaches the pod. pgCK trusts the post-Envoy stream; it does not re-implement auth — it enforces *governance* (SHACL, HMAC attestation, proof), not authentication.
 
 ```
 WSS client ──TLS──▶ Envoy SecurityPolicy (TLS + OIDC-JWT)  ──NATS/WSS──▶  POD
@@ -43,10 +43,10 @@ pgCK is invoked through the **ordinary PostgreSQL wire protocol** — any client
 
 ## Status
 
-- ✅ **Governed write path works today** (PL/pgSQL, ships as the extension's bootstrap SQL): `ckp.bootstrap_kernel` / `ckp.validate` / `ckp.seal` / `ckp.verify`. Validate → instance → signed ledger → verifiable proof, atomic, each protocol op SHACL-validated against the **core** ontology or it aborts. No CK.Compliance kernel — governance is core.
+- ✅ **Governed write path works today** (PL/pgSQL, ships as the extension's bootstrap SQL): `ckp.bootstrap_kernel` / `ckp.validate` / `ckp.seal` / `ckp.verify`. Validate → instance → HMAC-authenticated ledger → verifiable proof, atomic, each protocol op SHACL-validated against the **core** ontology or it aborts. No CK.Compliance kernel — governance is core.
 - ✅ **S3 embedded NATS server lands locally:** the `pgrx` background worker now hosts the raw NATS Core listener on `:4222`, with parser/router/server unit coverage and a compose-level `smoke-s3` round-trip gate.
 - 🔨 **Next Rust focus:** wire the governed SPI dispatch bridge, WSS client, affordance compile loop (`ckp.subscribe` / `ckp.publish` / `ckp.recompile_affordances`), and the CK-graph change trigger that reroutes live.
-- ⏭ ed25519 (replace the HMAC stand-in in `ckp.seal`); `postgres_fdw` → Azure swap (call sites unchanged).
+- ⏭ ed25519 (replace the shipped `hmac+sha256` proof method in `ckp.seal` / `ckp.verify`); `postgres_fdw` → Azure swap (call sites unchanged).
 
 ## Layout
 
@@ -163,7 +163,7 @@ just smoke-nats-wss
 
 Local defaults:
 
-- TCP NATS: `nats://dev:devpass-change-me@<host>:4222`
+- TCP NATS: `nats://dev:devpass-change-me@<host>:4223`
 - Browser WSS: `wss://<host>:8443`
 - Monitoring: `http://<host>:8222/varz`
 
