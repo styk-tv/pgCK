@@ -105,7 +105,7 @@ colima start
 docker context use colima
 ```
 
-Verified locally on **2026-05-23** with the `colima` Docker context:
+Verified locally on **2026-05-24** with the `colima` Docker context:
 
 - Linux containers in Colima can bind-mount the macOS workspace and write artifacts
   back onto the host path.
