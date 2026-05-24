@@ -61,12 +61,9 @@ fn pgck_version() -> &'static str {
     "pgck 0.1.2 (rc3)"
 }
 
-#[cfg(any(test, feature = "pg_test"))]
-#[pg_schema]
+#[cfg(test)]
 mod tests {
-    use pgrx::prelude::*;
-
-    #[pg_test]
+    #[test]
     fn version_present() {
         assert_eq!(crate::pgck_version(), "pgck 0.1.2 (rc3)");
     }
