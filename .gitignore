@@ -17,5 +17,5 @@ __pycache__/
 /compose/dev-certs/
 /fixtures/WIP/
 /fixtures/
-/docs/superpowers/plans/
+# local working docs/drafts; visible in the workspace, not tracked by git
 /_WIP/
