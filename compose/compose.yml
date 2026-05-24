@@ -2,6 +2,7 @@ name: pgck
 
 services:
   postgres:
+    container_name: pgck-postgres
     image: docker.io/library/postgres:17.4-bookworm
     restart: unless-stopped
     environment:
@@ -11,13 +12,13 @@ services:
     command: [postgres, -c, "shared_preload_libraries=pgrdf,pgck"]
     ports: ["${POSTGRES_PORT:-5432}:5432", "${NATS_PORT:-4222}:4222"]
     volumes:
-      - ${PGDATA_MOUNT:-./pg-data:/var/lib/postgresql/data:z}
+      - pgdata:/var/lib/postgresql/data
       - ./extensions/pgrdf/lib/pgrdf.so:/usr/lib/postgresql/17/lib/pgrdf.so:ro,z
       - ./extensions/pgrdf/share/extension/pgrdf.control:/usr/share/postgresql/17/extension/pgrdf.control:ro,z
       - ./extensions/pgrdf/share/extension/pgrdf--0.5.0.sql:/usr/share/postgresql/17/extension/pgrdf--0.5.0.sql:ro,z
       - ./extensions/pgck/lib/pgck.so:/usr/lib/postgresql/17/lib/pgck.so:ro,z
       - ./extensions/pgck/share/extension/pgck.control:/usr/share/postgresql/17/extension/pgck.control:ro,z
-      - ./extensions/pgck/share/extension/pgck--0.1.1.sql:/usr/share/postgresql/17/extension/pgck--0.1.1.sql:ro,z
+      - ./extensions/pgck/share/extension/pgck--0.1.2.sql:/usr/share/postgresql/17/extension/pgck--0.1.2.sql:ro,z
       - ../ontology:/ontology:ro,z
       - ../examples:/examples:ro,z
     healthcheck:
