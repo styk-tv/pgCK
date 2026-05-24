@@ -45,6 +45,12 @@ compose-recreate: colima-up
 
 compose-up: colima-up
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} up -d
+compose-up-fg: colima-up
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} up
+
+compose-recreate-fg: colima-up
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} down
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} up
 compose-down:
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} down
 psql: colima-up
@@ -79,6 +85,9 @@ nats-wss-certs:
 nats-wss-up: nats-wss-certs colima-up
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_wss_project}} -f compose.nats-wss.yml up -d
 
+nats-wss-up-fg: nats-wss-certs colima-up
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_wss_project}} -f compose.nats-wss.yml up
+
 nats-wss-down:
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_wss_project}} -f compose.nats-wss.yml down
 
@@ -98,4 +107,7 @@ browser-demo-test:
     pytest -q tests/test_web_demo.py
 
 browser-demo-run:
+    uvicorn web_demo.app:app --host "${PGCK_BROWSER_HOST:-0.0.0.0}" --port "${PGCK_BROWSER_PORT:-8000}"
+
+webui:
     uvicorn web_demo.app:app --host "${PGCK_BROWSER_HOST:-0.0.0.0}" --port "${PGCK_BROWSER_PORT:-8000}"

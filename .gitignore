@@ -5,6 +5,8 @@ Cargo.lock
 .DS_Store
 /.pgrx
 *.swp
+__pycache__/
+.pytest_cache/
 
 # reference symlinks (local-only, not part of the repo)
 /ref-*
@@ -14,3 +16,6 @@ Cargo.lock
 /compose/pg-data/
 /compose/dev-certs/
 /fixtures/WIP/
+/fixtures/
+/docs/superpowers/plans/
+/_WIP/

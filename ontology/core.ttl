@@ -10,6 +10,9 @@
 # Loaded into pgRDF graph urn:ckp:core at CREATE EXTENSION.
 # Governs the protocol's OWN operations. No CK.Compliance kernel:
 # every governed write is validated against these shapes at commit.
+# Split files under ontology/*.ttl are the first manual modeling pass
+# for rc-07/rc-08 linkage work. ckp.boot() still loads only core.ttl,
+# so this file remains authoritative for shipped runtime semantics.
 #######################################################################
 
 # ---- Classes -------------------------------------------------------
@@ -32,6 +35,10 @@ ckp:inShape     a owl:ObjectProperty .
 ckp:sparql      a owl:DatatypeProperty .
 
 ckp:about       a owl:ObjectProperty .
+ckp:affordance  a owl:ObjectProperty .
+ckp:delivery    a owl:ObjectProperty .
+ckp:validation  a owl:ObjectProperty .
+ckp:delegation  a owl:ObjectProperty .
 ckp:bodySha     a owl:DatatypeProperty .
 ckp:sig         a owl:DatatypeProperty .
 ckp:prev        a owl:DatatypeProperty .

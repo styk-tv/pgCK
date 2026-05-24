@@ -1,0 +1,13 @@
+.git
+.vscode
+.pytest_cache
+.DS_Store
+_WIP
+target
+compose/extensions
+compose/pg-data
+compose/pg-data-*
+compose/dev-certs
+fixtures
+tests
+web_demo

@@ -1,0 +1,15 @@
+@prefix ckp:  <https://conceptkernel.org/ontology/v3.8/core#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+<https://conceptkernel.org/ontology/v3.8/delivery> a owl:Ontology ;
+  rdfs:comment "Manual split module for delivery semantics. ckp.boot() does not load this file yet; ontology/core.ttl remains runtime-authoritative." .
+
+ckp:Delivery a rdfs:Class ;
+  rdfs:comment "Accepted or rejected delivery boundary object for a governed action." .
+
+ckp:affordance a owl:ObjectProperty ;
+  rdfs:comment "Links a Delivery object to the Affordance that governed its acceptance boundary." .
+
+ckp:delivery a owl:ObjectProperty ;
+  rdfs:comment "Links a Validation or Proof object to the relevant Delivery object." .

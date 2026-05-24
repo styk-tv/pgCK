@@ -1,0 +1,18 @@
+@prefix ckp:  <https://conceptkernel.org/ontology/v3.8/core#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+<https://conceptkernel.org/ontology/v3.8/task> a owl:Ontology ;
+  rdfs:comment "Manual split module for task semantics. ckp.boot() does not load this file yet; ontology/core.ttl remains runtime-authoritative." .
+
+ckp:Task a rdfs:Class ;
+  rdfs:comment "URI-native governed work object." .
+
+ckp:part_of_goal a owl:ObjectProperty ;
+  rdfs:comment "Canonical relation from a Task to its Goal. Current runtime projections may still expose legacy string ids." .
+
+ckp:target_kernel a owl:ObjectProperty ;
+  rdfs:comment "Canonical relation from a Task to the Kernel it targets. Current runtime projections may still expose legacy string ids." .
+
+ckp:in_kernel a owl:ObjectProperty ;
+  rdfs:comment "Canonical relation from an instance to the Kernel instance-space it belongs to." .

@@ -1,0 +1,21 @@
+@prefix ckp:  <https://conceptkernel.org/ontology/v3.8/core#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+<https://conceptkernel.org/ontology/v3.8/affordance> a owl:Ontology ;
+  rdfs:comment "Manual split module for affordance semantics. ckp.boot() does not load this file yet; ontology/core.ttl remains runtime-authoritative." .
+
+ckp:Affordance a rdfs:Class ;
+  rdfs:comment "Resolved semantic contract that governs an inbound or derived operation." .
+
+ckp:inTopic a owl:DatatypeProperty ;
+  rdfs:comment "Transport subject or topic used to route toward an affordance." .
+
+ckp:outTopic a owl:DatatypeProperty ;
+  rdfs:comment "Optional transport subject or topic used for governed egress." .
+
+ckp:inShape a owl:ObjectProperty ;
+  rdfs:comment "Input shape enforced before the affordance's governed action proceeds." .
+
+ckp:sparql a owl:DatatypeProperty ;
+  rdfs:comment "Optional query-backed affordance definition." .
