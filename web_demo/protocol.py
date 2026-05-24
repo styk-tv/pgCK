@@ -10,10 +10,8 @@ from web_demo.board import DEFAULT_KERNELS, KernelColumn, TaskRecord, board_snap
 DEFAULT_NATS_SUBJECT = "broadcast.demo.display"
 DEFAULT_NATS_WS_SCHEME = "wss"
 DEFAULT_NATS_WS_PORT = "8443"
-DEFAULT_NATS_USER = "dev"
-DEFAULT_NATS_PASSWORD = "devpass-change-me"
 DEFAULT_AUDIO_PATH = "/static/audio/chime.wav"
-STATIC_ASSET_VERSION = "20260520a"
+STATIC_ASSET_VERSION = "20260524a"
 
 
 def build_browser_config(hostname: str | None) -> dict[str, Any]:
@@ -27,8 +25,6 @@ def build_browser_config(hostname: str | None) -> dict[str, Any]:
     return {
         "nats_ws_url": nats_ws_url,
         "nats_subject": os.getenv("PGCK_BROWSER_NATS_SUBJECT", DEFAULT_NATS_SUBJECT),
-        "nats_user": os.getenv("NATS_USER", DEFAULT_NATS_USER),
-        "nats_password": os.getenv("NATS_PASSWORD", DEFAULT_NATS_PASSWORD),
         "protocol_version": 1,
     }
 

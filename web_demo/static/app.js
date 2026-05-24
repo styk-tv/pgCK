@@ -538,6 +538,8 @@ function sendConnectAndSubscribe() {
     return;
   }
 
+  // Websocket clients are mapped server-side to a restricted subscribe-only
+  // user, so the browser never receives reusable NATS credentials.
   const connectPayload = {
     verbose: false,
     pedantic: false,
@@ -545,14 +547,6 @@ function sendConnectAndSubscribe() {
     lang: "browser",
     version: "pgck-board-1",
   };
-
-  if (config.nats_user) {
-    connectPayload.user = config.nats_user;
-  }
-
-  if (config.nats_password) {
-    connectPayload.pass = config.nats_password;
-  }
 
   sendProtocol(
     `CONNECT ${JSON.stringify(connectPayload)}\r\nSUB ${config.nats_subject} ${state.sid}\r\nPING\r\n`,

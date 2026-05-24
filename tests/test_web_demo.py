@@ -77,6 +77,8 @@ def test_root_serves_owner_board_shell() -> None:
     assert response.status_code == 200
     assert service.startup_calls == 1
     assert "PGCK_DISPLAY_CONFIG" in response.text
+    assert '"nats_user"' not in response.text
+    assert '"nats_password"' not in response.text
     assert "Create task" in response.text
     assert "Kernel board" in response.text
     assert "Goal selector" in response.text
@@ -181,7 +183,8 @@ def test_browser_config_defaults_to_local_wss() -> None:
 
     assert config["nats_subject"] == "broadcast.demo.display"
     assert config["nats_ws_url"] == "wss://alice.local:8443"
-    assert config["nats_user"] == "dev"
+    assert "nats_user" not in config
+    assert "nats_password" not in config
 
 
 def test_browser_config_supports_plain_ws_scheme_from_env(monkeypatch) -> None:

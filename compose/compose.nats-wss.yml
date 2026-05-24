@@ -4,13 +4,13 @@ services:
   nats:
     image: docker.io/library/nats:2.12-alpine
     restart: unless-stopped
+    environment:
+      NATS_USER: "${NATS_USER:-dev}"
+      NATS_PASSWORD: "${NATS_PASSWORD:-devpass-change-me}"
+      PGCK_BROWSER_NATS_SUBJECT: "${PGCK_BROWSER_NATS_SUBJECT:-broadcast.demo.display}"
     command:
       - "--config"
       - "/etc/nats/nats-server.conf"
-      - "--user"
-      - "${NATS_USER:-dev}"
-      - "--pass"
-      - "${NATS_PASSWORD:-devpass-change-me}"
     ports:
       - "${NATS_TCP_PORT:-4223}:4222"
       - "${NATS_WSS_PORT:-8443}:8443"
