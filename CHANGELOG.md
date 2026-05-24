@@ -8,7 +8,7 @@ All notable changes to `pgCK` are logged here.
 
 - Shipped the aggregated browser and board runtime surface: `web_demo/`, `examples/goal-task-board.kernel.ttl`, and pytest coverage for board payloads, gateway behavior, service behavior, and HTTP/UI endpoints.
 - Added the local browser transport companion with `compose/compose.nats-wss.yml`, `compose/nats/nats-server.conf`, `scripts/generate-dev-certs.sh`, and the `just nats-wss-*` / `smoke-nats-wss` loop.
-- Logged the release blockers in `docs/v0.1.2-release-issues.md` and closed them as part of the release gate.
+- Logged the release blockers in the internal `_WIP/` tracker and closed them as part of the release gate.
 
 ### Changed
 
