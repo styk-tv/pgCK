@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tasks Board - pgCK</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        .tasks-container { max-width: 600px; margin: 0 auto; }
+        .task-list { list-style: none; padding: 0; }
+        .task-item { display: flex; align-items: center; padding: 10px; border: 1px solid #eee; margin: 5px 0; border-radius: 4px; }
+        .task-item input { margin-right: 10px; }
+        .task-item.completed { opacity: 0.5; text-decoration: line-through; }
+        .add-task-form { display: flex; margin: 20px 0; }
+        .add-task-form input { flex: 1; padding: 8px; border: 1px solid #ccc; }
+        .add-task-form button { padding: 8px 16px; background: #007bff; color: white; border: none; cursor: pointer; margin-left: 5px; }
+    </style>
+</head>
+<body>
+    <div class="tasks-container">
+        <h1>Tasks Board</h1>
+        <div class="add-task-form">
+            <input type="text" id="taskInput" placeholder="Add a new task...">
+            <button onclick="addTask()">Add</button>
+        </div>
+        <ul class="task-list" id="taskList"></ul>
+    </div>
+    <script>
+        async function loadTasks() {
+            const response = await fetch('/api/tasks');
+            const tasks = await response.json();
+            const list = document.getElementById('taskList');
+            list.innerHTML = tasks.map(task => `
+                <li class="task-item ${task.completed ? 'completed' : ''}">
+                    <input type="checkbox" ${task.completed ? 'checked' : ''}
+                           onchange="toggleTask('${task.id}')">
+                    <span>${task.title}</span>
+                </li>
+            `).join('');
+        }
+
+        async function addTask() {
+            const input = document.getElementById('taskInput');
+            const title = input.value.trim();
+            if (!title) return;
+
+            const response = await fetch('/api/tasks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: Date.now().toString(), title, completed: false })
+            });
+            input.value = '';
+            loadTasks();
+        }
+
+        async function toggleTask(taskId) {
+            const response = await fetch(`/api/tasks/${taskId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: taskId, title: "updated", completed: true })
+            });
+            loadTasks();
+        }
+
+        loadTasks();
+    </script>
+</body>
+</html>
