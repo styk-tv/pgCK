@@ -19,7 +19,7 @@ services:
       - ./extensions/pgck/lib/pgck.so:/usr/lib/postgresql/17/lib/pgck.so:ro,z
       - ./extensions/pgck/share/extension/pgck.control:/usr/share/postgresql/17/extension/pgck.control:ro,z
       - ./extensions/pgck/share/extension/pgck--0.1.2.sql:/usr/share/postgresql/17/extension/pgck--0.1.2.sql:ro,z
-      - ../ontology:/ontology:ro,z
+      - ../fixtures/ontologies:/ontology:ro,z
       - ../examples:/examples:ro,z
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pgck} -d ${POSTGRES_DB:-pgck}"]
