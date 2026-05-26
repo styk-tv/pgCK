@@ -169,3 +169,34 @@ Local defaults:
 
 The generated CA certificate lives at `compose/dev-certs/ca.pem`. Trust that CA on the
 other laptop before attempting browser WSS connections.
+
+## pgck-web OCI Layer
+
+The `pgck-web` artifact is a non-runnable OCI layer that serves two browser entry points (display demo + tasks board) via FastAPI. It is designed to be grafted into the [oci-germination](https://github.com/sporaxis-com/oci-germination) supervisor runtime.
+
+### Building Locally
+
+```bash
+bash compose/layers/pgck-web/build.sh dev
+```
+
+This builds a local OCI image tagged `pgck-web:dev-{amd64,arm64}` (depending on your architecture).
+
+### Publishing
+
+Push a tag to trigger the release workflow:
+
+```bash
+git tag pgck-web/v0.1.0
+git push origin pgck-web/v0.1.0
+```
+
+GitHub Actions will:
+1. Build multi-arch OCI images (amd64 + arm64)
+2. Push to `ghcr.io/styk-tv/pgck-web:v0.1.0-{amd64,arm64}`
+3. Generate SBOMs for supply-chain security
+4. Notify oci-germination of the new layer
+
+### Integration with oci-germination
+
+See [oci-germination](https://github.com/sporaxis-com/oci-germination) for instructions on how to add this layer to the supervisor-based runtime pod.
