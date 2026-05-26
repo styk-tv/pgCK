@@ -31,12 +31,21 @@
             const tasks = await response.json();
             const list = document.getElementById('taskList');
             list.innerHTML = tasks.map(task => `
-                <li class="task-item ${task.completed ? 'completed' : ''}">
-                    <input type="checkbox" ${task.completed ? 'checked' : ''}
-                           onchange="toggleTask('${task.id}')">
+                <li class="task-item ${task.completed ? 'completed' : ''}" data-task-id="${task.id}">
+                    <input type="checkbox" ${task.completed ? 'checked' : ''} class="task-checkbox">
                     <span>${task.title}</span>
                 </li>
             `).join('');
+
+            // Attach event listeners via delegation
+            document.querySelectorAll('.task-checkbox').forEach(checkbox => {
+                checkbox.addEventListener('change', (e) => {
+                    const taskItem = e.target.closest('li');
+                    const taskId = taskItem.dataset.taskId;
+                    const taskTitle = taskItem.querySelector('span').textContent;
+                    toggleTask(taskId, taskTitle);
+                });
+            });
         }
 
         async function addTask() {
@@ -53,11 +62,11 @@
             loadTasks();
         }
 
-        async function toggleTask(taskId) {
+        async function toggleTask(taskId, taskTitle) {
             const response = await fetch(`/api/tasks/${taskId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: taskId, title: "updated", completed: true })
+                body: JSON.stringify({ id: taskId, title: taskTitle, completed: true })
             });
             loadTasks();
         }

@@ -7,7 +7,6 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 WEB_DIR="$PROJECT_ROOT/web"
-OUTPUT_DIR="$SCRIPT_DIR/output"
 
 # Detect architecture
 ARCH=$(uname -m)
@@ -19,14 +18,10 @@ esac
 
 VERSION="${1:-dev}"
 IMAGE_NAME="pgck-web:${VERSION}-${ARCH_TAG}"
-TAR_OUTPUT="$OUTPUT_DIR/pgck-web-${VERSION}-${ARCH_TAG}.oci.tar"
 
 echo "[pgck-web build] Architecture: $ARCH_TAG"
 echo "[pgck-web build] Version: $VERSION"
 echo "[pgck-web build] Building: $IMAGE_NAME"
-
-# Create output directory
-mkdir -p "$OUTPUT_DIR"
 
 # Build OCI image
 cd "$WEB_DIR"

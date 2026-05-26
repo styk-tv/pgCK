@@ -1,6 +1,5 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import List
 
 router = APIRouter()
 
@@ -23,7 +22,7 @@ async def create_task(task: Task):
 @router.put("/api/tasks/{task_id}")
 async def update_task(task_id: str, task: Task):
     for i, t in enumerate(tasks_store):
-        if t["id"] == task_id:
-            tasks_store[i] = task.dict()
+        if t.id == task_id:
+            tasks_store[i] = task
             return {"status": "ok", "task": task}
     return {"status": "error", "message": "Task not found"}
