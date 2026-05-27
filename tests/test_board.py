@@ -1,9 +1,12 @@
 from web_demo.board import (
     DEFAULT_KERNELS,
+    GoalRecord,
     KernelColumn,
     TaskRecord,
+    build_goal_body,
     build_task_body,
     board_snapshot_payload,
+    goal_record_from_mapping,
     sort_tasks,
     task_upsert_payload,
 )
@@ -105,3 +108,67 @@ def test_board_payload_helpers_emit_shared_subject_shapes() -> None:
     assert snapshot["board"]["kernels"][0]["kernel_id"] == kernels[0].kernel_id
     assert upsert["kind"] == "task_upsert"
     assert upsert["task"]["task_id"] == "FC-T-0001"
+
+
+def test_build_goal_body_uses_core_iris() -> None:
+    body = build_goal_body(
+        goal_id="FC-G-0001",
+        title="Fortify the fleet",
+        created_at="2026-05-20T20:00:00Z",
+        detail="Stabilise the kernel board slice and prove the governed path.",
+        created_by="seed",
+    )
+
+    assert body["type"].endswith("/Goal")
+    assert body["https://conceptkernel.org/ontology/v3.7/goal_id"] == "FC-G-0001"
+    assert body["https://conceptkernel.org/ontology/v3.7/title"] == "Fortify the fleet"
+    assert body["https://conceptkernel.org/ontology/v3.7/created_at"] == "2026-05-20T20:00:00Z"
+
+
+def test_goal_record_from_mapping_handles_optional_fields() -> None:
+    goal_data = {
+        "goal_id": "FC-G-0001",
+        "title": "Fortify the fleet",
+        "created_at": "2026-05-20T20:00:00Z",
+    }
+
+    goal = goal_record_from_mapping(goal_data)
+
+    assert goal.goal_id == "FC-G-0001"
+    assert goal.title == "Fortify the fleet"
+    assert goal.created_at == "2026-05-20T20:00:00Z"
+    assert goal.detail == ""
+    assert goal.created_by == ""
+
+
+def test_goal_record_preserves_detail_and_created_by() -> None:
+    goal_data = {
+        "goal_id": "FC-G-0001",
+        "title": "Fortify the fleet",
+        "created_at": "2026-05-20T20:00:00Z",
+        "detail": "Stabilise the kernel board slice.",
+        "created_by": "owner",
+    }
+
+    goal = goal_record_from_mapping(goal_data)
+
+    assert goal.detail == "Stabilise the kernel board slice."
+    assert goal.created_by == "owner"
+
+
+def test_goal_record_to_dict_produces_dataclass_fields() -> None:
+    goal = GoalRecord(
+        goal_id="FC-G-0001",
+        title="Fortify the fleet",
+        created_at="2026-05-20T20:00:00Z",
+        detail="Stabilise the kernel board slice.",
+        created_by="seed",
+    )
+
+    goal_dict = goal.to_dict()
+
+    assert goal_dict["goal_id"] == "FC-G-0001"
+    assert goal_dict["title"] == "Fortify the fleet"
+    assert goal_dict["created_at"] == "2026-05-20T20:00:00Z"
+    assert goal_dict["detail"] == "Stabilise the kernel board slice."
+    assert goal_dict["created_by"] == "seed"
