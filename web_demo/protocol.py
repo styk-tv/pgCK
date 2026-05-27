@@ -166,7 +166,7 @@ def render_index(config: dict[str, Any]) -> str:
     </main>
 
     <audio id="audio-player" preload="auto"></audio>
-    <script src="/static/app.js?v={STATIC_ASSET_VERSION}" defer></script>
+    <script type="module" src="/static/display-app.js?v={STATIC_ASSET_VERSION}"></script>
   </body>
 </html>
 """
@@ -232,7 +232,7 @@ def render_tasks_page(config: dict[str, Any]) -> str:
     </main>
 
     <audio id="audio-player" preload="auto"></audio>
-    <script src="/static/app.js?v={STATIC_ASSET_VERSION}" defer></script>
+    <script src="/static/board-app.js?v={STATIC_ASSET_VERSION}" defer></script>
   </body>
 </html>
 """
