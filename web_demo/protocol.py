@@ -9,7 +9,8 @@ from web_demo.board import DEFAULT_KERNELS, KernelColumn, TaskRecord, board_snap
 
 DEFAULT_NATS_SUBJECT = "broadcast.demo.display"
 DEFAULT_NATS_WS_SCHEME = "wss"
-DEFAULT_NATS_WS_PORT = "8443"
+DEFAULT_NATS_WS_PORT = "443"
+DEFAULT_NATS_WS_PATH = "/wss"
 DEFAULT_AUDIO_PATH = "/static/audio/chime.wav"
 STATIC_ASSET_VERSION = "20260524a"
 
@@ -17,10 +18,11 @@ STATIC_ASSET_VERSION = "20260524a"
 def build_browser_config(hostname: str | None) -> dict[str, Any]:
     nats_ws_url = os.getenv("PGCK_BROWSER_NATS_URL")
     if not nats_ws_url:
-        host = hostname or "127.0.0.1"
+        host = hostname or "pgck.localhost"
         scheme = os.getenv("PGCK_BROWSER_NATS_SCHEME", DEFAULT_NATS_WS_SCHEME)
         port = os.getenv("PGCK_BROWSER_NATS_PORT", DEFAULT_NATS_WS_PORT)
-        nats_ws_url = f"{scheme}://{host}:{port}"
+        path = os.getenv("PGCK_BROWSER_NATS_PATH", DEFAULT_NATS_WS_PATH)
+        nats_ws_url = f"{scheme}://{host}:{port}{path}"
 
     return {
         "nats_ws_url": nats_ws_url,
