@@ -1,8 +1,10 @@
 import { test, expect } from '@playwright/test';
 
+const BASE_URL = 'https://pgck.localhost';
+
 test.describe('pgCK Display Page (NATS Messages)', () => {
   test('should load display page over HTTPS', async ({ page }) => {
-    await page.goto('/');
+    await page.goto(`${BASE_URL}/`);
 
     // Verify page title
     await expect(page).toHaveTitle('pgCK Display — NATS Messages');
@@ -13,7 +15,7 @@ test.describe('pgCK Display Page (NATS Messages)', () => {
   });
 
   test('should have display nav link highlighted', async ({ page }) => {
-    await page.goto('/');
+    await page.goto(`${BASE_URL}/`);
 
     const displayLink = page.locator('.nav-link.display-link');
     await expect(displayLink).toBeVisible();
@@ -21,7 +23,7 @@ test.describe('pgCK Display Page (NATS Messages)', () => {
   });
 
   test('should show NATS connection status', async ({ page }) => {
-    await page.goto('/');
+    await page.goto(`${BASE_URL}/`);
 
     const statusCard = page.locator('.status-card');
     await expect(statusCard).toBeVisible();
@@ -31,7 +33,7 @@ test.describe('pgCK Display Page (NATS Messages)', () => {
   });
 
   test('should have protocol documentation section', async ({ page }) => {
-    await page.goto('/');
+    await page.goto(`${BASE_URL}/`);
 
     const protocolCard = page.locator('.protocol-card');
     await expect(protocolCard).toBeVisible();
@@ -41,7 +43,7 @@ test.describe('pgCK Display Page (NATS Messages)', () => {
   });
 
   test('should have audio control button', async ({ page }) => {
-    await page.goto('/');
+    await page.goto(`${BASE_URL}/`);
 
     const audioButton = page.locator('#audio-unlock');
     await expect(audioButton).toBeVisible();
@@ -49,24 +51,24 @@ test.describe('pgCK Display Page (NATS Messages)', () => {
   });
 
   test('should navigate to board page via nav menu', async ({ page }) => {
-    await page.goto('/');
+    await page.goto(`${BASE_URL}/`);
 
     const boardLink = page.locator('.nav-link.board-link');
     await boardLink.click();
 
     // Should navigate to tasks page
-    await expect(page).toHaveURL('/tasks.html');
+    await expect(page).toHaveURL(`${BASE_URL}/tasks.html`);
     await expect(page).toHaveTitle('pgCK Kernel Board');
   });
 
   test('should load with self-signed HTTPS certificate', async ({ page }) => {
-    const response = await page.goto('/');
+    const response = await page.goto(`${BASE_URL}/`);
 
     // Verify we got a successful response despite self-signed cert
     expect(response?.status()).toBeLessThan(400);
 
-    // Verify TLS handshake completed (browser security model enforced)
-    const securityDetails = page.context().browser?.version();
-    expect(securityDetails).toBeDefined();
+    // Verify page is accessible (TLS handshake completed)
+    const title = await page.title();
+    expect(title).toContain('pgCK Display');
   });
 });

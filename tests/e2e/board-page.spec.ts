@@ -1,8 +1,10 @@
 import { test, expect } from '@playwright/test';
 
+const BASE_URL = 'https://pgck.localhost';
+
 test.describe('pgCK Kernel Board Page', () => {
   test('should load board page over HTTPS', async ({ page }) => {
-    await page.goto('/tasks.html');
+    await page.goto(`${BASE_URL}/tasks.html`);
 
     // Verify page title
     await expect(page).toHaveTitle('pgCK Kernel Board');
@@ -13,7 +15,7 @@ test.describe('pgCK Kernel Board Page', () => {
   });
 
   test('should have board nav link highlighted', async ({ page }) => {
-    await page.goto('/tasks.html');
+    await page.goto(`${BASE_URL}/tasks.html`);
 
     const boardLink = page.locator('.nav-link.board-link');
     await expect(boardLink).toBeVisible();
@@ -21,7 +23,7 @@ test.describe('pgCK Kernel Board Page', () => {
   });
 
   test('should display task creation form', async ({ page }) => {
-    await page.goto('/tasks.html');
+    await page.goto(`${BASE_URL}/tasks.html`);
 
     const composerCard = page.locator('.composer-card');
     await expect(composerCard).toBeVisible();
@@ -41,7 +43,7 @@ test.describe('pgCK Kernel Board Page', () => {
   });
 
   test('should load kernel columns on board', async ({ page }) => {
-    await page.goto('/tasks.html');
+    await page.goto(`${BASE_URL}/tasks.html`);
 
     const boardCard = page.locator('.board-card');
     await expect(boardCard).toBeVisible();
@@ -54,7 +56,7 @@ test.describe('pgCK Kernel Board Page', () => {
   });
 
   test('should populate goal and kernel selectors via API', async ({ page }) => {
-    await page.goto('/tasks.html');
+    await page.goto(`${BASE_URL}/tasks.html`);
 
     // Wait for API calls to populate
     await page.waitForLoadState('networkidle');
@@ -75,18 +77,18 @@ test.describe('pgCK Kernel Board Page', () => {
   });
 
   test('should navigate to display page via nav menu', async ({ page }) => {
-    await page.goto('/tasks.html');
+    await page.goto(`${BASE_URL}/tasks.html`);
 
     const displayLink = page.locator('.nav-link.display-link');
     await displayLink.click();
 
     // Should navigate to display page
-    await expect(page).toHaveURL('/');
+    await expect(page).toHaveURL(`${BASE_URL}/`);
     await expect(page).toHaveTitle('pgCK Display — NATS Messages');
   });
 
-  test('should fetch board snapshot from API over HTTPS', async ({ page }) => {
-    const apiResponse = await page.request.get('https://pgck.localhost/api/board', {
+  test('should fetch board snapshot from API over HTTPS', async ({ request }) => {
+    const apiResponse = await request.get(`${BASE_URL}/api/board`, {
       ignoreHTTPSErrors: true,
     });
 
@@ -100,7 +102,7 @@ test.describe('pgCK Kernel Board Page', () => {
   });
 
   test('should handle task creation over HTTPS API', async ({ page }) => {
-    await page.goto('/tasks.html');
+    await page.goto(`${BASE_URL}/tasks.html`);
 
     // Verify form is interactive
     const titleInput = page.locator('#title-input');

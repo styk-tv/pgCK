@@ -1,36 +1,16 @@
 const config = window.PGCK_DISPLAY_CONFIG;
 
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-
 const state = {
-  socket: null,
-  sid: 1,
-  reconnectTimer: null,
-  subscriptionSent: false,
-  buffer: new Uint8Array(0),
-  pendingMessage: null,
-  pendingAudio: null,
-  audioEnabled: false,
   board: { kernels: [], tasks: [] },
   goals: [],
   kernels: [],
   visibleKernelIds: new Set(),
-  highlightTaskId: null,
 };
 
 const refs = {};
 
 window.addEventListener("DOMContentLoaded", () => {
-  refs.connectionDot = document.getElementById("connection-dot");
-  refs.connectionStatus = document.getElementById("connection-status");
-  refs.natsUrl = document.getElementById("nats-url");
-  refs.natsSubject = document.getElementById("nats-subject");
-  refs.audioUnlock = document.getElementById("audio-unlock");
-  refs.audioStatus = document.getElementById("audio-status");
-  refs.audioPlayer = document.getElementById("audio-player");
-  refs.protocolOutput = document.getElementById("protocol-output");
-  refs.lastPayload = document.getElementById("last-payload");
+  // Board-specific elements
   refs.goalSelect = document.getElementById("goal-select");
   refs.kernelSelect = document.getElementById("kernel-select");
   refs.titleInput = document.getElementById("title-input");
@@ -40,14 +20,12 @@ window.addEventListener("DOMContentLoaded", () => {
   refs.formStatus = document.getElementById("form-status");
   refs.kernelToggles = document.getElementById("kernel-toggles");
   refs.boardColumns = document.getElementById("board-columns");
-  refs.slideText = document.getElementById("slide-text");
-  refs.slideCaption = document.getElementById("slide-caption");
+  refs.audioPlayer = document.getElementById("audio-player");
 
-  refs.natsUrl.textContent = config.nats_ws_url;
-  refs.natsSubject.textContent = config.nats_subject;
-
-  refs.audioUnlock.addEventListener("click", enableAudio);
-  refs.taskForm.addEventListener("submit", submitTask);
+  // Bind form submission
+  if (refs.taskForm) {
+    refs.taskForm.addEventListener("submit", submitTask);
+  }
 
   loadProtocol();
   loadBoardData().finally(() => connect());
