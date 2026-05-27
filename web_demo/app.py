@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from web_demo.protocol import build_browser_config, protocol_document, render_index
+from web_demo.protocol import build_browser_config, protocol_document, render_index, render_tasks_page
 from web_demo.service import BoardValidationError, build_live_board_service
 
 
@@ -40,6 +40,11 @@ def create_app(service: Any | None = None) -> FastAPI:
     async def root(request: Request) -> HTMLResponse:
         config = build_browser_config(request.url.hostname)
         return HTMLResponse(render_index(config))
+
+    @app.get("/tasks.html", response_class=HTMLResponse)
+    async def tasks_page(request: Request) -> HTMLResponse:
+        config = build_browser_config(request.url.hostname)
+        return HTMLResponse(render_tasks_page(config))
 
     @app.get("/healthz")
     async def healthz() -> dict[str, bool]:

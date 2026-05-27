@@ -11,6 +11,42 @@
   --line: rgba(255, 255, 255, 0.08);
 }
 
+.nav-menu {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background: rgba(8, 16, 28, 0.95);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+}
+
+.nav-link {
+  padding: 0.5rem 1rem;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  transition: all 200ms ease;
+}
+
+.nav-link:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
+.nav-link.display-link {
+  color: var(--ok);
+}
+
+.nav-link.board-link {
+  color: var(--accent);
+}
+
 * {
   box-sizing: border-box;
 }

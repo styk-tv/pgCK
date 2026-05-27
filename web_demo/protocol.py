@@ -107,6 +107,13 @@ def protocol_document(hostname: str | None) -> dict[str, Any]:
     }
 
 
+def _render_nav_menu() -> str:
+    return """<nav class="nav-menu">
+      <a href="/" class="nav-link display-link">Display</a>
+      <a href="/tasks.html" class="nav-link board-link">Board</a>
+    </nav>"""
+
+
 def render_index(config: dict[str, Any]) -> str:
     config_json = json.dumps(config)
     return f"""<!doctype html>
@@ -114,17 +121,18 @@ def render_index(config: dict[str, Any]) -> str:
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>pgCK Goal Task Board</title>
+    <title>pgCK Display — NATS Messages</title>
     <link rel="stylesheet" href="/static/app.css?v={STATIC_ASSET_VERSION}" />
   </head>
   <body>
+    {_render_nav_menu()}
     <script>
       window.PGCK_DISPLAY_CONFIG = {config_json};
     </script>
 
     <main class="shell">
       <section class="status-card">
-        <div class="eyebrow">pgCK goal task board mvp</div>
+        <div class="eyebrow">pgCK display — NATS messages</div>
         <div class="status-row">
           <span class="status-dot" id="connection-dot"></span>
           <span id="connection-status">Connecting…</span>
@@ -146,10 +154,43 @@ def render_index(config: dict[str, Any]) -> str:
         <button class="audio-button" id="audio-unlock">Enable audio</button>
       </section>
 
+      <section class="protocol-card">
+        <div class="eyebrow">Protocol</div>
+        <p>This page receives NATS broadcast messages: theme changes, audio, and live events.</p>
+        <div id="protocol-output" class="protocol-output">Loading protocol…</div>
+        <div class="eyebrow">Last payload</div>
+        <pre id="last-payload" class="last-payload">No payload received yet.</pre>
+      </section>
+    </main>
+
+    <audio id="audio-player" preload="auto"></audio>
+    <script src="/static/app.js?v={STATIC_ASSET_VERSION}" defer></script>
+  </body>
+</html>
+"""
+
+
+def render_tasks_page(config: dict[str, Any]) -> str:
+    config_json = json.dumps(config)
+    return f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pgCK Kernel Board</title>
+    <link rel="stylesheet" href="/static/app.css?v={STATIC_ASSET_VERSION}" />
+  </head>
+  <body>
+    {_render_nav_menu()}
+    <script>
+      window.PGCK_DISPLAY_CONFIG = {config_json};
+    </script>
+
+    <main class="shell">
       <section class="composer-card">
-        <div class="eyebrow">Owner composer</div>
-        <h1>Create task</h1>
-        <p class="composer-copy">Goal selector, kernel selector, priority, and detail will drive governed task creation.</p>
+        <div class="eyebrow">Create task</div>
+        <h1>Owner composer</h1>
+        <p class="composer-copy">Goal selector, kernel selector, priority, and detail drive governed task creation.</p>
         <p id="form-status" class="form-status">Ready to seal tasks.</p>
         <form id="task-form">
           <label class="field">
@@ -185,15 +226,6 @@ def render_index(config: dict[str, Any]) -> str:
           <div id="kernel-toggles" class="kernel-toggles"></div>
         </div>
         <div id="board-columns" class="board-columns"></div>
-        <h1 id="slide-text" hidden>Kernel board</h1>
-        <p id="slide-caption" hidden>Board snapshot and task upsert events arrive on the shared subject.</p>
-      </section>
-
-      <section class="protocol-card">
-        <div class="eyebrow">Protocol</div>
-        <div id="protocol-output" class="protocol-output">Loading protocol…</div>
-        <div class="eyebrow">Last payload</div>
-        <pre id="last-payload" class="last-payload">No payload received yet.</pre>
       </section>
     </main>
 
