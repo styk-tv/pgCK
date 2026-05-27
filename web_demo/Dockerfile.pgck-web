@@ -1,0 +1,36 @@
+# Multi-stage: builder + runtime
+FROM python:3.11-slim as builder
+
+WORKDIR /build
+
+# Copy requirements and install to venv
+# When build context is project root, requirements.txt is at the root
+COPY requirements.txt .
+RUN python -m venv /opt/venv && \
+    . /opt/venv/bin/activate && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Runtime stage
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy venv from builder
+COPY --from=builder /opt/venv /opt/venv
+
+# Copy web_demo module from build context
+# When build context is project root, web_demo is in ./web_demo/
+COPY web_demo/ ./web_demo/
+
+# Create launcher script
+RUN mkdir -p /usr/local/bin && \
+    printf '#!/bin/sh\nset -e\ncd /app\nPATH=/opt/venv/bin:$PATH\nexec python -m uvicorn web_demo.app:app --host 0.0.0.0 --port 8000\n' > /usr/local/bin/pgck-web-launcher && \
+    chmod +x /usr/local/bin/pgck-web-launcher
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD /opt/venv/bin/python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/')" || exit 1
+
+EXPOSE 8000
+
+ENTRYPOINT ["/usr/local/bin/pgck-web-launcher"]
