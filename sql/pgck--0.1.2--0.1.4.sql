@@ -1,0 +1,4 @@
+-- pgCK 0.1.2 -> 0.1.4 upgrade (no schema change)
+-- v0.1.3 was tagged but never published due to release-workflow version mismatch (CI gap).
+-- v0.1.4 fixes Cargo.toml version sync + bgworker test cfg gate (CI red since main was).
+-- No SQL surface change between 0.1.2 and 0.1.4; this script is a no-op upgrade marker.

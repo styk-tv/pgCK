@@ -24,7 +24,7 @@ mod bgworker;
 mod nats;
 
 // Ship the working governed-write path as the extension's bootstrap SQL.
-extension_sql_file!("../sql/pgck--0.1.2.sql", name = "pgck_bootstrap");
+extension_sql_file!("../sql/pgck--0.1.4.sql", name = "pgck_bootstrap");
 
 /// Registered at load time (shared_preload_libraries = 'pgck').
 /// Spawns the pgCK background worker.
