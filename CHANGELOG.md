@@ -2,6 +2,43 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.2.0 - 2026-05-28
+
+**Track B ship-it.** First major track flip — minor bump signals that the **Ontology + SHACL gate at `ckp.seal()`** track is complete. The worked example from `_WIP/SPEC.PGCK.TASK-GOAL-KERNEL-RDF.v0.1.md §6` reproduces end-to-end; the SHACL gate rolls back non-conforming seals; the IRI dictionary + URN normaliser + ontology module importer underpin the whole pipeline.
+
+### Track B summary
+
+| Task | Subject | Shipped |
+|---|---|---|
+| **CKB-7** | Ontology modules `ontology/task.ttl` + `ontology/goal.ttl` with classes, predicates, SHACL shapes | v0.1.3 (`c2602ff`) |
+| **CKB-6** | `ckp.dictionary` + `dict_intern` + `urn_normalise` + `import_module` + `shapes_self_test` | v0.1.3 (`f05e540`) |
+| **CKB-5** | `ckp.seal()` projects link triples (`a`, `part_of_goal`, `target_kernel`) into the project board graph | v0.1.7 (`41fcfa9`) |
+| **CKB-4** | SHACL gate at the seal boundary — rollback on `conforms: false`; pre-flight `shapes_self_test` fails fast on stale ontology mounts | v0.1.8 (`a7c65ad`) |
+| **CKB-3** | `ckp.load_kernel()` auto-imports `task` + `goal` modules into the board | v0.1.7 (`41fcfa9`) |
+| **CKB-2** | Worked example — `sql/test/s7_board_shared_goal.sql` recovers 4 distinct kernels under a shared Goal via SPARQL | v0.1.9 (`76175f4`) |
+| **CKB-1** | **Ship-it** — track flipped to ✅ in roadmap; release-notes cite the worked-example output | v0.2.0 (this release) |
+
+### Worked example output
+
+```
+ckp://Kernel#ck-lib-js
+ckp://Kernel#oci-germination
+ckp://Kernel#pgck
+ckp://Kernel#pgrdf
+```
+
+Four Tasks (`S7-T-1..4`) sealed via `ckp.seal()` part_of a single Goal (`v3.8-pgxn-release`), each targeting a distinct kernel, queried back through `pgrdf.sparql()` against the projected board graph at `urn:ckp:s7-test/kernel/board`.
+
+### Changed
+
+- **Release pipeline matrix narrowed to `pg17`** (was 4 PG × 2 arch = 8 legs). The LATEST.md head only tracks pg17, and the prior 8-leg matrix starved the shared arm64 runner pool on v0.1.9, leaving the orchestrating `release` job skipped. Re-expand to pg14/15/16 once the pg17 attestation + release path is reliable.
+
+### Verification
+
+- `sql/test/s6_seal_shacl_gate.sql` — **PASS** (CKB-4 regression — good Task seals, bad Task raises with `MinCountConstraintComponent`, no rollback leak).
+- `sql/test/s7_board_shared_goal.sql` — **PASS** (CKB-2 regression — 4 distinct kernels under shared Goal).
+- `cargo check --no-default-features --features pg17 --tests` — clean.
+
 ## v0.1.9 - 2026-05-28
 
 Single-task release: CKB-2 closes — the four-kernel worked example from the companion spec is reproducible end-to-end against the live `ckp.seal()` + projection + SHACL-gate stack.

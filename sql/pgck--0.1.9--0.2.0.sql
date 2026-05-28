@@ -1,0 +1,5 @@
+-- pgCK 0.1.9 -> 0.2.0 upgrade (no schema change)
+-- v0.2.0 is CKB-1 — the Track B ship-it. The SHACL gate at the seal
+-- boundary (CKB-4, v0.1.8) and the worked-example fixture (CKB-2,
+-- v0.1.9) close the track. This is a minor bump signalling the first
+-- major track flip; no new SQL surface.

@@ -22,7 +22,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pg: ["14", "15", "16", "17"]
+        # Narrowed to pg17 only while pgCK is pre-v0.3 — the LATEST.md head
+        # only tracks pg17 anyway, and the 4-PG × 2-arch matrix starves the
+        # shared arm64 runner pool (one leg got stuck queued on v0.1.9 and
+        # took the orchestrating release job with it). Re-expand to
+        # pg14/15/16 once the pg17 attestation+release path is reliable.
+        pg: ["17"]
         arch: [amd64, arm64]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-22.04' }}
     steps:
