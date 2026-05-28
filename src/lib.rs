@@ -24,7 +24,7 @@ mod bgworker;
 mod nats;
 
 // Ship the working governed-write path as the extension's bootstrap SQL.
-extension_sql_file!("../sql/pgck--0.1.5.sql", name = "pgck_bootstrap");
+extension_sql_file!("../sql/pgck--0.1.7.sql", name = "pgck_bootstrap");
 
 /// Registered at load time (shared_preload_libraries = 'pgck').
 /// Spawns the pgCK background worker.
@@ -58,14 +58,14 @@ pub extern "C-unwind" fn pgck_bridge_main(_arg: pg_sys::Datum) {
 /// `SELECT pgck_version();`
 #[pg_extern]
 fn pgck_version() -> &'static str {
-    "pgck 0.1.5 (rc3)"
+    "pgck 0.1.7 (rc3)"
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
     fn version_present() {
-        assert_eq!(crate::pgck_version(), "pgck 0.1.5 (rc3)");
+        assert_eq!(crate::pgck_version(), "pgck 0.1.7 (rc3)");
     }
 }
 
