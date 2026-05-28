@@ -67,6 +67,9 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Generate SBOM
+        id: sbom
+        # syft cannot pull arm64 image from amd64 runner without QEMU; non-fatal until split into per-arch matrix
+        continue-on-error: true
         uses: anchore/sbom-action@v0
         with:
           image: ghcr.io/styk-tv/pgck-web:${{ steps.version.outputs.version }}-${{ steps.arch.outputs.arch_tag }}
@@ -74,6 +77,7 @@ jobs:
           output-file: pgck-web-${{ steps.arch.outputs.arch_tag }}-sbom.spdx.json
 
       - name: Upload SBOM
+        if: steps.sbom.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: sbom-${{ steps.arch.outputs.arch_tag }}
