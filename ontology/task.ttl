@@ -1,18 +1,39 @@
 @prefix ckp:  <https://conceptkernel.org/ontology/v3.8/core#> .
 @prefix owl:  <http://www.w3.org/2002/07/owl#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+#######################################################################
+# CKP TASK MODULE — split module for Task semantics.
+# Loaded via ckp.import_module('task', <project>) into the project's
+# board graph (urn:ckp:<project>/kernel/board). Not loaded by ckp.boot()
+# — ontology/core.ttl remains authoritative for the core runtime.
+# Authoritative design: _WIP/SPEC.PGCK.TASK-GOAL-KERNEL-RDF.v0.1.md §3.1.
+#######################################################################
 
 <https://conceptkernel.org/ontology/v3.8/task> a owl:Ontology ;
-  rdfs:comment "Manual split module for task semantics. ckp.boot() does not load this file yet; ontology/core.ttl remains runtime-authoritative." .
+  rdfs:comment "URI-native Task semantics. Importable into a project board graph via ckp.import_module('task', <project>)." .
 
 ckp:Task a rdfs:Class ;
-  rdfs:comment "URI-native governed work object." .
+  rdfs:label "Task" ;
+  rdfs:comment "URI-native governed work object. Sealed-immutable: every lifecycle change is a new sealed row." .
 
 ckp:part_of_goal a owl:ObjectProperty ;
-  rdfs:comment "Canonical relation from a Task to its Goal. Current runtime projections may still expose legacy string ids." .
+  rdfs:domain ckp:Task ;
+  rdfs:range  ckp:Goal ;
+  rdfs:comment "Canonical relation from a Task to its Goal." .
 
 ckp:target_kernel a owl:ObjectProperty ;
-  rdfs:comment "Canonical relation from a Task to the Kernel it targets. Current runtime projections may still expose legacy string ids." .
+  rdfs:domain ckp:Task ;
+  rdfs:range  ckp:Kernel ;
+  rdfs:comment "Canonical relation from a Task to the Kernel it targets." .
 
 ckp:in_kernel a owl:ObjectProperty ;
-  rdfs:comment "Canonical relation from an instance to the Kernel instance-space it belongs to." .
+  rdfs:range  ckp:Kernel ;
+  rdfs:comment "Canonical relation from any instance to the Kernel instance-space it belongs to." .
+
+ckp:TaskShape a sh:NodeShape ;
+  sh:targetClass ckp:Task ;
+  sh:property [ sh:path ckp:part_of_goal  ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
+  sh:property [ sh:path ckp:target_kernel ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .

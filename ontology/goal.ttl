@@ -1,9 +1,26 @@
 @prefix ckp:  <https://conceptkernel.org/ontology/v3.8/core#> .
 @prefix owl:  <http://www.w3.org/2002/07/owl#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+#######################################################################
+# CKP GOAL MODULE — split module for Goal semantics.
+# Loaded via ckp.import_module('goal', <project>) into the project's
+# board graph (urn:ckp:<project>/kernel/board). Not loaded by ckp.boot()
+# — ontology/core.ttl remains authoritative for the core runtime.
+# Authoritative design: _WIP/SPEC.PGCK.TASK-GOAL-KERNEL-RDF.v0.1.md §3.2.
+# Goals are intentionally shareable across Kernels; sharing is observed
+# via the inbound Task set rather than declared on the Goal itself.
+#######################################################################
 
 <https://conceptkernel.org/ontology/v3.8/goal> a owl:Ontology ;
-  rdfs:comment "Manual split module for goal semantics. ckp.boot() does not load this file yet; ontology/core.ttl remains runtime-authoritative." .
+  rdfs:comment "URI-native Goal semantics. Importable into a project board graph via ckp.import_module('goal', <project>)." .
 
 ckp:Goal a rdfs:Class ;
-  rdfs:comment "URI-native objective or governed intent object." .
+  rdfs:label "Goal" ;
+  rdfs:comment "URI-native objective or governed intent object. May be shared across multiple Kernels." .
+
+ckp:GoalShape a sh:NodeShape ;
+  sh:targetClass ckp:Goal ;
+  sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] .
