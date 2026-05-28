@@ -1,28 +1,25 @@
 /**
- * pgCK Display — NATS-only broadcast client using nats.ws (aligned with CK.Lib.Js patterns)
+ * pgCK Display — NATS-only broadcast client backed by CK.Lib.Js CKClient.
  *
- * Receives: theme, audio, message, task_upsert, board_snapshot from broadcast.demo.display
- * Emits: status updates to same subject (anonymous identity)
+ * Subscribes to event.<display_kernel> via CKClient and renders broadcast
+ * messages (theme, audio, message, task_upsert, board_snapshot). All transport
+ * lives inside CKClient; this module is pure UI orchestration.
  *
- * Pure NATS protocol — no REST API dependencies
+ * Forward-compatible with CK.Lib.Js v1.3 (binary codec) — when CKClient swaps
+ * its codec the dispatch surface here (kind/payload) stays unchanged.
  */
 
-// Import nats.ws (same as CK.Lib.Js does)
-import { connect, JSONCodec } from "https://esm.sh/nats.ws@1.30.3";
+import { CKClient } from "/cklib/ck-client.js";
 
 const config = window.PGCK_DISPLAY_CONFIG;
-const jc = JSONCodec();
 
 const state = {
-  nc: null,
-  connected: false,
+  ck: null,
   audioEnabled: false,
-  lastPayload: null,
 };
 
 const refs = {};
 
-// DOM references
 window.addEventListener("DOMContentLoaded", () => {
   refs.connectionDot = document.getElementById("connection-dot");
   refs.connectionStatus = document.getElementById("connection-status");
@@ -36,91 +33,81 @@ window.addEventListener("DOMContentLoaded", () => {
 
   refs.natsUrl.textContent = config.nats_ws_url;
   refs.natsSubject.textContent = config.nats_subject;
-
   refs.audioUnlock.addEventListener("click", enableAudio);
 
   loadProtocol();
-  connectNATS();
+  startCKClient();
 });
 
-async function connectNATS() {
+async function startCKClient() {
+  setConnectionStatus("Connecting to NATS via CKClient…", "warn");
+
+  const ck = new CKClient({
+    kernel: config.display_kernel,
+    wssEndpoint: config.nats_ws_url,
+    maxReconnectAttempts: 10,
+    reconnectDelay: 1000,
+  });
+
+  state.ck = ck;
+
+  ck.on("status", ({ connection, error }) => {
+    if (connection === "connecting") {
+      setConnectionStatus("Connecting…", "warn");
+    } else if (connection === "connected") {
+      setConnectionStatus(`Subscribed to ${config.nats_subject}`, "ok");
+    } else if (connection === "disconnected") {
+      setConnectionStatus("Disconnected. Reconnecting…", "error");
+    } else if (connection === "error") {
+      setConnectionStatus(`Error: ${error?.message || "unknown"}`, "error");
+    }
+  });
+
+  ck.on("event", (msg) => dispatchBroadcast(msg.data));
+  ck.on("result", (msg) => dispatchBroadcast(msg.data));
+  ck.on("error", (err) => console.error("[display] CKClient error:", err));
+
   try {
-    setConnectionStatus("Connecting to NATS…", "warn");
-
-    const nc = await connect({
-      servers: config.nats_ws_url,
-      maxReconnectAttempts: 10,
-      reconnectTimeWait: 1000,
-    });
-
-    state.nc = nc;
-    setConnectionStatus("Connected. Subscribing…", "warn");
-
-    // Subscribe to broadcast subject
-    const sub = nc.subscribe(config.nats_subject);
-    state.connected = true;
-    setConnectionStatus("Ready. Listening for broadcasts.", "ok");
-
-    // Message loop
-    (async () => {
-      for await (const msg of sub) {
-        try {
-          const data = jc.decode(msg.data);
-          state.lastPayload = data;
-          refs.lastPayload.textContent = JSON.stringify(data, null, 2);
-
-          // Dispatch based on kind
-          switch (data.kind) {
-            case "theme":
-              applyTheme(data.theme);
-              break;
-            case "audio":
-              playAudio(data.audio);
-              break;
-            case "message":
-              displayMessage(data.message);
-              break;
-            case "task_upsert":
-              handleTaskUpdate(data);
-              break;
-            case "board_snapshot":
-              handleBoardSnapshot(data);
-              break;
-            default:
-              console.warn("Unknown message kind:", data.kind);
-          }
-        } catch (err) {
-          console.error("Error processing message:", err);
-        }
-      }
-    })();
-
-    // Watch connection state
-    (async () => {
-      for await (const status of nc.status()) {
-        if (status.type === "disconnect") {
-          setConnectionStatus("Disconnected. Reconnecting…", "error");
-          state.connected = false;
-        } else if (status.type === "reconnect") {
-          setConnectionStatus("Reconnected.", "ok");
-          state.connected = true;
-        }
-      }
-    })();
+    await ck.connect();
   } catch (err) {
-    setConnectionStatus(`Failed: ${err.message}`, "error");
-    console.error("NATS connection error:", err);
-    setTimeout(connectNATS, 3000);
+    setConnectionStatus(`Connect failed: ${err.message}`, "error");
+    console.error("[display] CKClient connect failed:", err);
+    setTimeout(startCKClient, 3000);
+  }
+}
+
+function dispatchBroadcast(data) {
+  if (!data || typeof data !== "object") return;
+  refs.lastPayload.textContent = JSON.stringify(data, null, 2);
+
+  switch (data.kind) {
+    case "theme":
+      applyTheme(data.theme);
+      break;
+    case "audio":
+      playAudio(data.audio);
+      break;
+    case "message":
+      displayMessage(data.message);
+      break;
+    case "task_upsert":
+      handleTaskUpdate(data);
+      break;
+    case "board_snapshot":
+      handleBoardSnapshot(data);
+      break;
+    default:
+      console.warn("[display] unknown broadcast kind:", data.kind);
   }
 }
 
 function applyTheme(theme) {
   if (!theme) return;
   const root = document.documentElement;
-  root.style.setProperty("--color-bg", theme.background || "#07111f");
-  root.style.setProperty("--color-fg", theme.foreground || "#f7fbff");
-  root.style.setProperty("--color-accent", theme.accent || "#47d7ac");
-  root.style.setProperty("--color-panel", theme.panel || "#10263f");
+  if (theme.background) root.style.setProperty("--bg", theme.background);
+  if (theme.foreground) root.style.setProperty("--fg", theme.foreground);
+  if (theme.accent) root.style.setProperty("--accent", theme.accent);
+  if (theme.panel) root.style.setProperty("--panel", theme.panel);
 }
 
 function playAudio(audio) {
@@ -129,24 +116,21 @@ function playAudio(audio) {
   player.src = audio.src;
   player.volume = audio.volume || 0.85;
   player.loop = audio.loop || false;
-  player.play().catch((err) => console.error("Audio play failed:", err));
+  player.play().catch((err) => console.error("[display] audio play failed:", err));
   refs.audioStatus.textContent = audio.title || "Playing…";
 }
 
 function displayMessage(msg) {
   if (!msg) return;
-  console.log("Message:", msg);
-  // Could render to a message log, toast, etc.
+  console.log("[display] message:", msg);
 }
 
 function handleTaskUpdate(data) {
-  console.log("Task update received:", data);
-  // Display task update notification
+  console.log("[display] task update:", data);
 }
 
 function handleBoardSnapshot(data) {
-  console.log("Board snapshot received:", data);
-  // Could update a live board view if needed
+  console.log("[display] board snapshot:", data);
 }
 
 function enableAudio() {
@@ -167,13 +151,11 @@ async function loadProtocol() {
     const response = await fetch("/protocol");
     const payload = await response.json();
     refs.protocolOutput.textContent = payload.commands
-      .map((command) => {
-        return [
-          `${command.kind.toUpperCase()}: ${command.description}`,
-          command.publish_example,
-          JSON.stringify(command.payload, null, 2),
-        ].join("\n");
-      })
+      .map((command) => [
+        `${command.kind.toUpperCase()}: ${command.description}`,
+        command.publish_example,
+        JSON.stringify(command.payload, null, 2),
+      ].join("\n"))
       .join("\n\n");
   } catch (error) {
     refs.protocolOutput.textContent = `Failed to load protocol: ${error.message}`;

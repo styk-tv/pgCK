@@ -7,7 +7,7 @@ from typing import Any, Callable, Protocol
 
 import nats
 
-from web_demo.board import (
+from web.board import (
     DEFAULT_GOALS,
     DEFAULT_KERNELS,
     GOAL_FIELD_TO_IRI,

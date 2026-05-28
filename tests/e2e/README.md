@@ -222,7 +222,7 @@ Solution: Check Python venv and pgck-web dependencies:
 
 ```bash
 source .venv/bin/activate
-pip install -r web_demo/requirements.txt psycopg2-binary nats-py
+pip install -r web/requirements.txt psycopg2-binary nats-py
 ```
 
 ### **502 Bad Gateway**
@@ -269,7 +269,7 @@ In GitHub Actions or similar:
 
 - **Envoy Config**: `nx-cluster-v4/29-localhost-tls-envoy/envoy.yaml`
 - **Spec**: `_WIP/SPEC.ENVOY.LOCALHOST.v0.2.md`
-- **Web Service**: `web_demo/app.py` (FastAPI on port 8001)
+- **Web Service**: `web/app.py` (FastAPI on port 8001)
 - **Playwright Docs**: https://playwright.dev
 
 ---

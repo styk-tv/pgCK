@@ -19,3 +19,11 @@ __pycache__/
 /fixtures/
 # local working docs/drafts; visible in the workspace, not tracked by git
 /_WIP/
+
+# Playwright local test harness (install with `npm i` when needed; never tracked)
+/node_modules/
+/package.json
+/package-lock.json
+/.playwright-mcp/
+/test-results/
+/playwright-report/

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -9,11 +10,33 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from web_demo.protocol import build_browser_config, protocol_document, render_index, render_tasks_page
-from web_demo.service import BoardValidationError, build_live_board_service
+from web.protocol import build_browser_config, protocol_document, render_index, render_tasks_page
+from web.service import BoardValidationError, build_live_board_service
 
 
 BASE_DIR = Path(__file__).resolve().parent
+
+
+def _resolve_cklib_dir() -> Path | None:
+    """Locate CK.Lib.Js for mounting at /cklib.
+
+    Resolution order:
+      1. PGCK_CKLIB_DIR environment variable (explicit override).
+      2. ./cklib next to the FastAPI module (OCI bundle layout per SPEC.OCI.BUNDLE.v0.2).
+      3. ../../CK.Lib.Js (dev sibling checkout at pgCK repo level).
+    """
+    override = os.getenv("PGCK_CKLIB_DIR")
+    if override:
+        path = Path(override)
+        if path.is_dir():
+            return path
+    bundled = BASE_DIR / "cklib"
+    if bundled.is_dir():
+        return bundled
+    sibling = BASE_DIR.parent.parent / "CK.Lib.Js"
+    if sibling.is_dir():
+        return sibling
+    return None
 
 
 class TaskCreateRequest(BaseModel):
@@ -33,8 +56,16 @@ def create_app(service: Any | None = None) -> FastAPI:
         yield
 
     app = FastAPI(title="pgCK Goal Task Kernel Board MVP", lifespan=lifespan)
+    # /assets is the canonical path; /static is kept for backward compatibility
+    # with direct dev access. The localhost Envoy strips /static/ via prefix_rewrite,
+    # so HTML templates reference /assets/ so the catch-all route forwards intact.
+    app.mount("/assets", StaticFiles(directory=BASE_DIR / "static"), name="assets")
     app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+    cklib_dir = _resolve_cklib_dir()
+    if cklib_dir is not None:
+        app.mount("/cklib", StaticFiles(directory=cklib_dir), name="cklib")
     app.state.board_service = board_service
+    app.state.cklib_dir = cklib_dir
 
     @app.get("/", response_class=HTMLResponse)
     async def root(request: Request) -> HTMLResponse:

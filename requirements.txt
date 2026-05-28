@@ -1,4 +1,4 @@
-# Pinned Python dependencies for the aggregated `web_demo/` runtime
+# Pinned Python dependencies for the aggregated `web/` runtime
 # and the pytest-based verification surface shipped in v0.1.2.
 anyio==4.9.0
 fastapi==0.116.0

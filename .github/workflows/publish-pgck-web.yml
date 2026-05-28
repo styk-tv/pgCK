@@ -5,7 +5,7 @@ on:
     tags:
       - 'pgck-web/v*'
     paths:
-      - 'web_demo/**'
+      - 'web/**'
       - 'requirements.txt'
       - '.github/workflows/publish-pgck-web.yml'
 
@@ -57,7 +57,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./web_demo/Dockerfile.pgck-web
+          file: ./web/Dockerfile.pgck-web
           platforms: ${{ matrix.platform }}
           push: true
           tags: |

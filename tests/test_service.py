@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from web_demo.service import BoardService
+from web.service import BoardService
 
 
 class FakeGateway:

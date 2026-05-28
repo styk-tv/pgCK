@@ -10,4 +10,4 @@ compose/pg-data-*
 compose/dev-certs
 fixtures
 tests
-web_demo
+web

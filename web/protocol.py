@@ -4,15 +4,36 @@ import json
 import os
 from typing import Any
 
-from web_demo.board import DEFAULT_KERNELS, KernelColumn, TaskRecord, board_snapshot_payload, task_upsert_payload
+from web.board import DEFAULT_KERNELS, KernelColumn, TaskRecord, board_snapshot_payload, task_upsert_payload
 
 
-DEFAULT_NATS_SUBJECT = "broadcast.demo.display"
+DEFAULT_DISPLAY_KERNEL = "pgCK.Display"
+DEFAULT_NATS_SUBJECT = f"event.{DEFAULT_DISPLAY_KERNEL}"  # short form, v1.2.x — deprecated in v2.0
 DEFAULT_NATS_WS_SCHEME = "wss"
 DEFAULT_NATS_WS_PORT = "443"
 DEFAULT_NATS_WS_PATH = "/wss"
-DEFAULT_AUDIO_PATH = "/static/audio/chime.wav"
-STATIC_ASSET_VERSION = "20260524a"
+DEFAULT_AUDIO_PATH = "/assets/audio/chime.wav"
+STATIC_ASSET_VERSION = "20260527c"
+
+
+def short_form_subject(kernel: str) -> str:
+    """v1.2.x short-form subject: event.<Kernel>.
+
+    Retained alongside the long form during the CK.Lib.Js v1.3 dual-emit
+    window. Removed when CKClient v2.0 drops the alias.
+    """
+    return f"event.{kernel}"
+
+
+def long_form_subject(kernel: str, event: str = "broadcast") -> str:
+    """CKP v3.8 canonical subject: event.kernel.<K>.<event>.
+
+    `<K>` is the contributing kernel (URN-normalised). `<event>` is the
+    event kind (e.g. ``task.upserted``, ``goal.upserted``, ``broadcast``
+    for the display surface). See SPEC.PGCK.NATS-CK-LIB-JS-ALIGNMENT
+    v0.1 §1.1.
+    """
+    return f"event.kernel.{kernel}.{event}"
 
 
 def build_browser_config(hostname: str | None) -> dict[str, Any]:
@@ -24,9 +45,21 @@ def build_browser_config(hostname: str | None) -> dict[str, Any]:
         path = os.getenv("PGCK_BROWSER_NATS_PATH", DEFAULT_NATS_WS_PATH)
         nats_ws_url = f"{scheme}://{host}:{port}{path}"
 
+    kernel = os.getenv("PGCK_DISPLAY_KERNEL", DEFAULT_DISPLAY_KERNEL)
+    short_subject = os.getenv("PGCK_BROWSER_NATS_SUBJECT", short_form_subject(kernel))
+    long_subject = long_form_subject(kernel)
+
     return {
         "nats_ws_url": nats_ws_url,
-        "nats_subject": os.getenv("PGCK_BROWSER_NATS_SUBJECT", DEFAULT_NATS_SUBJECT),
+        # Primary subject the browser currently subscribes to. CKClient v1.2 uses
+        # the short form; CKClient v1.3 will accept ``extra_subjects`` and listen
+        # on both via NATS wildcard expansion.
+        "nats_subject": short_subject,
+        # Both forms exposed for clients that want to subscribe to either; v1.3
+        # clients can read ``nats_subject_long`` and pass it as an extraSubject.
+        "nats_subject_long": long_subject,
+        "display_kernel": kernel,
+        "cklib_base": "/cklib",
         "protocol_version": 1,
     }
 
@@ -104,6 +137,7 @@ def protocol_document(hostname: str | None) -> dict[str, Any]:
         "name": "pgCK goal task kernel board MVP",
         "direction": "server-to-browser",
         "subject": subject,
+        "subject_long": config["nats_subject_long"],
         "nats_ws_url": config["nats_ws_url"],
         "commands": commands,
     }
@@ -124,7 +158,7 @@ def render_index(config: dict[str, Any]) -> str:
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>pgCK Display — NATS Messages</title>
-    <link rel="stylesheet" href="/static/app.css?v={STATIC_ASSET_VERSION}" />
+    <link rel="stylesheet" href="/assets/app.css?v={STATIC_ASSET_VERSION}" />
   </head>
   <body>
     {_render_nav_menu()}
@@ -166,7 +200,7 @@ def render_index(config: dict[str, Any]) -> str:
     </main>
 
     <audio id="audio-player" preload="auto"></audio>
-    <script type="module" src="/static/display-app.js?v={STATIC_ASSET_VERSION}"></script>
+    <script type="module" src="/assets/display-app.js?v={STATIC_ASSET_VERSION}"></script>
   </body>
 </html>
 """
@@ -180,7 +214,7 @@ def render_tasks_page(config: dict[str, Any]) -> str:
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>pgCK Kernel Board</title>
-    <link rel="stylesheet" href="/static/app.css?v={STATIC_ASSET_VERSION}" />
+    <link rel="stylesheet" href="/assets/app.css?v={STATIC_ASSET_VERSION}" />
   </head>
   <body>
     {_render_nav_menu()}
@@ -232,7 +266,7 @@ def render_tasks_page(config: dict[str, Any]) -> str:
     </main>
 
     <audio id="audio-player" preload="auto"></audio>
-    <script src="/static/board-app.js?v={STATIC_ASSET_VERSION}" defer></script>
+    <script src="/assets/board-app.js?v={STATIC_ASSET_VERSION}" defer></script>
   </body>
 </html>
 """

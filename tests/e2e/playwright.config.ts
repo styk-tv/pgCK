@@ -23,7 +23,7 @@ export default defineConfig({
   },
 
   webServer: {
-    command: 'sh -c "cd ../..; source .venv/bin/activate; PGHOST=127.0.0.1 PGPORT=15432 PGUSER=postgres PGDATABASE=pgck python -m uvicorn web_demo.app:app --host 127.0.0.1 --port 8001"',
+    command: 'sh -c "cd ../..; source .venv/bin/activate; PGHOST=127.0.0.1 PGPORT=15432 PGUSER=postgres PGDATABASE=pgck python -m uvicorn web.app:app --host 127.0.0.1 --port 8001"',
     url: 'http://127.0.0.1:8001/healthz',
     reuseExistingServer: !process.env.CI,
     timeout: 120000,

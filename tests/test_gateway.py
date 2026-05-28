@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 
-from web_demo.service import PsqlPgckGateway
+from web.service import PsqlPgckGateway
 
 
 class FakeSqlRunner:
@@ -230,7 +230,7 @@ def test_gateway_run_psql_uses_postgres_port_fallback(monkeypatch) -> None:
 
     monkeypatch.delenv("PGPORT", raising=False)
     monkeypatch.setenv("POSTGRES_PORT", "55432")
-    monkeypatch.setattr("web_demo.service.subprocess.run", fake_run)
+    monkeypatch.setattr("web.service.subprocess.run", fake_run)
 
     gateway = PsqlPgckGateway(sql_runner=None)
 

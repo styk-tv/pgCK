@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from web_demo.app import create_app
-from web_demo.protocol import build_browser_config
-from web_demo.service import BoardValidationError
+from web.app import create_app
+from web.protocol import build_browser_config
+from web.service import BoardValidationError
 
 
 class FakeBoardService:

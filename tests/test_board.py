@@ -1,4 +1,4 @@
-from web_demo.board import (
+from web.board import (
     DEFAULT_KERNELS,
     GoalRecord,
     KernelColumn,

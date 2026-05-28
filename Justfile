@@ -104,10 +104,10 @@ smoke-nats-wss: nats-wss-up
       "https://127.0.0.1:${NATS_WSS_PORT:-8443}/" | grep -q '101 Switching Protocols'
 
 browser-demo-test:
-    pytest -q tests/test_web_demo.py
+    pytest -q tests/test_web.py
 
 browser-demo-run:
-    uvicorn web_demo.app:app --host "${PGCK_BROWSER_HOST:-0.0.0.0}" --port "${PGCK_BROWSER_PORT:-8000}"
+    uvicorn web.app:app --host "${PGCK_BROWSER_HOST:-0.0.0.0}" --port "${PGCK_BROWSER_PORT:-8000}"
 
 webui:
-    uvicorn web_demo.app:app --host "${PGCK_BROWSER_HOST:-0.0.0.0}" --port "${PGCK_BROWSER_PORT:-8000}"
+    uvicorn web.app:app --host "${PGCK_BROWSER_HOST:-0.0.0.0}" --port "${PGCK_BROWSER_PORT:-8000}"

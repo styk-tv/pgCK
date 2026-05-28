@@ -16,7 +16,7 @@ def _normalize(text: str) -> str:
 
 
 def test_browser_app_connects_without_raw_nats_credentials() -> None:
-    app_js = _read("web_demo/static/app.js")
+    app_js = _read("web/static/app.js")
 
     assert "nats_user" not in app_js
     assert "nats_password" not in app_js
