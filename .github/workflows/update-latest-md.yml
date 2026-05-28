@@ -1,10 +1,11 @@
 name: update-latest-md
 
 # Refresh LATEST.md from GHCR — but ONLY after SLSA Build Provenance v1
-# attestations verify against the digests we're about to publish. This is
-# the policy gate that keeps workstation pushes off the head pointer: if
-# `gh attestation verify` doesn't find a workflow-issued attestation, this
-# workflow exits non-zero and LATEST.md stays where it was.
+# attestations verify for the side that just published. Each invocation
+# verifies + renders only the surface whose upstream workflow fired
+# (extension on release.yml, pgck-web on publish-pgck-web.yml), so a
+# successful bootstrap on one side does not get blocked by an unattested
+# legacy head on the other.
 
 on:
   workflow_run:
@@ -13,85 +14,126 @@ on:
       - Publish pgck-web OCI Layer
     types:
       - completed
+  workflow_dispatch:
+    inputs:
+      side:
+        description: 'Which surface to verify + render (ext | web)'
+        required: true
+        default: ext
+        type: choice
+        options: [ext, web]
 
 permissions:
-  contents: write        # commit refreshed LATEST.md back to main
-  packages: read         # read GHCR package versions
-  attestations: read     # gh attestation verify
+  contents: write
+  packages: read
+  attestations: read
 
 jobs:
   refresh:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Run only on successful upstream workflow_run, or always on manual dispatch.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
 
-      - name: Resolve current GHCR heads
-        id: heads
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OWNER: ${{ github.repository_owner }}
+      - name: Determine triggered side
+        id: side
         run: |
           set -euo pipefail
-          # Most recent extension version (e.g. 0.1.7) — picked from the
-          # tags on the pgck package that match X.Y.Z-pg17-amd64.
-          EXT_VER=$(gh api -H "Accept: application/vnd.github+json" \
-            "/users/${OWNER}/packages/container/pgck/versions" --paginate \
-            --jq '.[].metadata.container.tags[]' \
-            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+-pg17-amd64$' \
-            | sort -V | tail -1 \
-            | sed 's/-pg17-amd64$//')
-          WEB_VER=$(gh api -H "Accept: application/vnd.github+json" \
-            "/users/${OWNER}/packages/container/pgck-web/versions" --paginate \
-            --jq '.[].metadata.container.tags[]' \
-            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-amd64$' \
-            | sort -V | tail -1 \
-            | sed 's/-amd64$//')
-          if [ -z "${EXT_VER}" ] || [ -z "${WEB_VER}" ]; then
-            echo "could not resolve heads (ext='${EXT_VER}' web='${WEB_VER}')" >&2
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SIDE="${{ inputs.side }}"
+          else
+            case "${{ github.event.workflow_run.name }}" in
+              release)                       SIDE=ext ;;
+              "Publish pgck-web OCI Layer")  SIDE=web ;;
+              *)                             SIDE="" ;;
+            esac
+          fi
+          if [ -z "${SIDE}" ]; then
+            echo "could not determine triggered side from workflow_run.name='${{ github.event.workflow_run.name }}'" >&2
             exit 1
           fi
-          echo "ext_ver=${EXT_VER}" >> "$GITHUB_OUTPUT"
-          echo "web_ver=${WEB_VER}" >> "$GITHUB_OUTPUT"
+          echo "side=${SIDE}" >> "$GITHUB_OUTPUT"
+          echo "Verifying + rendering side: ${SIDE}"
 
-      - name: Verify SLSA Build Provenance — refuse to update on missing attestation
+      - name: Resolve head version for the triggered side
+        id: head
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          EXT_VER: ${{ steps.heads.outputs.ext_ver }}
-          WEB_VER: ${{ steps.heads.outputs.web_ver }}
           OWNER: ${{ github.repository_owner }}
+          SIDE:  ${{ steps.side.outputs.side }}
         run: |
           set -euo pipefail
-          for tag in "${EXT_VER}-pg17-amd64" "${EXT_VER}-pg17-arm64"; do
-            echo "::group::verify ghcr.io/${OWNER}/pgck:${tag}"
-            gh attestation verify "oci://ghcr.io/${OWNER}/pgck:${tag}" \
-              --repo "${GITHUB_REPOSITORY}"
-            echo "::endgroup::"
-          done
-          for tag in "${WEB_VER}-amd64" "${WEB_VER}-arm64"; do
-            echo "::group::verify ghcr.io/${OWNER}/pgck-web:${tag}"
-            gh attestation verify "oci://ghcr.io/${OWNER}/pgck-web:${tag}" \
-              --repo "${GITHUB_REPOSITORY}"
-            echo "::endgroup::"
-          done
+          if [ "${SIDE}" = "ext" ]; then
+            HEAD=$(gh api -H "Accept: application/vnd.github+json" \
+              "/users/${OWNER}/packages/container/pgck/versions" --paginate \
+              --jq '.[].metadata.container.tags[]' \
+              | grep -E '^[0-9]+\.[0-9]+\.[0-9]+-pg17-amd64$' \
+              | sort -V | tail -1 \
+              | sed 's/-pg17-amd64$//')
+          else
+            HEAD=$(gh api -H "Accept: application/vnd.github+json" \
+              "/users/${OWNER}/packages/container/pgck-web/versions" --paginate \
+              --jq '.[].metadata.container.tags[]' \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-amd64$' \
+              | sort -V | tail -1 \
+              | sed 's/-amd64$//')
+          fi
+          if [ -z "${HEAD}" ]; then
+            echo "no GHCR head found for side=${SIDE}" >&2
+            exit 1
+          fi
+          echo "head=${HEAD}" >> "$GITHUB_OUTPUT"
+          echo "Head for ${SIDE}: ${HEAD}"
 
-      - name: Render LATEST.md
+      - name: Verify SLSA Build Provenance for the triggered side
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
-          EXT_VER: ${{ steps.heads.outputs.ext_ver }}
-          WEB_VER: ${{ steps.heads.outputs.web_ver }}
+          OWNER:    ${{ github.repository_owner }}
+          SIDE:     ${{ steps.side.outputs.side }}
+          HEAD:     ${{ steps.head.outputs.head }}
         run: |
           set -euo pipefail
-          python3 tools/render-latest-md.py > LATEST.md.new
+          if [ "${SIDE}" = "ext" ]; then
+            # Verify pg17 × {amd64, arm64}. The other PG majors get verified
+            # in the next iteration once the matrix is expanded — at minimum
+            # the head row in LATEST.md (pg17) must be fully attested.
+            for arch in amd64 arm64; do
+              REF="oci://ghcr.io/${OWNER}/pgck:${HEAD}-pg17-${arch}"
+              echo "::group::verify ${REF}"
+              gh attestation verify "${REF}" --repo "${GITHUB_REPOSITORY}"
+              echo "::endgroup::"
+            done
+          else
+            for arch in amd64 arm64; do
+              REF="oci://ghcr.io/${OWNER}/pgck-web:${HEAD}-${arch}"
+              echo "::group::verify ${REF}"
+              gh attestation verify "${REF}" --repo "${GITHUB_REPOSITORY}"
+              echo "::endgroup::"
+            done
+          fi
+
+      - name: Render the relevant LATEST.md section
+        env:
+          GH_TOKEN:                ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          SIDE:                    ${{ steps.side.outputs.side }}
+          HEAD:                    ${{ steps.head.outputs.head }}
+        run: |
+          set -euo pipefail
+          if [ "${SIDE}" = "ext" ]; then
+            EXT_VER="${HEAD}" SIDE=ext python3 tools/render-latest-md.py > LATEST.md.new
+          else
+            WEB_VER="${HEAD}" SIDE=web python3 tools/render-latest-md.py > LATEST.md.new
+          fi
           mv LATEST.md.new LATEST.md
 
       - name: Commit refresh if changed
         env:
-          EXT_VER: ${{ steps.heads.outputs.ext_ver }}
-          WEB_VER: ${{ steps.heads.outputs.web_ver }}
+          SIDE: ${{ steps.side.outputs.side }}
+          HEAD: ${{ steps.head.outputs.head }}
         run: |
           set -euo pipefail
           if git diff --quiet LATEST.md; then
@@ -102,12 +144,12 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add LATEST.md
           {
-            echo "docs(auto): refresh LATEST.md to ${EXT_VER} / ${WEB_VER}"
+            echo "docs(auto): refresh LATEST.md ${SIDE} section to ${HEAD}"
             echo
-            echo "Generated by .github/workflows/update-latest-md.yml after the upstream"
-            echo "release.yml / publish-pgck-web.yml workflow reported success AND after"
-            echo "SLSA Build Provenance v1 attestations verified via 'gh attestation"
-            echo "verify' for every digest about to be advertised. Do not edit by hand."
+            echo "Generated by .github/workflows/update-latest-md.yml after a"
+            echo "successful upstream run AND after SLSA Build Provenance v1"
+            echo "attestations verified via 'gh attestation verify' for the"
+            echo "${SIDE} surface's pg17 head digests. Do not edit by hand."
             echo
             echo "[skip ci]"
           } > /tmp/commit-msg.txt
