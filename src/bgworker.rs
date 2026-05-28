@@ -47,7 +47,7 @@ pub fn tick() {
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "embedded-nats"))]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::OnceLock;
