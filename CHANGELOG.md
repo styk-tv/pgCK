@@ -2,6 +2,20 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.1.6 (web layer milestone) - 2026-05-28
+
+Web layer milestone — closes CKA-9, CKA-8, CKD-4. The pgCK extension is unchanged in this round; this rolls forward as `pgck-web/v0.2.3`. Extension stays at `v0.1.5`.
+
+### Added
+
+- **`tests/e2e/cka-9-v13-smoke.spec.ts`** — four-test smoke harness against `https://pgck.localhost` locking the v1.3 baseline: page loads over HTTPS, `/cklib/` serves CK.Lib.Js v1.3.x, CKClient reaches `Subscribed to event.pgCK.Display`, live NATS publish renders into `#last-payload` (live-NATS check gated by `PGCK_E2E_LIVE_NATS=1`).
+
+### Changed
+
+- `web/static/display-app.js` aligned to CK.Lib.Js v1.3 CKClient — `subscribe: ['event']` opts out of the dead `result.<Kernel>` subscription; `dictVersion: 0` bootstraps the `Ck-Dict-V` handshake; `clientId: 'ck-browser'` is pinned to the v1.3 default; the dead `ck.on('result', …)` handler is removed; `ck.on('broadcast', …)` is wired for future `extraSubjects`.
+- Scope focus reset: the example payload in `web/protocol.py`, the default kernel list in `web/board.py`, and the test fixture in `tests/test_board.py` now use `CK.Task` as the `target_kernel`. The previous example referenced an out-of-scope topic.
+- `tests/e2e/playwright.config.ts` `testDir` corrected from a non-existent `./tests` to `.` so all existing spec files are discovered.
+
 ## v0.1.5 - 2026-05-28
 
 Second plumbing fix release. The v0.1.4 release_workflow failed at the OCI push step because `pgrx package` was still naming the SQL file `pgck--0.1.2.sql` — `pgrx` reads the file name from `pgck.control`'s `default_version`, not from Cargo.toml. v0.1.5 syncs every hardcoded version reference.
