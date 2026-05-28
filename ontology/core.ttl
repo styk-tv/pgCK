@@ -8,8 +8,8 @@
 #######################################################################
 # CKP CORE ONTOLOGY — shipped inside the `conceptkernel` extension.
 # Loaded into pgRDF graph urn:ckp:core at CREATE EXTENSION.
-# Governs the protocol's OWN operations. No CK.Compliance kernel:
-# every governed write is validated against these shapes at commit.
+# Governs the protocol's OWN operations: every governed write is
+# validated against these shapes at commit.
 # Split files under ontology/*.ttl are the first manual modeling pass
 # for rc-07/rc-08 linkage work. ckp.boot() still loads only core.ttl,
 # so this file remains authoritative for shipped runtime semantics.

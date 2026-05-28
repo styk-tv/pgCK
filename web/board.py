@@ -53,14 +53,6 @@ DEFAULT_KERNELS = [
         "visible": True,
     },
     {
-        "kernel_id": "CK.ComplianceCheck",
-        "title": "Compliance",
-        "icon": "verified",
-        "color": "#f59e0b",
-        "launch_url": "https://compliance.localhost",
-        "visible": True,
-    },
-    {
         "kernel_id": "LOCAL.ClaudeCode",
         "title": "Claude Code",
         "icon": "terminal",

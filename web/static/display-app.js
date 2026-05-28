@@ -42,9 +42,16 @@ window.addEventListener("DOMContentLoaded", () => {
 async function startCKClient() {
   setConnectionStatus("Connecting to NATS via CKClient…", "warn");
 
+  // v1.3 alignment (CKA-8 / CKD-4):
+  //  - subscribe: ['event']      → opt out of the dead result.<Kernel> sub
+  //  - dictVersion: 0            → bootstrap Ck-Dict-V handshake (server snapshot if behind)
+  //  - clientId: 'ck-browser'    → v1.3 default; pinned here so the realm is unambiguous
   const ck = new CKClient({
     kernel: config.display_kernel,
     wssEndpoint: config.nats_ws_url,
+    subscribe: ["event"],
+    dictVersion: 0,
+    clientId: "ck-browser",
     maxReconnectAttempts: 10,
     reconnectDelay: 1000,
   });
@@ -64,7 +71,7 @@ async function startCKClient() {
   });
 
   ck.on("event", (msg) => dispatchBroadcast(msg.data));
-  ck.on("result", (msg) => dispatchBroadcast(msg.data));
+  ck.on("broadcast", (msg) => dispatchBroadcast(msg.data));
   ck.on("error", (err) => console.error("[display] CKClient error:", err));
 
   try {

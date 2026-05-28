@@ -43,7 +43,7 @@ pgCK is invoked through the **ordinary PostgreSQL wire protocol** — any client
 
 ## Status
 
-- ✅ **Governed write path works today** (PL/pgSQL, ships as the extension's bootstrap SQL): `ckp.bootstrap_kernel` / `ckp.validate` / `ckp.seal` / `ckp.verify`. Validate → instance → HMAC-authenticated ledger → verifiable proof, atomic, each protocol op SHACL-validated against the **core** ontology or it aborts. No CK.Compliance kernel — governance is core.
+- ✅ **Governed write path works today** (PL/pgSQL, ships as the extension's bootstrap SQL): `ckp.bootstrap_kernel` / `ckp.validate` / `ckp.seal` / `ckp.verify`. Validate → instance → HMAC-authenticated ledger → verifiable proof, atomic, each protocol op SHACL-validated against the **core** ontology or it aborts. Governance is built into the core; no separate governance kernel.
 - ✅ **S3 embedded NATS server lands locally:** the `pgrx` background worker now hosts the raw NATS Core listener on `:4222`, with parser/router/server unit coverage and a compose-level `smoke-s3` round-trip gate.
 - 🔨 **Next Rust focus:** wire the governed SPI dispatch bridge, WSS client, affordance compile loop (`ckp.subscribe` / `ckp.publish` / `ckp.recompile_affordances`), and the CK-graph change trigger that reroutes live.
 - ⏭ ed25519 (replace the shipped `hmac+sha256` proof method in `ckp.seal` / `ckp.verify`); `postgres_fdw` → Azure swap (call sites unchanged).

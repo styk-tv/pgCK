@@ -13,7 +13,7 @@ DEFAULT_NATS_WS_SCHEME = "wss"
 DEFAULT_NATS_WS_PORT = "443"
 DEFAULT_NATS_WS_PATH = "/wss"
 DEFAULT_AUDIO_PATH = "/assets/audio/chime.wav"
-STATIC_ASSET_VERSION = "20260527c"
+STATIC_ASSET_VERSION = "20260528a"
 
 
 def short_form_subject(kernel: str) -> str:
@@ -68,9 +68,9 @@ def protocol_commands(subject: str, audio_path: str = DEFAULT_AUDIO_PATH) -> lis
     task_example = task_upsert_payload(
         TaskRecord(
             task_id="FC-T-0001",
-            title="Rotate SPIFFE SVIDs",
+            title="Land v0.2 SQL plumbing draft",
             part_of_goal="FC-G-0001",
-            target_kernel="CK.ComplianceCheck",
+            target_kernel="CK.Task",
             lifecycle_state="pending",
             priority=4,
             queue_seq=12,

@@ -68,7 +68,7 @@ def test_build_task_body_uses_core_iris() -> None:
         task_id="FC-T-0001",
         title="Rotate SPIFFE SVIDs",
         part_of_goal="FC-G-0001",
-        target_kernel="CK.ComplianceCheck",
+        target_kernel="CK.Task",
         lifecycle_state="pending",
         priority=4,
         queue_seq=12,
@@ -79,7 +79,7 @@ def test_build_task_body_uses_core_iris() -> None:
 
     assert body["type"].endswith("/Task")
     assert body["https://conceptkernel.org/ontology/v3.7/task_id"] == "FC-T-0001"
-    assert body["https://conceptkernel.org/ontology/v3.7/target_kernel"] == "CK.ComplianceCheck"
+    assert body["https://conceptkernel.org/ontology/v3.7/target_kernel"] == "CK.Task"
 
 
 def test_board_payload_helpers_emit_shared_subject_shapes() -> None:
