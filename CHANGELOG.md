@@ -2,6 +2,17 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.1.5 - 2026-05-28
+
+Second plumbing fix release. The v0.1.4 release_workflow failed at the OCI push step because `pgrx package` was still naming the SQL file `pgck--0.1.2.sql` — `pgrx` reads the file name from `pgck.control`'s `default_version`, not from Cargo.toml. v0.1.5 syncs every hardcoded version reference.
+
+### Fixed
+
+- `pgck.control`'s `default_version` was still `'0.1.2'`; pgrx package therefore generated `pgck--0.1.2.sql` while the release workflow expected `pgck--<tag-version>.sql`. v0.1.5 bumps it in sync with Cargo.toml.
+- `pgck_version()` in `src/lib.rs` (and its matching test assertion) now returns `pgck 0.1.5 (rc3)`.
+- The embedded NATS server's INFO frame in `src/nats/server.rs` (and its test assertion) carries `"version":"0.1.5"`.
+- `sql/pgck--0.1.4.sql` renamed to `sql/pgck--0.1.5.sql`; `src/lib.rs`'s `extension_sql_file!` reference synced; `sql/pgck--0.1.4--0.1.5.sql` ships as a no-op upgrade marker.
+
 ## v0.1.4 - 2026-05-28
 
 CI / release plumbing fix release. No new runtime surface; the v0.2 work continues to ship under `sql/v0.2-drafts/` until the Rust hooks land.

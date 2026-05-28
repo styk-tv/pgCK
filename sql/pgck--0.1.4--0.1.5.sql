@@ -1,0 +1,3 @@
+-- pgCK 0.1.4 -> 0.1.5 upgrade (no schema change)
+-- v0.1.5 syncs pgck.control default_version + src/lib.rs pgck_version() + src/nats/server.rs INFO
+-- to match Cargo.toml 0.1.5 so pgrx names the generated SQL file correctly.
