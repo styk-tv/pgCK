@@ -1,5 +1,15 @@
 # Build provenance & release policy
 
+## Hard rules
+
+1. **All builds and all GHCR pushes run on GitHub Actions only.** Workstation `oras push`, `docker push`, `gh release create`, or any equivalent local-credential publish is prohibited at every tier.
+2. **`LATEST.md` MUST NOT carry any version that was published manually or that lacks a verifiable SLSA Build Provenance v1 attestation.** If `gh attestation verify` rejects (or has no record of) the digest in question, that digest is not "the latest" — the file stays where it was. There is no manual-edit exception to this rule, not even to seed initial state. When no attested release has been produced yet, `LATEST.md` says so plainly.
+3. **The only allowed write to `LATEST.md` is from `.github/workflows/update-latest-md.yml`,** which renders the file only after `gh attestation verify` accepts every digest it is about to advertise. Any other write is treated as drift and will be reverted by the next workflow run.
+
+Everything else in this document explains how those rules are enforced.
+
+---
+
 Every artifact this repo publishes — the pgCK extension OCI artifacts and the pgck-web docker images — is built and pushed **exclusively** by GitHub Actions. Workstation pushes are not permitted at any tier.
 
 ## What's enforced
