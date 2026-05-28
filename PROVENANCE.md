@@ -7,6 +7,12 @@
 3. **The only allowed write to `LATEST.md` is from `.github/workflows/update-latest-md.yml`,** which renders the file only after `gh attestation verify` accepts every digest it is about to advertise. Any other write is treated as drift and will be reverted by the next workflow run.
 4. **A new version tag MUST NOT be pushed unless the previous tag of the same series is already advertised in `LATEST.md`.** Concretely: do not tag `v0.1.8` until `v0.1.7` shows up in `LATEST.md`; do not tag `pgck-web/v0.2.4` until `pgck-web/v0.2.3` shows up. This guarantees the previous release went through the attestation gate end-to-end. Tagging ahead of the gate breaks the chain and creates orphan releases that the policy cannot retroactively verify.
 5. **Release often, in small groups of 1–3 closed task IDs.** Single-task releases are explicitly fine. Larger groupings only when the tasks are inherently coupled (a `feat()` and its paired test, a Rust hook plus its SQL fixture, etc.). The roadmap §10 grouping table is a suggestion; the rule is the cadence, not the bundle size.
+6. **Report task counts every release turn.** When a tag is pushed (or proposed), the user-facing turn summary MUST state:
+   - **This turn:** N task IDs closed (list them, e.g. `CKB-4`)
+   - **Total closed:** M / T (= X%) — running count across every release since the roadmap was opened
+   - **Total tasks:** T — current size of the per-track countdown (changes only when the roadmap is amended; deletions or additions must be called out)
+
+   Source of truth: `_WIP/SPEC.pgCK.ROADMAP.v0.2-devel.md` (or its successor). Counts are sanity-checked against the per-track tables; the user should never have to open the roadmap to see where things stand.
 
 Everything else in this document explains how those rules are enforced.
 
