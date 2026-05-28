@@ -2,6 +2,28 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.1.7 - 2026-05-28
+
+Extension release lands the **v0.2 SQL plumbing** as live extension behaviour (was draft-only under `sql/v0.2-drafts/` since v0.1.3) **and** ships **CKB-5 + CKB-3**: `ckp.seal()` projects Task / Goal link triples on every governed seal, and `ckp.load_kernel()` auto-imports the Task + Goal ontology modules into the project board graph.
+
+### Added
+
+- **CKB-5 — link-triple projection inside `ckp.seal()`.** A new helper `ckp.project_links(project, instance_id, body)` runs as step 5 of `ckp.seal()`. For Task bodies it materialises three quads into `urn:ckp:<project>/kernel/board` — `<urn> a ckp:Task ; ckp:part_of_goal <ckp://Goal#…> ; ckp:target_kernel <ckp://Kernel#…>` — using `ckp.urn_normalise()` to canonicalise every id segment. For Goal bodies it materialises two quads (`a ckp:Goal ; rdfs:label "…"`). Other instance classes (Kernel, LedgerEntry, Proof) are skipped. Regression test: `sql/test/s5_seal_project_links.sql`.
+- **CKB-3 — `ckp.load_kernel()` auto-imports the board ontology.** After loading `p_path` into the project's `kernel/ck` graph, `ckp.load_kernel()` now also calls `ckp.import_module('task', p_project)` and `ckp.import_module('goal', p_project)` so the board's TaskShape / GoalShape are ambient for the SHACL gate (CKB-4 follow-up). Best-effort: a missing `/ontology/<module>.ttl` raises a `NOTICE` and the load continues so stale-mount dev containers don't break the existing kernel/ck path.
+- **v0.2 SQL plumbing now installed:** `ckp.dictionary` table + `ckp.dict_intern()` allocator + `pg_notify('ckp_dict_v_bumped', …)`, `ckp.urn_normalise(text)`, `ckp.import_module(module, project)` loader, `ckp.shapes_self_test(project)`. Previously drafted at `sql/v0.2-drafts/pgck--0.1.2--0.2.0.sql`; v0.1.7 pulls the whole bundle into the live `pgck--0.1.7.sql` install plus the `pgck--0.1.5--0.1.7.sql` upgrade script.
+
+### Changed
+
+- `ckp.seal()` rewritten: step 5 calls `ckp.project_links()` so Task / Goal seals atomically materialise the JSONB body, the ledger entry, the proof, **and** the projected link triples. JSONB body keys remain the human-readable v3.7 form for backward compatibility with `pgck-web` v0.2.x; the URN mint at projection time is the canonical form. The first four steps (validate / write instance / write ledger / write proof) are unchanged.
+- `ckp.load_kernel()` rewritten to wrap the kernel/ck load in a single transaction with the board module imports.
+- `pgck.control` `default_version`, `Cargo.toml`, `pgck_version()` (and its test), and the NATS server INFO frame are synced at `0.1.7`.
+
+### Verification
+
+- `sql/test/s5_seal_project_links.sql` against the dev container at `127.0.0.1:15432` — **PASS** (Task seal adds exactly 3 quads into the board graph).
+- Goal projection probe: +2 quads (`a ckp:Goal` + `rdfs:label`) per Goal seal.
+- `cargo check --no-default-features --features pg17 --tests` — clean.
+
 ## v0.1.6 (web layer milestone) - 2026-05-28
 
 Web layer milestone — closes CKA-9, CKA-8, CKD-4. The pgCK extension is unchanged in this round; this rolls forward as `pgck-web/v0.2.3`. Extension stays at `v0.1.5`.
