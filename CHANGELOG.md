@@ -2,6 +2,24 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.1.8 - 2026-05-28
+
+Single-task release: CKB-4 lands the SHACL gate inside `ckp.seal()`.
+
+### Added
+
+- **CKB-4 — SHACL gate inside `ckp.seal()` (rolls back on `conforms: false`).** `ckp.project_links()` now writes the link triples into a private scratch graph, runs `pgrdf.validate()` against the project board's shapes, and **`RAISE EXCEPTION`** on non-conformance (which rolls back the entire seal transaction — no instance row, no ledger row, no proof row). The error message names the failing constraint component (e.g. `MinCountConstraintComponent`) so callers can react. Pre-flight: `ckp.shapes_self_test(project)` runs before validation so a stale `/ontology/` mount fails fast instead of silently passing a vacuous SHACL check.
+- **`sql/test/s6_seal_shacl_gate.sql`** — regression fixture, self-contained: imports the SHACL-bearing ontology modules from the repo into a fresh project board, then asserts (a) a good Task seal lands, (b) a bad Task seal raises with `MinCountConstraintComponent`, (c) the bad-instance row never enters `ckp.instances`.
+
+### Fixed
+
+- `ckp.shapes_self_test()` parsed the wrong field on `pgrdf.sparql()`'s ASK result (`boolean` instead of `_ask`), so the pre-flight always reported shapes as missing. Now reads `_ask` correctly; pre-flight passes when shapes are loaded and raises a precise error when they are not.
+
+### Verification
+
+- `sql/test/s6_seal_shacl_gate.sql` against the dev container at `127.0.0.1:15432` — **PASS**.
+- `cargo check --no-default-features --features pg17 --tests` — clean.
+
 ## v0.1.7 - 2026-05-28
 
 Extension release lands the **v0.2 SQL plumbing** as live extension behaviour (was draft-only under `sql/v0.2-drafts/` since v0.1.3) **and** ships **CKB-5 + CKB-3**: `ckp.seal()` projects Task / Goal link triples on every governed seal, and `ckp.load_kernel()` auto-imports the Task + Goal ontology modules into the project board graph.
