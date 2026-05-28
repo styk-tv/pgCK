@@ -2,6 +2,19 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.1.9 - 2026-05-28
+
+Single-task release: CKB-2 closes — the four-kernel worked example from the companion spec is reproducible end-to-end against the live `ckp.seal()` + projection + SHACL-gate stack.
+
+### Added
+
+- **`sql/test/s7_board_shared_goal.sql`** — self-contained regression that loads the SHACL-bearing Task / Goal ontology modules into a fresh project board, seals one Goal (`v3.8-pgxn-release`), then seals four Tasks each targeting a different kernel (`pgCK`, `pgRDF`, `CK.Lib.Js`, `oci-germination`) part_of the shared Goal. A SPARQL `SELECT DISTINCT ?kernel … WHERE { ?t ckp:part_of_goal <ckp://Goal#…> ; ckp:target_kernel ?kernel }` against the projected board returns exactly four URNs — the worked example from `_WIP/SPEC.PGCK.TASK-GOAL-KERNEL-RDF.v0.1.md §6`.
+
+### Verification
+
+- `sql/test/s7_board_shared_goal.sql` against the dev container at `127.0.0.1:15432` — **PASS** (4 distinct kernels: `ckp://Kernel#ck-lib-js`, `ckp://Kernel#oci-germination`, `ckp://Kernel#pgck`, `ckp://Kernel#pgrdf`).
+- `cargo check --no-default-features --features pg17 --tests` — clean.
+
 ## v0.1.8 - 2026-05-28
 
 Single-task release: CKB-4 lands the SHACL gate inside `ckp.seal()`.

@@ -1,0 +1,3 @@
+-- pgCK 0.1.8 -> 0.1.9 upgrade (no schema change)
+-- v0.1.9 closes CKB-2: sql/test/s7_board_shared_goal.sql
+-- (worked example from SPEC.PGCK.TASK-GOAL-KERNEL-RDF §6).
