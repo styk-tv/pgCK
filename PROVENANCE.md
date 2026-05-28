@@ -5,8 +5,16 @@
 1. **All builds and all GHCR pushes run on GitHub Actions only.** Workstation `oras push`, `docker push`, `gh release create`, or any equivalent local-credential publish is prohibited at every tier.
 2. **`LATEST.md` MUST NOT carry any version that was published manually or that lacks a verifiable SLSA Build Provenance v1 attestation.** If `gh attestation verify` rejects (or has no record of) the digest in question, that digest is not "the latest" — the file stays where it was. There is no manual-edit exception to this rule, not even to seed initial state. When no attested release has been produced yet, `LATEST.md` says so plainly.
 3. **The only allowed write to `LATEST.md` is from `.github/workflows/update-latest-md.yml`,** which renders the file only after `gh attestation verify` accepts every digest it is about to advertise. Any other write is treated as drift and will be reverted by the next workflow run.
+4. **A new version tag MUST NOT be pushed unless the previous tag of the same series is already advertised in `LATEST.md`.** Concretely: do not tag `v0.1.8` until `v0.1.7` shows up in `LATEST.md`; do not tag `pgck-web/v0.2.4` until `pgck-web/v0.2.3` shows up. This guarantees the previous release went through the attestation gate end-to-end. Tagging ahead of the gate breaks the chain and creates orphan releases that the policy cannot retroactively verify.
+5. **Release often, in small groups of 1–3 closed task IDs.** Single-task releases are explicitly fine. Larger groupings only when the tasks are inherently coupled (a `feat()` and its paired test, a Rust hook plus its SQL fixture, etc.). The roadmap §10 grouping table is a suggestion; the rule is the cadence, not the bundle size.
 
 Everything else in this document explains how those rules are enforced.
+
+### One-time bootstrap (Rule 4 transition)
+
+Rule 4 takes effect from the **first attested release** onward. Releases that predate the attestation wiring on `main` (`v0.1.7` extension and `pgck-web/v0.2.3` web layer, both 2026-05-28) do not appear in `LATEST.md` and never will — re-publishing them with attestations would change their digests and break the immutability promise. The next tag (`v0.1.8` for the extension, `pgck-web/v0.2.4` for the web layer) is the bootstrap: those workflow runs will issue attestations for the first time, `update-latest-md.yml` will verify and populate `LATEST.md`, and from that point Rule 4 holds for every successor.
+
+Bootstrap exception is one-time. Once the gate has fired once, "previous tag must be in `LATEST.md`" is strict.
 
 ---
 
