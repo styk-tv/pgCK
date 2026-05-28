@@ -7,11 +7,15 @@ env:
   CARGO_TERM_COLOR: always
   PGRX_VERSION: "0.16"
 
-# contents:write — GitHub Release tarballs (pgRDF parity).
-# packages:write — push the pgCK extension as an OCI artifact to GHCR.
+# contents:write    — GitHub Release tarballs (pgRDF parity).
+# packages:write    — push the pgCK extension as an OCI artifact to GHCR.
+# id-token:write    — OIDC token for keyless Sigstore signing of the build provenance attestation.
+# attestations:write — write the attestation to the repo's attestation store + referrer in GHCR.
 permissions:
   contents: write
   packages: write
+  id-token: write
+  attestations: write
 
 jobs:
   build:
@@ -70,6 +74,7 @@ jobs:
         uses: oras-project/setup-oras@v1
 
       - name: Push extension OCI artifact to GHCR
+        id: push
         run: |
           set -euo pipefail
           VER="${GITHUB_REF_NAME#v}"
@@ -90,6 +95,26 @@ jobs:
             lib/pgck.so:application/vnd.styk.pgck.so \
             share/extension/pgck.control:application/vnd.styk.pgck.control \
             share/extension/pgck--${VER}.sql:application/vnd.styk.pgck.sql
+          # Capture the manifest digest so the attestation step can target it.
+          DIGEST=$(oras manifest fetch --descriptor "${REPO}:${TAG}" | jq -r .digest)
+          echo "repo=${REPO}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}"   >> "$GITHUB_OUTPUT"
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      # ---- SLSA Build Provenance v1 attestation -------------------------
+      # Every published extension artifact is signed by GitHub's OIDC-backed
+      # Sigstore keyless flow and the attestation is pushed as an OCI
+      # referrer to the same registry. Consumers verify with:
+      #   gh attestation verify oci://ghcr.io/styk-tv/pgck:<tag> --repo styk-tv/pgCK
+      # The downstream update-latest-md workflow REFUSES to advance
+      # LATEST.md unless this attestation verifies — that's how we know
+      # no workstation push slipped in.
+      - name: Attest extension OCI artifact
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ steps.push.outputs.repo }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
 
   release:
     needs: build

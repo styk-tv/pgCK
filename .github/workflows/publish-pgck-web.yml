@@ -9,9 +9,13 @@ on:
       - 'requirements.txt'
       - '.github/workflows/publish-pgck-web.yml'
 
+# id-token:write    — OIDC for Sigstore keyless signing
+# attestations:write — SLSA Build Provenance v1 stamped on every image push
 permissions:
   contents: read
   packages: write
+  id-token: write
+  attestations: write
 
 jobs:
   build-and-push:
@@ -54,6 +58,7 @@ jobs:
           esac
 
       - name: Build and push Docker image
+        id: push
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -65,6 +70,18 @@ jobs:
             ghcr.io/styk-tv/pgck-web:latest-${{ steps.arch.outputs.arch_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # ---- SLSA Build Provenance v1 attestation -------------------------
+      # buildx-pushed digest is steps.push.outputs.digest; we attest the
+      # image-by-digest so the attestation matches whichever tag pulls it.
+      # update-latest-md.yml REQUIRES this attestation to verify before it
+      # advances LATEST.md (workstation pushes therefore can't ship a head).
+      - name: Attest pgck-web image
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ghcr.io/styk-tv/pgck-web
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
 
       - name: Generate SBOM
         id: sbom
