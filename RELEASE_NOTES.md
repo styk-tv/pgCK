@@ -26,9 +26,17 @@ Each `v*` tag publishes, for every `pg{14,15,16,17} × {amd64,arm64}`:
    they are bind-mounted onto a stock `postgres:17` via the local runtime
    workflow described in `README.md`.
 
+## v0.1.3 — Task/Goal SHACL shapes + v0.2 SQL plumbing draft + web consolidation
+
+Patch release advancing the v0.2 groundwork:
+
+- **Ontology**: `ontology/task.ttl` and `ontology/goal.ttl` now ship `ckp:TaskShape` / `ckp:GoalShape` with SHACL `sh:minCount=1` constraints on the link predicates and the Goal label. Verified against pgRDF 0.5.1's native SHACL validator.
+- **SQL draft**: `sql/v0.2-drafts/pgck--0.1.2--0.2.0.sql` lays the foundation for the upcoming v0.2 work — `ckp.dictionary`, `ckp.dict_intern`, `ckp.urn_normalise`, `ckp.import_module`, `ckp.shapes_self_test`. Ships as a draft (not wired into the active extension control file) until the Rust-side hooks land.
+- **Web consolidation**: `web_demo/` collapsed into `web/`; legacy v0.1.0 tree removed; imports + tests + CI + Docker build context rewritten. Single source of truth for the web layer going forward. See the matching `pgck-web/v0.2.1` release for the runtime image.
+
 ## v0.1.2 — aggregated browser + board surface
 
-- **Board/browser MVP**: ships `web_demo/` (FastAPI API + browser UI), `examples/goal-task-board.kernel.ttl`, and pytest coverage for board payloads, gateway bootstrapping, live service behavior, and HTTP/UI endpoints.
+- **Board/browser MVP**: ships `web/` (FastAPI API + browser UI), `examples/goal-task-board.kernel.ttl`, and pytest coverage for board payloads, gateway bootstrapping, live service behavior, and HTTP/UI endpoints.
 - **Browser transport companion**: ships `compose/compose.nats-wss.yml`, `compose/nats/nats-server.conf`, `scripts/generate-dev-certs.sh`, and `just nats-wss-*` / `smoke-nats-wss` for the local TCP+WSS loop.
 - **Runtime surface cleanup**: public runtime references now live in `README.md` and `RELEASE_NOTES.md`; deleted tracked specs under the repo root and `docs/` are intentionally retired from the shipped surface.
 - **Ontology staging**: split `ontology/*.ttl` files land as alpha modeling input while `ckp.boot()` still loads `ontology/core.ttl` as the authoritative runtime ontology.

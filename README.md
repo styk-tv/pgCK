@@ -2,7 +2,7 @@
 
 **pgCK** is a PostgreSQL extension (Rust / `pgrx`, same setup as [pgRDF](https://github.com/styk-tv/pgRDF)) that **bridges from inside Postgres**: it is the Concept Kernel Protocol runtime as a database extension — NATS bridge + SHACL validator + materializer, in one place, one transaction boundary.
 
-Public runtime reference lives in this README, [`RELEASE_NOTES.md`](RELEASE_NOTES.md), [`CHANGELOG.md`](CHANGELOG.md), and the shipped runtime files under `compose/`, `ontology/`, `examples/`, `sql/`, and `web_demo/`. Working draft specs, planning notes, and helper material are intentionally kept in a local-only `_WIP/` directory and are not part of the public repo surface.
+Public runtime reference lives in this README, [`RELEASE_NOTES.md`](RELEASE_NOTES.md), [`CHANGELOG.md`](CHANGELOG.md), and the shipped runtime files under `compose/`, `ontology/`, `examples/`, `sql/`, and `web/`. Working draft specs, planning notes, and helper material are intentionally kept in a local-only `_WIP/` directory and are not part of the public repo surface.
 
 ## What it is
 
@@ -63,8 +63,8 @@ pgCK/
   ontology/             `core.ttl` plus initial split modeling slices
   sql/                  extension SQL + smoke gates
   src/                  pgrx entrypoints and embedded NATS runtime
-  tests/                runtime and web-demo checks
-  web_demo/             FastAPI API + web UI (`web_demo/app.py`)
+  tests/                runtime and web checks
+  web/                  FastAPI API + web UI (`web/app.py`)
 ```
 
 Historical planning and design drafts have been moved out of the public surface and into local-only `_WIP/`.
