@@ -2,6 +2,16 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.1.4 - 2026-05-28
+
+CI / release plumbing fix release. No new runtime surface; the v0.2 work continues to ship under `sql/v0.2-drafts/` until the Rust hooks land.
+
+### Fixed
+
+- `cargo pgrx test --no-default-features --features pg{14,15,16,17}` (the CI test feature matrix) failed to compile because `src/bgworker.rs` exposed a `tests` module that imported `super::start_server_once` while the function itself is gated behind the `embedded-nats` feature. CI had been red since well before v0.1.3. The test module is now gated under the same cfg.
+- The v0.1.3 release workflow couldn't push the extension OCI artifact because Cargo.toml's `version` was still `0.1.2` while the tag was `v0.1.3`, so pgrx generated `pgck--0.1.2.sql` but the workflow expected `pgck--0.1.3.sql`. Cargo.toml is now synced (`0.1.4`); `src/lib.rs`'s `extension_sql_file!` reference matches; and `sql/pgck--0.1.2--0.1.4.sql` ships as a no-op upgrade marker (no SQL surface change between 0.1.2 and 0.1.4).
+- `publish-pgck-web.yml`'s SBOM step is now non-fatal: `syft` (via `anchore/sbom-action`) fails on the arm64 matrix leg because it can't pull an arm64 image from an amd64 runner without QEMU, and the image push already succeeded by then. The artefact still ships; SBOM upload is skipped for the leg that couldn't generate it. Proper fix (split SBOM into a per-arch matrix) is on the workflow cleanup backlog.
+
 ## v0.1.3 - 2026-05-28
 
 ### Added
