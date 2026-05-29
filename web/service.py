@@ -352,19 +352,53 @@ class PsqlPgckGateway:
 
 
 class NatsEventPublisher:
+    """Dual-emit publisher for the pgCK display surface.
+
+    CKA-7 / pgck-web v0.2.5: every ``publish(payload)`` call emits to
+    BOTH the v1.2.x short-form subject (``event.<Kernel>``, currently
+    ``event.pgCK.Display``) AND the CKP v3.8 long-form subject
+    (``event.kernel.<Kernel>.<event-kind>``, e.g.
+    ``event.kernel.pgCK.Display.task_upsert``). Same payload bytes;
+    CKClient v1.3 dual-subscribes; consumers cut over gradually. When
+    CKClient v2.0 drops the short-form alias, the short publish is
+    removed in the same release window.
+
+    The long-form ``<event-kind>`` is the payload's ``kind`` field
+    (``theme``, ``audio``, ``task_upsert``, ``board_snapshot``,
+    ``broadcast`` fallback if absent).
+    """
+
     def __init__(
         self,
         url: str | None = None,
         subject: str | None = None,
+        long_subject_prefix: str | None = None,
         user: str | None = None,
         password: str | None = None,
     ) -> None:
         self._url = url or os.getenv("PGCK_BOARD_NATS_URL", DEFAULT_BOARD_NATS_URL)
         self._subject = subject or os.getenv("PGCK_BROWSER_NATS_SUBJECT", DEFAULT_NATS_SUBJECT)
+        kernel = os.getenv("PGCK_DISPLAY_KERNEL", "pgCK.Display")
+        self._long_subject_prefix = long_subject_prefix or os.getenv(
+            "PGCK_BROWSER_NATS_SUBJECT_LONG",
+            f"event.kernel.{kernel}",
+        )
         self._user = user or os.getenv("NATS_USER", "dev")
         self._password = password or os.getenv("NATS_PASSWORD", "devpass-change-me")
 
+    def _derive_subjects(self, payload: dict[str, Any]) -> tuple[str, str]:
+        """Return ``(short_subject, long_subject)`` for one publish call.
+
+        Pure function — extracted so the dual-emit subject logic is
+        testable without spinning up a NATS client.
+        """
+        kind = str(payload.get("kind") or "broadcast")
+        long_subject = f"{self._long_subject_prefix}.{kind}"
+        return (self._subject, long_subject)
+
     async def publish(self, payload: dict[str, Any]) -> None:
+        body = _compact_json(payload).encode("utf-8")
+        short_subject, long_subject = self._derive_subjects(payload)
         client = await nats.connect(
             servers=[self._url],
             user=self._user,
@@ -372,7 +406,8 @@ class NatsEventPublisher:
             connect_timeout=1,
         )
         try:
-            await client.publish(self._subject, _compact_json(payload).encode("utf-8"))
+            await client.publish(short_subject, body)
+            await client.publish(long_subject, body)
             await client.flush(timeout=1)
         finally:
             await client.close()

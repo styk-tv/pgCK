@@ -2,6 +2,32 @@
 
 All notable changes to `pgCK` are logged here.
 
+## pgck-web/v0.2.5 - 2026-05-29
+
+Single-task release: **CKA-7 — long-form `event.kernel.pgCK.Display.<event-kind>` dual-emit alongside short-form `event.pgCK.Display`**. CKClient v1.3 dual-subscribes; consumers cut over gradually; the short-form alias is removed in the release window that ships CK.Lib.Js v2.0.
+
+### Changed
+
+- **`web/service.py::NatsEventPublisher`** — every `publish(payload)` call now emits to BOTH the v1.2.x short-form subject (`event.<Kernel>`, currently `event.pgCK.Display`) AND the CKP v3.8 long-form subject (`event.kernel.<Kernel>.<event-kind>`, e.g. `event.kernel.pgCK.Display.task_upsert`). Same payload bytes on both; one connect / two publishes / one flush / one close per call.
+- **New env var `PGCK_BROWSER_NATS_SUBJECT_LONG`** — optional override for the long-form prefix; defaults to `event.kernel.<PGCK_DISPLAY_KERNEL>` (i.e. `event.kernel.pgCK.Display`).
+- **`_derive_subjects(payload)` helper** extracted as a pure function — the long-form `<event-kind>` is the payload's `kind` field (`theme`, `audio`, `task_upsert`, `board_snapshot`, `broadcast` fallback if absent).
+
+### Added
+
+- **`tests/test_service.py::test_nats_publisher_derives_short_and_long_subjects`** — unit test on the subject derivation across all four payload kinds + missing/empty-kind fallback.
+- **`tests/test_service.py::test_nats_publisher_publishes_to_both_subjects`** — integration test with `monkeypatch`-mocked `nats.connect` verifying both subjects receive the same payload bytes in a single `publish()` call.
+
+### Notes for consumers
+
+- **CKClient v1.3** can subscribe to either subject; new code should prefer the long form and pass it as an `extraSubject`. The browser config served at `/protocol.json` already advertises both (`nats_subject` short, `nats_subject_long` long).
+- **No payload shape change.** Identical bytes on both subjects. CKA-5 (MessagePack codec on `event.kernel.*`) lands later and only affects the long-form path.
+- **No change to the pgCK extension publish path.** The bgworker outbox drain (CKA-6, extension v0.2.1) emits `event.kernel.pgCK.<class>.sealed` on the long form already; this CKA-7 release wires the FastAPI display surface to do the same.
+
+### Verification
+
+- `python -m pytest tests/test_service.py` — 6 / 6 pass (4 pre-existing + 2 new).
+- Attestation verifies for both arches at GHCR — see LATEST.md.
+
 ## pgck-web/v0.2.4 - 2026-05-29
 
 **First SLSA-attested pgck-web release.** Bootstrap of the attestation gate on the pgck-web publish stream (per PROVENANCE.md Rule 4 bootstrap exception). pgck-web/v0.1.0–v0.2.3 predate the attestation wiring and stay unattested in their existing GHCR form; consumers wanting a provenance-verified pgck-web pin start here.

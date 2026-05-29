@@ -147,3 +147,75 @@ async def test_board_service_returns_warning_when_publish_fails() -> None:
 
     assert result["task"]["task_id"] == "FC-T-0003"
     assert result["warnings"] == ["task was sealed but live publish failed: publish failed"]
+
+
+# ---------------------------------------------------------------------------
+# CKA-7 — NatsEventPublisher dual-emit (short + long subject per payload)
+# ---------------------------------------------------------------------------
+
+
+def test_nats_publisher_derives_short_and_long_subjects() -> None:
+    from web.service import NatsEventPublisher
+
+    publisher = NatsEventPublisher(
+        url="nats://test:4222",
+        subject="event.pgCK.Display",
+        long_subject_prefix="event.kernel.pgCK.Display",
+    )
+
+    short, long_ = publisher._derive_subjects({"kind": "task_upsert"})
+    assert short == "event.pgCK.Display"
+    assert long_ == "event.kernel.pgCK.Display.task_upsert"
+
+    # theme / audio / board_snapshot all flow through the same derivation.
+    for kind in ("theme", "audio", "board_snapshot"):
+        s, l = publisher._derive_subjects({"kind": kind})
+        assert s == "event.pgCK.Display"
+        assert l == f"event.kernel.pgCK.Display.{kind}"
+
+    # Missing or empty `kind` falls back to `broadcast`.
+    _, long_default = publisher._derive_subjects({})
+    assert long_default == "event.kernel.pgCK.Display.broadcast"
+    _, long_empty = publisher._derive_subjects({"kind": ""})
+    assert long_empty == "event.kernel.pgCK.Display.broadcast"
+
+
+@pytest.mark.asyncio
+async def test_nats_publisher_publishes_to_both_subjects(monkeypatch) -> None:
+    from web.service import NatsEventPublisher
+
+    captured: list[tuple[str, bytes]] = []
+
+    class FakeClient:
+        async def publish(self, subject: str, payload: bytes) -> None:
+            captured.append((subject, payload))
+
+        async def flush(self, timeout: float = 1.0) -> None:
+            pass
+
+        async def close(self) -> None:
+            pass
+
+    async def fake_connect(**kwargs):
+        return FakeClient()
+
+    import web.service as service_mod
+
+    monkeypatch.setattr(service_mod.nats, "connect", fake_connect)
+
+    publisher = NatsEventPublisher(
+        url="nats://test:4222",
+        subject="event.pgCK.Display",
+        long_subject_prefix="event.kernel.pgCK.Display",
+    )
+
+    await publisher.publish({"kind": "task_upsert", "task": {"task_id": "T1"}})
+
+    subjects = [subject for subject, _ in captured]
+    assert subjects == ["event.pgCK.Display", "event.kernel.pgCK.Display.task_upsert"]
+    # Same payload bytes on both subjects — CKA-7 acceptance "NATS
+    # receives the same payload on both subjects".
+    assert captured[0][1] == captured[1][1]
+    body = captured[0][1].decode("utf-8")
+    assert '"kind":"task_upsert"' in body
+    assert '"task_id":"T1"' in body
