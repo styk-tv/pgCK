@@ -4,7 +4,7 @@
   Provenance v1 attestations have been verified against the GHCR digests below.
   Each invocation refreshes the section whose upstream workflow fired and
   preserves the other section verbatim. Do NOT edit by hand — the next workflow
-  run will overwrite your changes. Last refresh: 2026-05-29 01:25:09Z (side: ext).
+  run will overwrite your changes. Last refresh: 2026-05-29 01:36:32Z (side: web).
 -->
 
 # pgCK — latest published artifacts
@@ -28,9 +28,20 @@ Two publishable surfaces ship from this repo: the PostgreSQL **extension** (oras
 | Older PG majors       | `0.2.1-pg{14,15,16}-{amd64,arm64}` published alongside           |
 | Provenance            | SLSA Build Provenance v1 — verify with `gh attestation verify oci://ghcr.io/styk-tv/pgck:0.2.1-pg17-amd64 --repo styk-tv/pgCK` |
 
-## pgck-web
+## pgck-web — `v0.2.4`
 
-> No attested release published yet — see [Repo packages view](https://github.com/styk-tv/pgCK/pkgs/container/pgck-web).
+FastAPI runtime layer: dual-page Display / Board, `/cklib` mount for the CKClient ESM module (CK.Lib.Js v1.3 aligned), `/assets` mount for static files. Pull and run directly.
+
+| arch  | Pull URI                                  | Also tagged       | Digest                                                                  | Created (UTC)       |
+|-------|-------------------------------------------|-------------------|-------------------------------------------------------------------------|---------------------|
+| amd64 | `ghcr.io/styk-tv/pgck-web:v0.2.4-amd64`   | `latest-amd64`    | `sha256:fc8e2b0049b74d64922ea8ae2d5189844c7c5c0b099fd3a4cac8c9e47c060b83` | 2026-05-29 01:33:19 |
+| arm64 | `ghcr.io/styk-tv/pgck-web:v0.2.4-arm64`   | `latest-arm64`    | `sha256:8ff85f8c8cdf167c26fe1c3a50a680d9f988ce04333155d6efd39af346d39bc6` | 2026-05-29 01:35:42 |
+
+|                       |                                                                          |
+|-----------------------|--------------------------------------------------------------------------|
+| Repo packages view    | https://github.com/styk-tv/pgCK/pkgs/container/pgck-web                  |
+| Source                | [`web/`](./web/) (consolidated from `web_demo/` at pgck-web/v0.2.1)      |
+| Provenance            | SLSA Build Provenance v1 — verify with `gh attestation verify oci://ghcr.io/styk-tv/pgck-web:v0.2.4-amd64 --repo styk-tv/pgCK` |
 
 ## Pin policy
 
