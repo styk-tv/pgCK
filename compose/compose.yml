@@ -19,7 +19,19 @@ services:
       - ./extensions/pgck/lib/pgck.so:/usr/lib/postgresql/17/lib/pgck.so:ro,z
       - ./extensions/pgck/share/extension/pgck.control:/usr/share/postgresql/17/extension/pgck.control:ro,z
       - ./extensions/pgck/share/extension/pgck--0.2.2.sql:/usr/share/postgresql/17/extension/pgck--0.2.2.sql:ro,z
-      - ../fixtures/ontologies:/ontology:ro,z
+      # NOTE: parent is NOT :ro — docker must create mountpoints for the
+      # task.ttl/goal.ttl overlays below (they don't exist in fixtures, and a
+      # read-only parent bind-mount rejects mknod of new mountpoint files).
+      # The container never writes here; the per-file overlays stay :ro.
+      - ../fixtures/ontologies:/ontology:z
+      # Overlay the authoritative current CK ontology over the (stale) fixtures
+      # copies: fixtures/ontologies/core.ttl lacks the ProofShape minCount
+      # constraints, and has no task.ttl/goal.ttl at all. These nested per-file
+      # mounts make boot() load the current core (SHACL gate effective) and
+      # ckp.import_module('task'/'goal') resolve for the board.
+      - ../ontology/core.ttl:/ontology/core.ttl:ro,z
+      - ../ontology/task.ttl:/ontology/task.ttl:ro,z
+      - ../ontology/goal.ttl:/ontology/goal.ttl:ro,z
       - ../examples:/examples:ro,z
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pgck} -d ${POSTGRES_DB:-pgck}"]
