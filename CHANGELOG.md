@@ -2,6 +2,44 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.2.1 - 2026-05-29
+
+Single-task release: **CKA-6 wires up the NATS publish path end-to-end** (Rust + SQL). pgCK is now a NATS client of the bundled / cluster `nats-server` rather than hosting its own embedded NATS Core. Every governed `ckp.seal()` queues an event for publication with `Ck-Seq: <ledger.seq>` for CKClient v1.3 dedup; when configured for JetStream the event also publishes with `Nats-Msg-Id: <ledger.seq>` for server-side stream dedup.
+
+### Added
+
+- **`nats-client` Cargo feature** (`Cargo.toml`) — mutually exclusive with `embedded-nats` (the S3 mode); both enabled fires a clear `compile_error!` in `src/lib.rs`. Pulls in `tokio` + `async-nats 0.48` (default features include `jetstream`, `websockets`).
+- **`src/nats_client.rs`** — owns a dedicated tokio thread with an `async_nats::Client` and optional `jetstream::Context`. pgrx-side callers use `nats_client::publish` / `publish_js` which enqueue commands over an `mpsc::sync_channel(1024)`; the thread runs the actual async publish, logs failures to stderr, never panics. Fire-and-forget at the call site.
+- **`src/publish_drain.rs`** — bgworker-side drainer. Each tick: `BackgroundWorker::transaction(|| Spi::connect_mut(|c| c.update("DELETE FROM ckp.outbox WHERE seq IN (SELECT seq FROM ckp.outbox ORDER BY seq LIMIT 100) RETURNING ...")))` — atomic batch drain. For each row, decodes JSONB headers, calls into `nats_client::publish` (Core path), and if `pgck.nats_js_stream` GUC is set also `nats_client::publish_js` with `Nats-Msg-Id` appended.
+- **GUC getters in `src/lib.rs`** — `crate::nats_url()` (default `nats://127.0.0.1:4222`), `crate::nats_js_stream()` (default `None`). Registered via `pgrx::GucRegistry::define_string_guc(...)` in `_PG_init` under the `nats-client` feature.
+- **Bgworker tick interval** tightened to 100ms under `nats-client` (visible publish latency ~50ms avg). `Duration::from_secs(5)` retained for the no-NATS-feature and `embedded-nats` profiles.
+- **`ckp.outbox` table** — `BIGSERIAL seq` + FK to `ckp.ledger(seq)` + `subject TEXT` + `payload BYTEA` + `headers JSONB` + `attempt_count INT` + `enqueued_at TIMESTAMPTZ`. Single index on `seq`.
+- **`ckp.compute_publish_subject(p_type_uri text) → text`** — IMMUTABLE; strips ontology namespace from a type URI to derive `event.kernel.pgCK.<class>.sealed` (Task / Goal / Instance fallback).
+- **`ckp.ledger_to_outbox()` + `ckp_ledger_after_insert` trigger** — fires AFTER INSERT on `ckp.ledger` inside the same seal transaction. Reads `ckp.instances.body`, builds headers with `Ck-Seq: <seq>` + `Content-Type: application/json`, queues one outbox row. Zero touch to `ckp.seal()` — purely additive.
+- **`sql/test/s8_publish_path_smoke.sql`** — SQL fixture that exercises the trigger end-to-end (seal Goal + Task → assert 2 outbox rows with correct subjects / Ck-Seq stamp / Content-Type / payload bytes; also asserts `compute_publish_subject()` for Task / Goal / NULL / no-slash inputs).
+
+### Changed
+
+- **`src/bgworker.rs`** — under `nats-client`, `tick()` initialises the async-nats client once via a `OnceLock` on the first tick, then calls `publish_drain::drain_once()` every tick. Under `embedded-nats`, behaviour preserved (starts the hand-rolled NATS Core server once on its own tokio thread). Unit test `start_server_once_is_idempotent` still passes.
+- **Cargo check matrix** is clean across all 4 profiles (none / `embedded-nats` / `nats-client` / both) — both-enabled fails with the mutex `compile_error!` as designed.
+
+### Architecture / docs
+
+- **`SPEC.PGCK.NATS-BIDIRECTIONAL.v0.2`** records that the bundled `nats-server` topology shipped in `oci-germination v0.6.3` is the canonical substrate; the embedded NATS Core in `src/nats/` is now a dev / unit-test artefact only.
+- **`SPEC.CKP.v3.8-rc-09-nats`** supersedes `rc-06-nats` with the bundled-substrate + JetStream-assist + deferred-sealing-cutoff framing. **Outbox-table rejection revised** (was about cluster-level durability conflated with process-local IPC; outbox is the SQL→bgworker bridge, JetStream is the cluster boundary — different layers).
+- **`TASKS.PGCK.S4-BUNDLED-NATS.v0.1`** is the tactical plan that drove this release; 7 steps, 6 commits (`5d46b3f` → `c3081ed`).
+
+### Pivots from the original plan
+
+- **pg_notify + LISTEN → outbox-table drain.** pgrx 0.16 has no usable LISTEN/NOTIFY consumer API; outbox approach is simpler, crash-safe, pure SPI. Documented in `rc-09-nats §2` (revised) and S4 plan steps 3+4.
+- **`async-nats` pin updated 0.35 → 0.48** (was outdated in the S4 plan; 0.48 is the actual current pin and includes JetStream + websockets by default).
+
+### Verification
+
+- `cargo check --no-default-features --features pg17[,...]` — clean across all 4 feature profiles, zero warnings.
+- `sql/test/s8_publish_path_smoke.sql` — **runtime verification deferred**: the dev container at `127.0.0.1:15432` currently ships pgCK `0.1.2` (oci-germination `ck-allinone:v0.6.3` bundle has a stale pgCK pin — see `NOTIFIES.oci-germination.v0.6.all-in-one-web-pin-update`). The s8 fixture is authored against the v0.2.1 schema and will PASS once the bundle picks up v0.2.1+. The architecture is deliberately additive (AFTER INSERT trigger, mutex-protected feature gates) — trigger bugs cannot break seal-path success.
+- `tests/sh/s4_bundle_smoke.sh` — deferred for the same bundle-pin reason. Tracked as follow-up.
+
 ## v0.2.0 - 2026-05-28
 
 **Track B ship-it.** First major track flip — minor bump signals that the **Ontology + SHACL gate at `ckp.seal()`** track is complete. The worked example from `_WIP/SPEC.PGCK.TASK-GOAL-KERNEL-RDF.v0.1.md §6` reproduces end-to-end; the SHACL gate rolls back non-conforming seals; the IRI dictionary + URN normaliser + ontology module importer underpin the whole pipeline.
