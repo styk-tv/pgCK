@@ -155,7 +155,7 @@ function setConnectionStatus(status, level) {
 
 async function loadProtocol() {
   try {
-    const response = await fetch("/protocol");
+    const response = await fetch("/assets/protocol.json");
     const payload = await response.json();
     refs.protocolOutput.textContent = payload.commands
       .map((command) => [

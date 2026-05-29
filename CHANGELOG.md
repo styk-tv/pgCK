@@ -2,6 +2,25 @@
 
 All notable changes to `pgCK` are logged here.
 
+## pgck-web/v0.2.6 - 2026-05-29
+
+Single-task web release: **CKD-3 — `/protocol` becomes a static asset** (first step of the web-layer Python removal; the display page no longer touches a Python-computed endpoint).
+
+### Changed
+
+- **`GET /protocol` FastAPI route removed.** The protocol document is now a committed static asset `web/static/protocol.json`, served by the existing `/assets` `StaticFiles` mount — no handler computes it. `web/protocol.py::protocol_document()` stays as the single source of truth; `scripts/gen_protocol_json.py` regenerates the file from it.
+- **`display-app.js` and `board-app.js`** fetch `/assets/protocol.json` instead of `/protocol`.
+
+### Notes
+
+- The browser's **live** config is unchanged — it still arrives via the injected `window.PGCK_DISPLAY_CONFIG` global, so the static doc's `subject`/`nats_ws_url` are illustrative defaults only.
+- Net effect: the **display page is now Python-free** end-to-end (it only loads static assets + talks NATS via CK.Lib.Js). The board page still uses `/api/*` (REST) until those become NATS affordances (CKA-3/CKA-4) — tracked for the Track D ship.
+
+### Verification
+
+- `tests/test_web.py::test_protocol_doc_is_static_asset` — asserts `/protocol` → 404 and `/assets/protocol.json` → 200 with the four command kinds intact.
+- `scripts/gen_protocol_json.py` reproduces the committed file byte-for-byte.
+
 ## v0.2.2 - 2026-05-29
 
 Extension release: **CKF-3 — participant identity in `ckp.seal()`** + a fix for a **v0.2.1 fresh-install regression** (the CKA-6 outbox/trigger DDL ordering).

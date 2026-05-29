@@ -1,0 +1,82 @@
+{
+  "name": "pgCK goal task kernel board MVP",
+  "direction": "server-to-browser",
+  "subject": "event.pgCK.Display",
+  "subject_long": "event.kernel.pgCK.Display.broadcast",
+  "nats_ws_url": "wss://pgck.localhost:443/wss",
+  "commands": [
+    {
+      "kind": "theme",
+      "description": "Change the shared colour theme for every connected browser.",
+      "payload": {
+        "kind": "theme",
+        "theme": {
+          "background": "#07111f",
+          "foreground": "#f7fbff",
+          "accent": "#47d7ac",
+          "panel": "#10263f"
+        }
+      },
+      "publish_example": "nats pub 'event.pgCK.Display' '{\"kind\":\"theme\",\"theme\":{\"background\":\"#07111f\",\"foreground\":\"#f7fbff\",\"accent\":\"#47d7ac\",\"panel\":\"#10263f\"}}'"
+    },
+    {
+      "kind": "audio",
+      "description": "Tell every browser to play an audio file. Browsers may require one click to arm audio first.",
+      "payload": {
+        "kind": "audio",
+        "audio": {
+          "src": "/assets/audio/chime.wav",
+          "title": "Local chime",
+          "loop": false,
+          "volume": 0.85
+        }
+      },
+      "publish_example": "nats pub 'event.pgCK.Display' '{\"kind\":\"audio\",\"audio\":{\"src\":\"/assets/audio/chime.wav\",\"title\":\"Local chime\",\"loop\":false,\"volume\":0.85}}'"
+    },
+    {
+      "kind": "task_upsert",
+      "description": "Insert or update one task card in the matching kernel column.",
+      "payload": {
+        "kind": "task_upsert",
+        "task": {
+          "task_id": "FC-T-0001",
+          "title": "Land v0.2 SQL plumbing draft",
+          "part_of_goal": "FC-G-0001",
+          "target_kernel": "CK.Task",
+          "lifecycle_state": "pending",
+          "priority": 4,
+          "queue_seq": 12,
+          "created_at": "2026-05-20T20:00:00Z",
+          "shape_valid": true,
+          "sealed": true,
+          "verified": true,
+          "proof_digest": "abc123",
+          "detail": "",
+          "created_by": ""
+        }
+      },
+      "publish_example": "nats pub 'event.pgCK.Display' '{\"kind\":\"task_upsert\",\"task\":{\"task_id\":\"FC-T-0001\",\"title\":\"Land v0.2 SQL plumbing draft\",\"part_of_goal\":\"FC-G-0001\",\"target_kernel\":\"CK.Task\",\"lifecycle_state\":\"pending\",\"priority\":4,\"queue_seq\":12,\"created_at\":\"2026-05-20T20:00:00Z\",\"shape_valid\":true,\"sealed\":true,\"verified\":true,\"proof_digest\":\"abc123\",\"detail\":\"\",\"created_by\":\"\"}}'"
+    },
+    {
+      "kind": "board_snapshot",
+      "description": "Replace the current board state with a full kernel/task snapshot.",
+      "payload": {
+        "kind": "board_snapshot",
+        "board": {
+          "kernels": [
+            {
+              "kernel_id": "CK.Task",
+              "title": "Task Kernel",
+              "icon": "assignment",
+              "color": "#22c55e",
+              "launch_url": "https://task.localhost",
+              "visible": true
+            }
+          ],
+          "tasks": []
+        }
+      },
+      "publish_example": "nats pub 'event.pgCK.Display' '{\"kind\":\"board_snapshot\",\"board\":{\"kernels\":[{\"kernel_id\":\"CK.Task\",\"title\":\"Task Kernel\",\"icon\":\"assignment\",\"color\":\"#22c55e\",\"launch_url\":\"https://task.localhost\",\"visible\":true}],\"tasks\":[]}}'"
+    }
+  ]
+}

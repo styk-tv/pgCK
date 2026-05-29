@@ -85,23 +85,28 @@ def test_root_serves_owner_board_shell() -> None:
     assert "/static/app.js" in response.text
 
 
-def test_protocol_lists_board_broadcast_kinds() -> None:
+def test_protocol_doc_is_static_asset() -> None:
+    # CKD-3: /protocol is no longer a FastAPI route. The protocol document is a
+    # committed static asset (web/static/protocol.json) served by the /assets
+    # StaticFiles mount — no Python handler computes it. The browser's live
+    # config still arrives via window.PGCK_DISPLAY_CONFIG, so the static doc's
+    # subject/url are illustrative defaults.
     app = create_app(FakeBoardService())
 
     with TestClient(app) as client:
-        response = client.get("/protocol")
+        assert client.get("/protocol").status_code == 404  # dynamic endpoint removed
+        response = client.get("/assets/protocol.json")      # static asset serves it
 
     assert response.status_code == 200
     payload = response.json()
 
-    assert payload["subject"] == "broadcast.demo.display"
-    assert payload["nats_ws_url"] == "wss://testserver:8443"
     assert {command["kind"] for command in payload["commands"]} == {
         "theme",
         "audio",
         "task_upsert",
         "board_snapshot",
     }
+    assert payload["subject"]  # illustrative default subject
     assert all(payload["subject"] in command["publish_example"] for command in payload["commands"])
 
 

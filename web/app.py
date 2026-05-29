@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from web.protocol import build_browser_config, protocol_document, render_index, render_tasks_page
+from web.protocol import build_browser_config, render_index, render_tasks_page
 from web.service import BoardValidationError, build_live_board_service
 
 
@@ -81,9 +81,10 @@ def create_app(service: Any | None = None) -> FastAPI:
     async def healthz() -> dict[str, bool]:
         return {"ok": True}
 
-    @app.get("/protocol")
-    async def protocol(request: Request) -> dict[str, Any]:
-        return protocol_document(request.url.hostname)
+    # CKD-3: the protocol document is now a committed static file
+    # (web/static/protocol.json), served by the /assets StaticFiles mount —
+    # no FastAPI handler computes it. Regenerate via scripts/gen_protocol_json.py.
+    # The browser's live config still arrives via window.PGCK_DISPLAY_CONFIG.
 
     @app.get("/api/board")
     async def api_board(request: Request) -> dict[str, Any]:
