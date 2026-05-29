@@ -59,6 +59,10 @@ pub fn tick() {
         CLIENT_INITIALISED.get_or_init(|| {
             let url = crate::nats_url();
             let js_stream = crate::nats_js_stream();
+            // Inbound relay (G2): subscribe input.kernel.pgCK.action.> and
+            // fan out as event.kernel.pgCK.<verb> — basic Bob<->Alice + presence.
+            crate::nats_client::init_relay(url.clone());
+            // Outbound publish thread + outbox drain (CKA-6).
             crate::nats_client::init(url, js_stream);
         });
         let _ = crate::publish_drain::drain_once();

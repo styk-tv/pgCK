@@ -45,7 +45,7 @@ pg_test = []
 #   - JetStream-assist available when pgck.nats_js_stream GUC is set
 #   - per SPEC.PGCK.NATS-BIDIRECTIONAL.v0.2 §3 and TASKS.PGCK.S4-BUNDLED-NATS.v0.1
 embedded-nats = ["dep:tokio"]
-nats-client = ["dep:tokio", "dep:async-nats"]
+nats-client = ["dep:tokio", "dep:async-nats", "dep:futures-util"]
 
 [dependencies]
 pgrx = "0.16"               # caret range, exactly as pgRDF — must match
@@ -58,6 +58,9 @@ pgrx = "0.16"               # caret range, exactly as pgRDF — must match
 # `websockets`, server_2_10..2_14 — keep them; the JS-assist publish
 # path (TASKS.PGCK.S4-BUNDLED-NATS.v0.1 step 2) uses the JetStream API.
 async-nats = { version = "0.48", optional = true }
+# StreamExt for consuming the inbound relay subscription (Subscriber: Stream).
+# Gated under nats-client; default-features off keeps it light.
+futures-util = { version = "0.3", optional = true, default-features = false, features = ["std"] }
 # Tokio runtime — used by BOTH the embedded server's accept loop
 # (`embedded-nats`) AND the bgworker NATS client (`nats-client`).
 # Optional; either feature pulls it in.

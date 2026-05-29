@@ -48,6 +48,20 @@ struct ClientHandle {
 }
 
 static CLIENT: OnceLock<ClientHandle> = OnceLock::new();
+static RELAY_STARTED: OnceLock<()> = OnceLock::new();
+
+/// Inbound subject the relay subscribes to, and the prefix it strips to
+/// derive the fan-out event subject. A browser publishes
+/// `input.kernel.pgCK.action.<verb>`; the relay re-emits
+/// `event.kernel.pgCK.<verb>` so every subscribed browser receives it.
+///
+/// This is a GOVERNANCE-FREE transport relay (G2 minimal: basic Bob<->Alice
+/// communication + presence). It does NOT seal, validate, or resolve
+/// affordances. When the governed dispatcher lands (CKA-4), this handler
+/// becomes the seam: input -> resolve affordance -> validate -> seal -> event.
+const RELAY_IN_SUBJECT: &str = "input.kernel.pgCK.action.>";
+const RELAY_IN_PREFIX: &str = "input.kernel.pgCK.action.";
+const RELAY_OUT_PREFIX: &str = "event.kernel.pgCK.";
 
 /// Initialise the NATS client thread. Idempotent — subsequent calls are
 /// no-ops. Called once from the bgworker's tick loop (S4 step 5).
@@ -104,6 +118,80 @@ pub fn publish_js(
             headers: headers.to_vec(),
         })
         .map_err(|e| format!("js publish enqueue failed: {e}"))
+}
+
+/// Start the inbound relay thread. Idempotent. Subscribes to
+/// `input.kernel.pgCK.action.>` on its own async-nats connection and
+/// re-publishes each message as `event.kernel.pgCK.<verb>` for fan-out to
+/// all subscribed browsers. Independent of the publish thread (`init`).
+///
+/// Minimal governance-free transport (G2: Bob<->Alice + presence). See
+/// `RELAY_IN_SUBJECT` for where governance later slots in.
+pub fn init_relay(url: String) {
+    if RELAY_STARTED.get().is_some() {
+        return;
+    }
+    if RELAY_STARTED.set(()).is_err() {
+        return;
+    }
+    std::thread::spawn(move || run_relay_thread(url));
+}
+
+/// Derive the fan-out event subject from an inbound action subject.
+/// `input.kernel.pgCK.action.session.join` -> `event.kernel.pgCK.session.join`.
+/// Returns `None` if the subject is not under the relay prefix.
+fn relay_subject(inbound: &str) -> Option<String> {
+    inbound
+        .strip_prefix(RELAY_IN_PREFIX)
+        .map(|verb| format!("{RELAY_OUT_PREFIX}{verb}"))
+}
+
+fn run_relay_thread(url: String) {
+    use futures_util::StreamExt;
+
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("pgck nats-relay: failed to build tokio runtime: {e}");
+            return;
+        }
+    };
+
+    runtime.block_on(async move {
+        let client = match async_nats::connect(url.as_str()).await {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("pgck nats-relay: connect to {url} failed: {e}");
+                return;
+            }
+        };
+        let mut sub = match client.subscribe(RELAY_IN_SUBJECT).await {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("pgck nats-relay: subscribe {RELAY_IN_SUBJECT} failed: {e}");
+                return;
+            }
+        };
+        eprintln!("pgck nats-relay: relaying {RELAY_IN_SUBJECT} -> {RELAY_OUT_PREFIX}<verb>");
+
+        while let Some(msg) = sub.next().await {
+            let Some(out) = relay_subject(msg.subject.as_str()) else {
+                continue;
+            };
+            // Preserve headers (Ck-Seq etc.) if present; pure fan-out otherwise.
+            let publish = match msg.headers {
+                Some(h) => client.publish_with_headers(out.clone(), h, msg.payload).await,
+                None => client.publish(out.clone(), msg.payload).await,
+            };
+            if let Err(e) = publish {
+                eprintln!("pgck nats-relay: republish failed: subject={out} err={e}");
+            }
+        }
+        eprintln!("pgck nats-relay: subscription ended");
+    });
 }
 
 fn run_client_thread(url: String, js_stream: Option<String>, rx: mpsc::Receiver<Cmd>) {
@@ -192,4 +280,27 @@ fn build_headers(pairs: &[(String, String)]) -> async_nats::HeaderMap {
         hm.append(name.as_str(), value.as_str());
     }
     hm
+}
+
+#[cfg(test)]
+mod tests {
+    use super::relay_subject;
+
+    #[test]
+    fn relay_subject_maps_action_to_event() {
+        assert_eq!(
+            relay_subject("input.kernel.pgCK.action.session.join").as_deref(),
+            Some("event.kernel.pgCK.session.join")
+        );
+        assert_eq!(
+            relay_subject("input.kernel.pgCK.action.task.create").as_deref(),
+            Some("event.kernel.pgCK.task.create")
+        );
+    }
+
+    #[test]
+    fn relay_subject_rejects_non_action_subjects() {
+        assert_eq!(relay_subject("event.kernel.pgCK.x"), None);
+        assert_eq!(relay_subject("input.kernel.other.action.x"), None);
+    }
 }
