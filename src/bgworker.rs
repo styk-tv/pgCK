@@ -1,24 +1,35 @@
-//! pgCK background worker — S3 hosts the embedded NATS listener.
+//! pgCK background worker — bridges the governed seal path to the NATS bus.
 //!
-//! Per docs/specs/2026-05-16-pgck-core-design.md:
+//! Two feature-gated modes (mutually exclusive; src/lib.rs enforces):
 //!
-//!   * The embedded NATS *server* is a hand-rolled NATS Core module
-//!     (`src/nats/`, behind the `embedded-nats` feature) compiled into
-//!     `pgck.so` — NOT a child `nats-server` process.
-//!   * Threading: a dedicated thread owns the tokio runtime + the NATS
-//!     connection; this bgworker's main thread owns SPI and runs
-//!     `BackgroundWorker::transaction(|| Spi::run("SELECT ckp.seal..."))`
-//!     per inbound message, bridged by an mpsc channel.
+//!   * `embedded-nats` (S3, dev / unit-tests) — hosts the hand-rolled
+//!     NATS Core server from `src/nats/` on a dedicated tokio thread.
+//!     The server is started once on the first tick and runs until the
+//!     bgworker exits. Per docs/specs/2026-05-16-pgck-core-design.md §4.
 //!
-//! S3 only starts the raw TCP listener on `:4222`. The governed SPI bridge
-//! lands later; this file deliberately keeps the listener thread isolated
-//! from Postgres access.
+//!   * `nats-client` (S4, canonical bundle / cluster) — bgworker is a
+//!     NATS client of the bundled `nats-server` (`pgck.nats_url` GUC,
+//!     default `nats://127.0.0.1:4222`). On first tick:
+//!       1. spawn the async-nats thread (`nats_client::init`)
+//!     Per tick:
+//!       2. drain up to 100 rows from `ckp.outbox` via SPI
+//!          (`publish_drain::drain_once`) and enqueue publishes
+//!          onto the async-nats thread.
+//!     Per _WIP/SPEC.PGCK.NATS-BIDIRECTIONAL.v0.2 §3 and
+//!     _WIP/TASKS.PGCK.S4-BUNDLED-NATS.v0.1 step 5.
+//!
+//!   * (no NATS feature) — tick is a no-op; the bgworker still runs so
+//!     wait_latch has something to call. Useful for minimal builds that
+//!     exercise only the governed SQL path.
 
-#[cfg(feature = "embedded-nats")]
+#[cfg(any(feature = "embedded-nats", feature = "nats-client"))]
 use std::sync::OnceLock;
 
 #[cfg(feature = "embedded-nats")]
-static SERVER: OnceLock<()> = OnceLock::new();
+static EMBEDDED_SERVER_STARTED: OnceLock<()> = OnceLock::new();
+
+#[cfg(feature = "nats-client")]
+static CLIENT_INITIALISED: OnceLock<()> = OnceLock::new();
 
 #[cfg(feature = "embedded-nats")]
 fn start_server_once(state: &OnceLock<()>, starter: impl FnOnce()) {
@@ -28,10 +39,9 @@ fn start_server_once(state: &OnceLock<()>, starter: impl FnOnce()) {
 }
 
 /// One scheduler tick. Called by the bgworker loop on the latch interval.
-/// S3 starts the embedded NATS listener once; later stages add the SPI bridge.
 pub fn tick() {
     #[cfg(feature = "embedded-nats")]
-    start_server_once(&SERVER, || {
+    start_server_once(&EMBEDDED_SERVER_STARTED, || {
         std::thread::spawn(|| {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -45,6 +55,16 @@ pub fn tick() {
             });
         });
     });
+
+    #[cfg(feature = "nats-client")]
+    {
+        CLIENT_INITIALISED.get_or_init(|| {
+            let url = crate::nats_url();
+            let js_stream = crate::nats_js_stream();
+            crate::nats_client::init(url, js_stream);
+        });
+        let _ = crate::publish_drain::drain_once();
+    }
 }
 
 #[cfg(all(test, feature = "embedded-nats"))]

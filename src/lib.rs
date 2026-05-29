@@ -19,6 +19,16 @@ use std::time::Duration;
 
 pgrx::pg_module_magic!();
 
+// Bgworker tick interval. Tighter under `nats-client` because the
+// publish_drain reads ckp.outbox each tick — visible publish latency
+// is ~ TICK_INTERVAL / 2 on average. Under `embedded-nats` (or
+// without any NATS feature) the embedded server runs on its own
+// thread and the tick is mostly idle; 5s is fine.
+#[cfg(feature = "nats-client")]
+const TICK_INTERVAL: Duration = Duration::from_millis(100);
+#[cfg(not(feature = "nats-client"))]
+const TICK_INTERVAL: Duration = Duration::from_secs(5);
+
 // The `embedded-nats` profile (S3, dev/unit-tests) and the `nats-client`
 // profile (S4, canonical bundle/cluster) are mutually exclusive — one
 // hosts a NATS server inside pgck.so, the other connects out to a real
@@ -123,7 +133,7 @@ pub extern "C-unwind" fn pgck_bridge_main(_arg: pg_sys::Datum) {
     BackgroundWorker::connect_worker_to_spi(Some("postgres"), None);
 
     log!("pgck: bridge worker starting");
-    while BackgroundWorker::wait_latch(Some(Duration::from_secs(5))) {
+    while BackgroundWorker::wait_latch(Some(TICK_INTERVAL)) {
         bgworker::tick();
     }
     log!("pgck: bridge worker exiting");
