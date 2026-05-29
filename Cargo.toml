@@ -29,19 +29,38 @@ pg_test = []
 # The embedded NATS Core server (hand-rolled, src/nats/). Gated the
 # same idiomatic way pgN forwards to pgrx/pgN. See
 # docs/specs/2026-05-16-pgck-core-design.md §4.
+#
+# `embedded-nats` and `nats-client` are MUTUALLY EXCLUSIVE — src/lib.rs
+# emits a compile_error! when both are enabled. Pick exactly one (or
+# neither, for the default minimal build).
+#
+# `embedded-nats` profile  (dev / unit tests / S3 hermetic mode):
+#   - pgCK hosts its own NATS Core server on :4222 from src/nats/server.rs
+#   - bgworker tick loop starts the listener; no outbound NATS client
+#   - no JetStream, no headers (NATS Core wire only)
+#
+# `nats-client` profile  (canonical bundle / cluster mode — S4):
+#   - pgCK is a NATS CLIENT of the bundled / cluster nats-server
+#   - bgworker LISTENs ckp_ledger_appended, publishes via async-nats
+#   - JetStream-assist available when pgck.nats_js_stream GUC is set
+#   - per SPEC.PGCK.NATS-BIDIRECTIONAL.v0.2 §3 and TASKS.PGCK.S4-BUNDLED-NATS.v0.1
 embedded-nats = ["dep:tokio"]
+nats-client = ["dep:tokio", "dep:async-nats"]
 
 [dependencies]
 pgrx = "0.16"               # caret range, exactly as pgRDF — must match
                             # the cargo-pgrx CLI (setup-pgrx installs
                             # ^0.16 → 0.16.1; an `=0.16.0` pin makes
                             # `cargo pgrx test` reject the mismatch).
-# Upstream post-Envoy WSS-leg client only — NOT a server. The embedded
-# in-pod NATS server is the hand-rolled src/nats/ module (design §4).
-async-nats = "0.48"
-# Runtime for the embedded server's accept loop + the bgworker bridge.
-# Optional + gated by `embedded-nats`, mirroring pgRDF's forwarding-
-# feature idiom.
+# NATS client library — used in the `nats-client` profile when pgCK
+# acts as a client of the bundled / cluster nats-server. Optional +
+# gated by `nats-client`. Default features include `jetstream`,
+# `websockets`, server_2_10..2_14 — keep them; the JS-assist publish
+# path (TASKS.PGCK.S4-BUNDLED-NATS.v0.1 step 2) uses the JetStream API.
+async-nats = { version = "0.48", optional = true }
+# Tokio runtime — used by BOTH the embedded server's accept loop
+# (`embedded-nats`) AND the bgworker NATS client (`nats-client`).
+# Optional; either feature pulls it in.
 tokio = { version = "1", features = ["rt", "net", "io-util", "sync", "time", "macros"], optional = true }
 serde_json = "1"
 sha2 = "0.10"

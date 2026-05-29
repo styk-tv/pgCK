@@ -19,6 +19,20 @@ use std::time::Duration;
 
 pgrx::pg_module_magic!();
 
+// The `embedded-nats` profile (S3, dev/unit-tests) and the `nats-client`
+// profile (S4, canonical bundle/cluster) are mutually exclusive — one
+// hosts a NATS server inside pgck.so, the other connects out to a real
+// nats-server. Enabling both is a configuration error: they'd race for
+// :4222 or duplicate publish paths. See SPEC.PGCK.NATS-BIDIRECTIONAL.v0.2
+// §2 and TASKS.PGCK.S4-BUNDLED-NATS.v0.1.
+#[cfg(all(feature = "embedded-nats", feature = "nats-client"))]
+compile_error!(
+    "features `embedded-nats` and `nats-client` are mutually exclusive — \
+     `embedded-nats` makes pgCK host its own NATS Core server (S3 / dev), \
+     `nats-client` makes pgCK a client of the bundled or cluster nats-server \
+     (S4 / canonical). Pick exactly one, or neither for the minimal build."
+);
+
 mod bgworker;
 #[cfg(feature = "embedded-nats")]
 mod nats;
