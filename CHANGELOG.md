@@ -2,6 +2,25 @@
 
 All notable changes to `pgCK` are logged here.
 
+## pgck-web/v0.2.7 - 2026-05-29
+
+Web release: **U1 — both HTML pages are now static** (no-FastAPI UI-increment journey, step 1; roadmap §20). FastAPI stops rendering HTML.
+
+### Changed
+
+- **`/` and `/tasks.html` are committed static files** (`web/static/index.html`, `web/static/tasks.html`), served by a root `StaticFiles(html=True)` mount ordered after `/api/*`. The `render_index` / `render_tasks_page` / `_render_nav_menu` templaters (and the unused `STATIC_ASSET_VERSION`) are removed from `web/protocol.py`; `app.py` drops the HTML routes + `HTMLResponse`/`web.protocol` imports.
+- **Browser config is client-derived in the page** (`nats_ws_url` from `location.host`) instead of FastAPI-injected. Identity/session will arrive dynamically via the NATS envelope → `Participant` (U2), not baked into the page.
+
+### Notes
+
+- FastAPI still serves `/api/*` (board reads/writes) during the transition — retired at U5 when static-cklib (Go) serves everything and `app.py` is deleted.
+- Presence model (U2) reuses `CSVC.Participant` / `CSVC.Session` — `participant.join` is the request; no invented `VisitorRequest` type.
+
+### Verification
+
+- Verified live via FastAPI `TestClient`: `/`→200 (static display shell), `/tasks.html`→200 (board shell), `/api/board`→200 (still routes before the `/` mount), `/protocol`→404, `/assets/protocol.json`→200, `/assets/display-app.js`→200.
+- `tests/test_web.py` rewritten: `test_root_serves_static_display_shell` + `test_tasks_serves_static_board_shell` (the prior stale `test_root_serves_owner_board_shell` asserted board content at `/` and referenced a non-existent `/static/app.js`).
+
 ## pgck-web/v0.2.6 - 2026-05-29
 
 Single-task web release: **CKD-3 — `/protocol` becomes a static asset** (first step of the web-layer Python removal; the display page no longer touches a Python-computed endpoint).

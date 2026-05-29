@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pgCK Kernel Board</title>
+    <link rel="stylesheet" href="/assets/app.css?v=u1" />
+  </head>
+  <body>
+    <nav class="nav-menu">
+      <a href="/" class="nav-link display-link">Display</a>
+      <a href="/tasks.html" class="nav-link board-link">Board</a>
+    </nav>
+    <script>
+      // U1: static page. Config client-derived from the serving host.
+      (function () {
+        var host = location.host || "pgck.localhost";
+        var wsScheme = location.protocol === "http:" ? "ws" : "wss";
+        window.PGCK_DISPLAY_CONFIG = {
+          nats_ws_url: wsScheme + "://" + host + "/wss",
+          nats_subject: "event.pgCK.Display",
+          nats_subject_long: "event.kernel.pgCK.Display.broadcast",
+          display_kernel: "pgCK.Display",
+          cklib_base: "/cklib",
+          protocol_version: 1
+        };
+      })();
+    </script>
+
+    <main class="shell">
+      <section class="composer-card">
+        <div class="eyebrow">Create task</div>
+        <h1>Owner composer</h1>
+        <p class="composer-copy">Goal selector, kernel selector, priority, and detail drive governed task creation.</p>
+        <p id="form-status" class="form-status">Ready to seal tasks.</p>
+        <form id="task-form">
+          <label class="field">
+            <span>Goal selector</span>
+            <select id="goal-select" name="goal_id"></select>
+          </label>
+          <label class="field">
+            <span>Target kernel</span>
+            <select id="kernel-select" name="target_kernel"></select>
+          </label>
+          <label class="field">
+            <span>Title</span>
+            <input id="title-input" name="title" type="text" maxlength="180" />
+          </label>
+          <label class="field">
+            <span>Detail</span>
+            <textarea id="detail-input" name="detail" rows="3"></textarea>
+          </label>
+          <label class="field">
+            <span>Priority</span>
+            <input id="priority-input" name="priority" type="number" min="0" max="9" value="1" />
+          </label>
+          <button class="submit-button" type="submit">Create task</button>
+        </form>
+      </section>
+
+      <section class="board-card">
+        <div class="board-toolbar">
+          <div>
+            <div class="eyebrow">Kernel board</div>
+            <p class="board-copy">Tasks render into their ConceptKernel columns and live-sort by priority then queue sequence.</p>
+          </div>
+          <div id="kernel-toggles" class="kernel-toggles"></div>
+        </div>
+        <div id="board-columns" class="board-columns"></div>
+      </section>
+    </main>
+
+    <audio id="audio-player" preload="auto"></audio>
+    <script src="/assets/board-app.js?v=u1" defer></script>
+  </body>
+</html>

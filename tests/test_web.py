@@ -3,7 +3,6 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from web.app import create_app
-from web.protocol import build_browser_config
 from web.service import BoardValidationError
 
 
@@ -67,7 +66,10 @@ class RejectingBoardService(FakeBoardService):
         raise BoardValidationError("unknown goal_id: BAD-G-9999")
 
 
-def test_root_serves_owner_board_shell() -> None:
+def test_root_serves_static_display_shell() -> None:
+    # U1: "/" is a static file (web/static/index.html), served by the root
+    # StaticFiles mount — no FastAPI HTML rendering. Config is client-derived
+    # in the page (no secrets injected).
     service = FakeBoardService()
     app = create_app(service)
 
@@ -76,13 +78,26 @@ def test_root_serves_owner_board_shell() -> None:
 
     assert response.status_code == 200
     assert service.startup_calls == 1
-    assert "PGCK_DISPLAY_CONFIG" in response.text
+    assert "PGCK_DISPLAY_CONFIG" in response.text       # client-derived config block
     assert '"nats_user"' not in response.text
     assert '"nats_password"' not in response.text
+    assert "pgCK display" in response.text              # display shell, not the board
+    assert "/assets/display-app.js" in response.text
+
+
+def test_tasks_serves_static_board_shell() -> None:
+    # U1: "/tasks.html" is a static file (web/static/tasks.html).
+    app = create_app(FakeBoardService())
+
+    with TestClient(app) as client:
+        response = client.get("/tasks.html")
+
+    assert response.status_code == 200
+    assert "PGCK_DISPLAY_CONFIG" in response.text
     assert "Create task" in response.text
     assert "Kernel board" in response.text
     assert "Goal selector" in response.text
-    assert "/static/app.js" in response.text
+    assert "/assets/board-app.js" in response.text
 
 
 def test_protocol_doc_is_static_asset() -> None:

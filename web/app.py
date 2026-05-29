@@ -6,11 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from web.protocol import build_browser_config, render_index, render_tasks_page
 from web.service import BoardValidationError, build_live_board_service
 
 
@@ -67,15 +65,11 @@ def create_app(service: Any | None = None) -> FastAPI:
     app.state.board_service = board_service
     app.state.cklib_dir = cklib_dir
 
-    @app.get("/", response_class=HTMLResponse)
-    async def root(request: Request) -> HTMLResponse:
-        config = build_browser_config(request.url.hostname)
-        return HTMLResponse(render_index(config))
-
-    @app.get("/tasks.html", response_class=HTMLResponse)
-    async def tasks_page(request: Request) -> HTMLResponse:
-        config = build_browser_config(request.url.hostname)
-        return HTMLResponse(render_tasks_page(config))
+    # U1: `/` and `/tasks.html` are now static files (web/static/index.html,
+    # web/static/tasks.html) — no FastAPI HTML rendering. Served by the root
+    # StaticFiles mount added at the end of this function. Config is
+    # client-derived in the page (location.host); identity/session arrive via
+    # the NATS envelope -> Participant (U2). render_index/render_tasks removed.
 
     @app.get("/healthz")
     async def healthz() -> dict[str, bool]:
@@ -104,6 +98,12 @@ def create_app(service: Any | None = None) -> FastAPI:
             return await request.app.state.board_service.create_task(payload.model_dump())
         except BoardValidationError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # U1: serve the static HTML shell (index.html, tasks.html) + any web/static
+    # asset at the web root. Mounted LAST so /api/*, /healthz, /assets, /static,
+    # /cklib are matched first; html=True serves index.html for "/". This is the
+    # static-serving path static-cklib (Go) takes over wholesale at U5.
+    app.mount("/", StaticFiles(directory=BASE_DIR / "static", html=True), name="root")
 
     return app
 
