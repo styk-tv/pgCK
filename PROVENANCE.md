@@ -72,6 +72,23 @@ A successful verify means:
 
 GitHub Actions takes over. There is no step in this flow that requires `oras push`, `docker push`, `gh release create`, or any local-token credential.
 
+## When is a release "in"?
+
+A release is "in" only when `LATEST.md` advertises the new digest (Rule 2). The full chain after `git push origin <tag>` is:
+
+1. `release.yml` (for `v*` tags) or `publish-pgck-web.yml` (for `pgck-web/v*` tags) — builds, attests, pushes to GHCR.
+2. `update-latest-md.yml` (triggered via `workflow_run`) — verifies the attestation with `gh attestation verify` and rewrites `LATEST.md`.
+
+Wait for the `chore(latest): refresh …` commit to appear on `main`, or use the helper:
+
+```sh
+scripts/gh-watch.sh v0.2.1         # specific extension tag
+scripts/gh-watch.sh pgck-web/v0.2.4
+scripts/gh-watch.sh                # most recent local tag (git describe)
+```
+
+The helper is **SHA-keyed**: it resolves `git rev-list -n1 <tag>` and filters `gh run list` by `headSha`, so two simultaneous pushes from different shells never race onto the same `--limit 1` lookup. It exits zero only after both workflow runs (initial + `update-latest-md.yml`) report success — non-zero surfaces any chain failure so a CI script, shell watcher, or agent can act on it, with a macOS notification on completion either way.
+
 ## Hooks that block accidental local pushes
 
 The repo's `.gitignore` keeps OCI credentials out of the tree, and the release Justfile recipes do not have `oras push` or `docker push` lines. If you find yourself reaching for either: stop, push the tag instead, and let CI publish.
