@@ -36,6 +36,20 @@ compile_error!(
 mod bgworker;
 #[cfg(feature = "embedded-nats")]
 mod nats;
+#[cfg(feature = "nats-client")]
+mod nats_client;
+
+// GUCs for the `nats-client` profile. Registered once in _PG_init and
+// read on bgworker boot (S4 step 5). Defaults make the canonical
+// in-container bundle layout work out of the box: pgCK talks to the
+// bundled nats-server on localhost:4222 with no JetStream stream
+// (Core-only publish path until the operator provisions a stream).
+#[cfg(feature = "nats-client")]
+static PGCK_NATS_URL: pgrx::GucSetting<Option<std::ffi::CString>> =
+    pgrx::GucSetting::<Option<std::ffi::CString>>::new(Some(c"nats://127.0.0.1:4222"));
+#[cfg(feature = "nats-client")]
+static PGCK_NATS_JS_STREAM: pgrx::GucSetting<Option<std::ffi::CString>> =
+    pgrx::GucSetting::<Option<std::ffi::CString>>::new(None);
 
 // Ship the working governed-write path as the extension's bootstrap SQL.
 extension_sql_file!("../sql/pgck--0.2.0.sql", name = "pgck_bootstrap");
@@ -44,6 +58,27 @@ extension_sql_file!("../sql/pgck--0.2.0.sql", name = "pgck_bootstrap");
 /// Spawns the pgCK background worker.
 #[pg_guard]
 pub extern "C-unwind" fn _PG_init() {
+    #[cfg(feature = "nats-client")]
+    {
+        pgrx::GucRegistry::define_string_guc(
+            c"pgck.nats_url",
+            c"URL of the bundled or cluster nats-server pgCK publishes to",
+            c"Default `nats://127.0.0.1:4222` matches the in-container bundle layout.",
+            &PGCK_NATS_URL,
+            pgrx::GucContext::Sighup,
+            pgrx::GucFlags::default(),
+        );
+        pgrx::GucRegistry::define_string_guc(
+            c"pgck.nats_js_stream",
+            c"JetStream stream name for the durable publish arm (empty = Core-only)",
+            c"When set, pgCK also publishes event.kernel.* to this JS stream with a \
+             Nats-Msg-Id header carrying ckp.ledger.seq for server-side dedup.",
+            &PGCK_NATS_JS_STREAM,
+            pgrx::GucContext::Sighup,
+            pgrx::GucFlags::default(),
+        );
+    }
+
     BackgroundWorkerBuilder::new("pgck-bridge")
         .set_function("pgck_bridge_main")
         .set_library("pgck")
