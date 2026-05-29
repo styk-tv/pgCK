@@ -2,6 +2,29 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.2.2 - 2026-05-29
+
+Extension release: **CKF-3 — participant identity in `ckp.seal()`** + a fix for a **v0.2.1 fresh-install regression** (the CKA-6 outbox/trigger DDL ordering).
+
+### Added
+
+- **CKF-3 — participant identity in `ckp.seal()`.** An optional `participant` claims object (`{sub, preferred_username, email}`) in the sealed body is resolved to the canonical IRI `urn:ckp:participant:<normalised-sub>` (via `ckp.urn_normalise`), or `urn:ckp:participant:anon:<nonce>` when absent/empty. Written into `ckp.instances.body` under `https://conceptkernel.org/ontology/v3.8/core#participant` **before** the body SHA, so `ckp.verify()`'s recompute stays consistent. `preferred_username`/`email` ride as non-authoritative `participant_display_name`/`participant_email` (only when an identified `sub` is supplied). Per `NOTIFIES.pgCK §D`.
+- **`sql/test/s9_seal_participant.sql`** — covers identified-sub → `urn:ckp:participant:alice` (+ display fields + `verify()`), anonymous → `urn:ckp:participant:anon:<nonce>`, empty-sub → anon fallback, and non-trivial-sub normalisation (`'Alice Smith '` → `urn:ckp:participant:alice-smith`). Wired into the `smoke-s4` recipe.
+
+### Fixed
+
+- **Fresh `CREATE EXTENSION pgck` was broken in v0.2.1.** The CKA-6 `ckp.outbox` table (FK → `ckp.ledger`) and the `ckp_ledger_after_insert` trigger were emitted as install-time top-level DDL, but `ckp.ledger` is created lazily inside `ckp.bootstrap_kernel()` — so a fresh install failed with `relation "ckp.ledger" does not exist`. Both now live inside `bootstrap_kernel()` alongside `ckp.ledger`/`ckp.instances`/`ckp.proof`. The trigger *function* `ckp.ledger_to_outbox()` stays top-level (its body isn't resolved until the trigger fires). Idempotent for existing installs (`IF NOT EXISTS` / `DROP TRIGGER IF EXISTS`).
+
+### Verification
+
+- Fresh `CREATE EXTENSION pgck` (0.2.2) + `CALL ckp.boot()` succeeds; `pgck_version()` → `pgck 0.2.2 (rc3)`. The v0.2.1 regression is resolved.
+- `sql/test/s9_seal_participant.sql` → `PASS` against a fresh-installed 0.2.2 extension (all four branches).
+- Upgrade `sql/pgck--0.2.1--0.2.2.sql` `CREATE OR REPLACE`s `ckp.seal` + `ckp.bootstrap_kernel` — safe/idempotent on a live, bootstrapped 0.2.1 DB.
+
+### Known issues (pre-existing harness rot, not a regression from this release)
+
+- The full `smoke-s4` suite is red on `s4_validate` because the compose stack mounts a stale `pgrdf--0.5.0.sql` whose SHACL is `minCount`-permissive (see `_WIP/NOTIFIES.pgRDF.0.5.1.shacl-mincount-permissive`), and `/ontology/task.ttl` isn't mounted for board imports. Both are compose-mount staleness unrelated to CKF-3; tracked for a separate harness-refresh.
+
 ## pgck-web/v0.2.5 - 2026-05-29
 
 Single-task release: **CKA-7 — long-form `event.kernel.pgCK.Display.<event-kind>` dual-emit alongside short-form `event.pgCK.Display`**. CKClient v1.3 dual-subscribes; consumers cut over gradually; the short-form alias is removed in the release window that ships CK.Lib.Js v2.0.
