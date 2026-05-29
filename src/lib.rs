@@ -38,6 +38,8 @@ mod bgworker;
 mod nats;
 #[cfg(feature = "nats-client")]
 mod nats_client;
+#[cfg(feature = "nats-client")]
+mod publish_drain;
 
 // GUCs for the `nats-client` profile. Registered once in _PG_init and
 // read on bgworker boot (S4 step 5). Defaults make the canonical
@@ -50,6 +52,30 @@ static PGCK_NATS_URL: pgrx::GucSetting<Option<std::ffi::CString>> =
 #[cfg(feature = "nats-client")]
 static PGCK_NATS_JS_STREAM: pgrx::GucSetting<Option<std::ffi::CString>> =
     pgrx::GucSetting::<Option<std::ffi::CString>>::new(None);
+
+/// Snapshot of the `pgck.nats_url` GUC. Read by bgworker boot to
+/// connect the async-nats client; default makes the in-container
+/// bundle layout (LOCAL-WSS-DEV.v0.2 §2) work without configuration.
+#[cfg(feature = "nats-client")]
+pub(crate) fn nats_url() -> String {
+    PGCK_NATS_URL
+        .get()
+        .as_ref()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "nats://127.0.0.1:4222".to_string())
+}
+
+/// Snapshot of the `pgck.nats_js_stream` GUC. `None` (or empty string)
+/// means the JS publish arm is disabled — drain only emits NATS Core
+/// publishes; downstream durability is the operator's concern.
+#[cfg(feature = "nats-client")]
+pub(crate) fn nats_js_stream() -> Option<String> {
+    PGCK_NATS_JS_STREAM
+        .get()
+        .as_ref()
+        .map(|s| s.to_string_lossy().into_owned())
+        .filter(|s| !s.is_empty())
+}
 
 // Ship the working governed-write path as the extension's bootstrap SQL.
 extension_sql_file!("../sql/pgck--0.2.0.sql", name = "pgck_bootstrap");
