@@ -72,11 +72,7 @@ pub fn init(url: String, js_stream: Option<String>) {
 /// into a NATS header block (`HPUB` wire form on async-nats's side).
 /// pgCK always stamps at least `Ck-Seq: <ledger.seq>` per CK.Lib.Js v1.3
 /// client-side dedup.
-pub fn publish(
-    subject: &str,
-    payload: &[u8],
-    headers: &[(String, String)],
-) -> Result<(), String> {
+pub fn publish(subject: &str, payload: &[u8], headers: &[(String, String)]) -> Result<(), String> {
     let handle = CLIENT.get().ok_or("nats client not initialised")?;
     handle
         .tx

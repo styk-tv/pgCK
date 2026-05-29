@@ -40,30 +40,29 @@ struct DrainedRow {
 /// thread. Returns the number of rows drained (0 on error or empty).
 /// Called once per bgworker tick.
 pub fn drain_once() -> usize {
-    let drained: Result<Vec<DrainedRow>, pgrx::spi::Error> =
-        BackgroundWorker::transaction(|| {
-            Spi::connect_mut(|client| {
-                let table = client.update(DRAIN_QUERY, None, &[])?;
-                let mut out = Vec::new();
-                for row in table {
-                    let ledger_seq: Option<i64> = row.get(1)?;
-                    let subject: Option<String> = row.get(2)?;
-                    let payload: Option<Vec<u8>> = row.get(3)?;
-                    let headers: Option<pgrx::JsonB> = row.get(4)?;
-                    if let (Some(ls), Some(s), Some(p), Some(h)) =
-                        (ledger_seq, subject, payload, headers)
-                    {
-                        out.push(DrainedRow {
-                            ledger_seq: ls,
-                            subject: s,
-                            payload: p,
-                            headers: h.0,
-                        });
-                    }
+    let drained: Result<Vec<DrainedRow>, pgrx::spi::Error> = BackgroundWorker::transaction(|| {
+        Spi::connect_mut(|client| {
+            let table = client.update(DRAIN_QUERY, None, &[])?;
+            let mut out = Vec::new();
+            for row in table {
+                let ledger_seq: Option<i64> = row.get(1)?;
+                let subject: Option<String> = row.get(2)?;
+                let payload: Option<Vec<u8>> = row.get(3)?;
+                let headers: Option<pgrx::JsonB> = row.get(4)?;
+                if let (Some(ls), Some(s), Some(p), Some(h)) =
+                    (ledger_seq, subject, payload, headers)
+                {
+                    out.push(DrainedRow {
+                        ledger_seq: ls,
+                        subject: s,
+                        payload: p,
+                        headers: h.0,
+                    });
                 }
-                Ok(out)
-            })
-        });
+            }
+            Ok(out)
+        })
+    });
 
     let drained = match drained {
         Ok(rows) => rows,
