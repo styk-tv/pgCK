@@ -2,6 +2,27 @@
 
 All notable changes to `pgCK` are logged here.
 
+## pgck-web/v0.2.4 - 2026-05-29
+
+**First SLSA-attested pgck-web release.** Bootstrap of the attestation gate on the pgck-web publish stream (per PROVENANCE.md Rule 4 bootstrap exception). pgck-web/v0.1.0–v0.2.3 predate the attestation wiring and stay unattested in their existing GHCR form; consumers wanting a provenance-verified pgck-web pin start here.
+
+### Changed
+
+- **`publish-pgck-web.yml`** trigger simplified — removed the `paths:` filter under `push.tags` that was preventing tag-only pushes from triggering the workflow when the head commit didn't touch `web/`. Added `workflow_dispatch:` for manual re-runs.
+
+### Content
+
+- Image content **identical to `pgck-web/v0.2.3`** — same FastAPI app code, same `web/static/display-app.js` CKClient v1.3 wiring, same `/cklib` + `/assets` mounts. The only thing that changes is provenance: this is the first build where `actions/attest-build-provenance@v1` runs as part of the pipeline, signing the digest via Sigstore keyless OIDC and pushing the attestation as an OCI referrer.
+
+### Verification
+
+- `gh attestation verify oci://ghcr.io/styk-tv/pgck-web:v0.2.4-amd64 --repo styk-tv/pgCK` and the `arm64` equivalent — both must return exit 0 before `LATEST.md` advertises this version.
+- The `update-latest-md.yml` workflow's pgck-web side gate is the truth signal: only the side whose attestation verifies gets rendered into LATEST.md.
+
+### Downstream / oci-germination handoff
+
+This is the release that lets `oci-germination`'s `ck-allinone` bundle pin **both** pgCK extension (`v0.2.1-pg17-{amd64,arm64}` attested) **and** pgck-web (`v0.2.4-{amd64,arm64}` attested) so the all-in-one bundle achieves a verifiable full-chain provenance per `NOTIFIES.oci-germination.v0.6.all-in-one-web-pin-update`.
+
 ## v0.2.1 - 2026-05-29
 
 Single-task release: **CKA-6 wires up the NATS publish path end-to-end** (Rust + SQL). pgCK is now a NATS client of the bundled / cluster `nats-server` rather than hosting its own embedded NATS Core. Every governed `ckp.seal()` queues an event for publication with `Ck-Seq: <ledger.seq>` for CKClient v1.3 dedup; when configured for JetStream the event also publishes with `Nats-Msg-Id: <ledger.seq>` for server-side stream dedup.

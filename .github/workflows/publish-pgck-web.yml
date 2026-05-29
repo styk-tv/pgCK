@@ -4,10 +4,17 @@ on:
   push:
     tags:
       - 'pgck-web/v*'
-    paths:
-      - 'web/**'
-      - 'requirements.txt'
-      - '.github/workflows/publish-pgck-web.yml'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Tag or ref to re-publish (defaults to current ref)'
+        required: false
+        type: string
+# Trigger is tag-only — `paths:` filter removed 2026-05-29 because it
+# blocked tag-push events when the head commit didn't touch web/ (which
+# was the case for the v0.2.4 bootstrap-attestation cut: web/ content
+# identical to v0.2.3, the tag exists purely to run the now-attested
+# pipeline). workflow_dispatch added for re-runs without retagging.
 
 # id-token:write    — OIDC for Sigstore keyless signing
 # attestations:write — SLSA Build Provenance v1 stamped on every image push
