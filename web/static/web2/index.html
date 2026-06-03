@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>pgCK · web2 workbench</title>
+<link rel="stylesheet" href="shell/app.css" />
+</head>
+<body>
+  <div class="top">
+    <span class="dot" id="dot"></span>
+    <h1>pgCK · web2</h1>
+    <span class="tag">kernel workbench</span>
+    <span class="conn" id="conn">offline · local spine</span>
+    <div class="spacer"></div>
+    <nav style="display:flex;gap:4px">
+      <a href="/">Display</a>
+      <a href="/assets/explorer/index.html">explorer (v1)</a>
+      <a href="/assets/tasks.html">Board</a>
+    </nav>
+  </div>
+  <div id="body">
+    <div id="rail"></div>
+    <div id="surface"></div>
+  </div>
+
+  <!-- spine (classic IIFEs set window.Bus / window.Props) -->
+  <script src="spine/bus.js"></script>
+  <script src="spine/props.js"></script>
+  <!-- shell -->
+  <script src="shell/rail.js"></script>
+  <script src="shell/surface.js"></script>
+  <!-- kernels self-register into window.CKKernels -->
+  <script src="kernels/signage/engine.js"></script>
+  <script src="kernels/explorer/engine.js"></script>
+
+  <!-- classic boot: register the cktransport-ready listener BEFORE the deferred
+       module transport.js fires (modules are deferred; this runs during parse). -->
+  <script>
+  (function () {
+    const dot = document.getElementById("dot");
+    const conn = document.getElementById("conn");
+
+    // offline-first: render the shell on the local spine immediately
+    window.Shell.renderRail();
+    const DEFAULT = "signage";
+    window.Shell.setActive(DEFAULT);
+
+    window.addEventListener("cktransport-ready", function () {
+      window.CKTransport.onStatus(function (c) {
+        const live = c === "connected";
+        conn.textContent = live ? "live · NATS WSS" : c;
+        dot.className = "dot" + (live ? " on live" : "");
+      });
+      // live events fan into every kernel (signage feed stays warm even when hidden)
+      window.CKTransport.onEvent(function (data, raw) { window.Shell.fanEvent(data, raw); });
+      // flip live
+      window.CKTransport.connect().catch(function () { conn.textContent = "connect failed"; });
+    });
+  })();
+  </script>
+  <!-- deferred module: builds CKClient, dispatches cktransport-ready at end -->
+  <script type="module" src="spine/transport.js"></script>
+</body>
+</html>
