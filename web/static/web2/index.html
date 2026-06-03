@@ -14,9 +14,9 @@
     <span class="conn" id="conn">offline · local spine</span>
     <div class="spacer"></div>
     <nav style="display:flex;gap:4px">
-      <a href="/">Display</a>
+      <a href="/assets/web3/">konva (web3)</a>
       <a href="/assets/explorer/index.html">explorer (v1)</a>
-      <a href="/assets/tasks.html">Board</a>
+      <a href="/assets/tasks.html">board (v1)</a>
     </nav>
   </div>
   <div id="body">
@@ -55,13 +55,17 @@
         conn.textContent = live ? "live · NATS WSS" : c;
         dot.className = "dot" + (live ? " on live" : "");
       });
-      // one stream: materialise into the spine tree (ingest) AND fan to kernels (signage)
+      // one stream: fan raw events to kernels (signage) AND debounce-refresh the
+      // authoritative board snapshot for explorer/board.
       window.CKTransport.onEvent(function (data, raw) {
         window.Bus.emit("event.in", { data: data, raw: raw });
         window.Shell.fanEvent(data, raw);
+        window.Ingest.refresh();
       });
-      // flip live
-      window.CKTransport.connect().catch(function () { conn.textContent = "connect failed"; });
+      // flip live, then backfill the full board via snapshot.board
+      window.CKTransport.connect()
+        .then(function () { return window.Ingest.snapshot(); })
+        .catch(function () { conn.textContent = "connect failed"; });
     });
   })();
   </script>
