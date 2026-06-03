@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>pgCK · web3 · konva substrate</title>
+<link rel="stylesheet" href="/assets/web2/shell/app.css" />
+<style>
+  #stagehost{flex:1;position:relative;min-height:0;background:
+    radial-gradient(circle at 18px 18px, #e9eef5 1px, transparent 1px) 0 0/26px 26px, var(--bg)}
+  .legend{display:flex;gap:14px;align-items:center;font-size:11px;color:var(--mut)}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+</style>
+</head>
+<body>
+  <div class="top">
+    <span class="dot" id="dot"></span>
+    <h1>pgCK · web3</h1>
+    <span class="tag">konva substrate · ckp:Substrate.KonvaJS</span>
+    <span class="conn" id="conn">offline · local spine</span>
+    <div class="spacer"></div>
+    <div class="legend">
+      <span><i style="background:#f4f6fa;border:1px solid #d7deea"></i>planned</span>
+      <span><i style="background:#eaf2ff;border:1px solid #bcd6ff"></i>in&nbsp;progress</span>
+      <span><i style="background:#e8f8f1;border:1px solid #bce8d4"></i>done</span>
+    </div>
+    <nav style="display:flex;gap:4px;margin-left:14px">
+      <a href="/assets/web2/">web2 (list)</a>
+      <a href="/">Display</a>
+    </nav>
+  </div>
+  <div id="body">
+    <div id="stagehost"></div>
+  </div>
+
+  <!-- vendored substrate runtime (no build) -->
+  <script src="vendor/konva.min.js"></script>
+  <!-- reuse the web2 spine: one Bus, one governed event stream -->
+  <script src="/assets/web2/spine/bus.js"></script>
+  <!-- the konva materialisation -->
+  <script src="substrate/konva-scene.js?v=2"></script>
+
+  <!-- classic boot: mount substrate, register cktransport-ready before the module fires -->
+  <script>
+  (function () {
+    const dot = document.getElementById("dot");
+    const conn = document.getElementById("conn");
+
+    // offline-first: materialise the (empty) scene on the local spine
+    window.Web3Substrate.mount(document.getElementById("stagehost"));
+
+    window.addEventListener("cktransport-ready", function () {
+      window.CKTransport.onStatus(function (c) {
+        const live = c === "connected";
+        conn.textContent = live ? "live · NATS WSS" : c;
+        dot.className = "dot" + (live ? " on live" : "");
+      });
+      // every governed event materialises a node in the konva scene
+      window.CKTransport.onEvent(function (data) { window.Web3Substrate.onEvent(data); });
+      window.CKTransport.connect().catch(function () { conn.textContent = "connect failed"; });
+    });
+  })();
+  </script>
+  <!-- deferred module: builds CKClient over /wss, dispatches cktransport-ready -->
+  <script type="module" src="/assets/web2/spine/transport.js"></script>
+</body>
+</html>
