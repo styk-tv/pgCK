@@ -31,7 +31,10 @@
   <!-- shell -->
   <script src="shell/rail.js"></script>
   <script src="shell/surface.js"></script>
+  <!-- konva (vendored once under web3) — the studio canvas substrate -->
+  <script src="/assets/web3/vendor/konva.min.js"></script>
   <!-- kernels self-register into window.CKKernels (rail order) -->
+  <script src="kernels/studio/engine.js"></script>
   <script src="kernels/explorer/engine.js?v=2"></script>
   <script src="kernels/board/engine.js"></script>
   <script src="kernels/signage/engine.js"></script>
@@ -46,7 +49,7 @@
 
     // offline-first: render the shell on the local spine immediately
     window.Shell.renderRail();
-    const DEFAULT = "explorer";
+    const DEFAULT = "studio";
     window.Shell.setActive(DEFAULT);
 
     window.addEventListener("cktransport-ready", function () {
