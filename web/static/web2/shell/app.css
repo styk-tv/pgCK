@@ -92,7 +92,24 @@ pre{margin:0;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-heig
 .tg::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:left .15s}
 .tg.on{background:var(--acc)} .tg.on::after{left:21px}
 .tg.lock{opacity:.65;cursor:default}
+.setsub{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);font-weight:650;margin:0 0 10px}
 .setnote{margin-top:14px;max-width:560px;font-size:12px;color:var(--mut);line-height:1.5}
+
+/* rdf.js · quad store view */
+.rdf-wrap{padding:14px 18px;overflow:auto;height:calc(100% - 49px)}
+.rdf-cols{display:flex;gap:14px;margin-bottom:16px}
+.rdf-col{flex:1;border:1px solid var(--line);border-radius:11px;background:#fff;box-shadow:var(--shadow);overflow:hidden}
+.rdf-h{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);font-weight:650;padding:10px 12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+.rdf-h span{color:var(--acc)}
+.rdf-row{display:flex;justify-content:space-between;gap:8px;padding:6px 12px;font-size:12px;border-bottom:1px solid #f2f5f9;font-family:ui-monospace,Menlo,monospace}
+.rdf-row:last-child{border-bottom:0}
+.rk-t{color:var(--grn,#15b886)}.rk-p{color:var(--vio)}.rk-c{color:var(--mut)}
+.rdf-feed-h{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);font-weight:650;margin:0 0 8px}
+.rdf-feed{border:1px solid var(--line);border-radius:11px;background:#fff;box-shadow:var(--shadow);overflow:hidden}
+.tq{display:flex;gap:10px;padding:6px 12px;font-size:11.5px;font-family:ui-monospace,Menlo,monospace;border-bottom:1px solid #f2f5f9}
+.tq:last-child{border-bottom:0}
+.tq .ts{color:var(--acc);flex:0 0 30%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tq .tp{color:var(--vio);flex:0 0 24%}.tq .to{color:#2a7;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .setnote code{font-family:ui-monospace,Menlo,monospace;background:#eef1f6;border-radius:4px;padding:1px 5px}
 
 /* toast */

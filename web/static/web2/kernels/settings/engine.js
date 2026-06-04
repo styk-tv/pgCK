@@ -25,14 +25,21 @@
     host.innerHTML = `
       <div class="shead">
         <h2>settings</h2>
-        <span class="sub">substrate ladder · render the same governed state in any substrate</span>
+        <span class="sub">substrate ladder + libraries · same governed state, many surfaces</span>
       </div>
       <div class="spad">
+        <div class="setsub">substrate ladder</div>
         <div class="setlist" id="setlist"></div>
         <div class="setnote">Extra substrate runtimes are <b>mocked toggles</b> until wired — flipping records
           the preference; the live ones (<b>HTML</b>, <b>Konva</b>) open. One <code>event.kernel.pgCK.&gt;</code>
           stream underneath them all.</div>
+        <div class="setsub" style="margin-top:20px">libraries</div>
+        <div class="setlist" id="liblist"></div>
+        <div class="setnote">Libraries add capability. <b>rdf.js</b> captures every typed WSS message into a
+          quad store — when on, the <b>rdf.js</b> surface activates in the rail.
+          (RDF/JS support requested from CK.Lib.Js via NOTIFY.)</div>
       </div>`;
+    renderLibs();
     const L = host.querySelector("#setlist");
     for (const s of LADDER) {
       const on = s.real ? true : !!p[s.id];
@@ -47,6 +54,26 @@
         if (s.real) return;                                  // active base → locked on
         const nv = !tg.classList.contains("on"); tg.classList.toggle("on", nv); savePref(s.id, nv);
         toast(`${s.name} — mocked substrate ${nv ? "enabled" : "disabled"} (runtime not wired yet)`);
+      };
+      row.append(info, tg); L.appendChild(row);
+    }
+  }
+
+  const LIBS = [{ id: "rdfjs", name: "rdf.js", note: "every typed WSS message → quad store" }];
+  const libEnabled = (id) => localStorage.getItem("pgck.web2.libs." + id) !== "0"; // default on
+  function renderLibs() {
+    const L = host.querySelector("#liblist"); if (!L) return; L.innerHTML = "";
+    for (const s of LIBS) {
+      const on = libEnabled(s.id);
+      const row = document.createElement("div"); row.className = "setrow";
+      const info = document.createElement("div"); info.className = "si";
+      info.innerHTML = `<div class="sn">${s.name} <span class="sbadge ${on ? "active" : "mocked"}">${on ? "on" : "off"}</span></div><div class="sd">${s.note}</div>`;
+      const tg = document.createElement("div"); tg.className = "tg" + (on ? " on" : "");
+      tg.onclick = () => {
+        const nv = !tg.classList.contains("on"); tg.classList.toggle("on", nv);
+        localStorage.setItem("pgck.web2.libs." + s.id, nv ? "1" : "0");
+        window.Shell.renderRail(); renderLibs();
+        toast(`${s.name} ${nv ? "enabled — rail surface active" : "disabled"}`);
       };
       row.append(info, tg); L.appendChild(row);
     }

@@ -12,6 +12,8 @@
     if (!rail) return;
     rail.innerHTML = "";
     for (const k of window.CKKernels) {
+      // library-gated kernels (e.g. rdf.js) appear only when enabled in settings
+      if (k.lib && localStorage.getItem("pgck.web2.libs." + k.lib) === "0") continue;
       const b = document.createElement("div");
       b.className = "rk" + (window.Bus.state.active === k.id ? " on" : "");
       b.innerHTML = `<span class="material-symbols-outlined ic">${k.icon}</span><span>${k.title}</span>`;
