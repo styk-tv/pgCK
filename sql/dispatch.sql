@@ -168,6 +168,68 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN res := jsonb_build_object('ok',false,'error',SQLERRM);
     END;
 
+  -- ---- board snapshot (web protocol verb the browser surfaces use) -------
+  WHEN 'snapshot.board' THEN
+    res := jsonb_build_object('ok', true,
+      'kernels', (SELECT coalesce(jsonb_agg(jsonb_build_object('name', i.body->>(N||'title'), 'id', i.id)
+                    ORDER BY i.body->>(N||'title')), '[]'::jsonb)
+                  FROM ckp.instances i WHERE i.body->>'type' = N||'Goal'),
+      'tasks', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+                  'id', i.id,
+                  'title', i.body->>(N||'title'),
+                  'target_kernel', i.body->>(N||'target_kernel'),
+                  'part_of_goal', i.body->>(N||'part_of_goal'),
+                  'lifecycle_state', i.body->>(N||'lifecycle_state'),
+                  'priority', i.body->>(N||'priority'),
+                  'queue_seq', i.body->>(N||'queue_seq'),
+                  'created_by', i.body->>(N||'created_by'),
+                  'proof_digest', (SELECT p.digest FROM ckp.proof p WHERE p.about = i.id ORDER BY p.id DESC LIMIT 1),
+                  'verified', ckp.verify(i.id))
+                  ORDER BY i.body->>(N||'target_kernel'), NULLIF(i.body->>(N||'queue_seq'),'')::int), '[]'::jsonb)
+                FROM ckp.instances i WHERE i.body->>'type' = N||'Task'));
+
+  -- ---- concept link (Edge) — captured so the structure is recoverable ---
+  WHEN 'edge.create' THEN
+    DECLARE src text := p_payload->>'source'; pred text := p_payload->>'predicate';
+            tgt text := p_payload->>'target'; eid text; topic text;
+    BEGIN
+      IF src IS NULL OR pred IS NULL OR tgt IS NULL THEN
+        res := jsonb_build_object('ok',false,'error','source, predicate, target required');
+      ELSIF src = tgt THEN
+        res := jsonb_build_object('ok',false,'error','no self-loops (v3.7 Edge rule)');
+      ELSE
+        eid := 'edge:'||src||'.'||pred||'.'||tgt;
+        topic := 'link.'||pred||'.'||src||'.'||tgt;
+        PERFORM ckp.seal(eid, jsonb_build_object('type', N||'Edge', '@id', 'ckp://Edge#'||eid,
+          N||'source', src, N||'predicate', pred, N||'target', tgt, N||'topic', topic,
+          N||'created_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"')));
+        res := jsonb_build_object('ok',true,'id',eid,'topic',topic,'verified',ckp.verify(eid));
+      END IF;
+    EXCEPTION WHEN OTHERS THEN res := jsonb_build_object('ok',false,'error',SQLERRM);
+    END;
+
+  -- ---- a message over a link (the automated pigeon) — sealed = recoverable
+  WHEN 'notify' THEN
+    DECLARE frm text := p_payload->>'from'; tgt text := p_payload->>'to';
+            pred text := COALESCE(p_payload->>'predicate','notifies');
+            bdy text := p_payload->>'body'; sub text := p_payload->>'sub'; mid text; topic text; v_body jsonb;
+    BEGIN
+      IF frm IS NULL OR tgt IS NULL OR bdy IS NULL THEN
+        res := jsonb_build_object('ok',false,'error','from, to, body required');
+      ELSE
+        mid := 'msg-'||(extract(epoch from clock_timestamp())*1e9)::bigint::text;
+        topic := 'link.'||pred||'.'||frm||'.'||tgt;
+        v_body := jsonb_build_object('type', N||'Message', '@id', 'ckp://Message#'||mid,
+          N||'from', frm, N||'to', tgt, N||'predicate', pred, N||'body', bdy, N||'topic', topic,
+          N||'created_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'));
+        IF sub IS NOT NULL THEN v_body := v_body || jsonb_build_object(N||'created_by','urn:ckp:participant:'||ckp._slug(sub)); END IF;
+        PERFORM ckp.seal(mid, v_body);
+        res := jsonb_build_object('ok',true,'id',mid,'topic',topic,'verified',ckp.verify(mid),
+          'proof_digest',(SELECT digest FROM ckp.proof WHERE about=mid ORDER BY id DESC LIMIT 1));
+      END IF;
+    EXCEPTION WHEN OTHERS THEN res := jsonb_build_object('ok',false,'error',SQLERRM);
+    END;
+
   -- ---- unknown verb = the Tier-2 tool-delegation seam ------------------
   ELSE
     res := jsonb_build_object('ok', false, 'delegate', true,

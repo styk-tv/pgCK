@@ -27,3 +27,10 @@ __pycache__/
 /.playwright-mcp/
 /test-results/
 /playwright-report/
+
+# local dev dispatcher venv + built nats-client ext (devops scaffolding)
+.venv-dispatcher/
+compose/extensions/pgck-natsclient/
+
+# local env
+.env
