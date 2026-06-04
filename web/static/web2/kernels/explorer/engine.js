@@ -124,5 +124,5 @@
   const local = (v) => String(v || "").replace(/^.*[#/]/, "");
   const esc = (s) => String(s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
-  window.CKKernels.push({ id: "explorer", icon: "🔎", title: "explorer", mount, onActivate });
+  window.CKKernels.push({ id: "explorer", icon: "search", title: "explorer", mount, onActivate });
 })();

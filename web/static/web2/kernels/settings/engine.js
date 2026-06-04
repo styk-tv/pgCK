@@ -59,5 +59,5 @@
     clearTimeout(toast._t); toast._t = setTimeout(() => toastEl.classList.remove("show"), 1900);
   }
 
-  window.CKKernels.push({ id: "settings", icon: "⚙", title: "settings", mount });
+  window.CKKernels.push({ id: "settings", icon: "tune", title: "settings", mount });
 })();

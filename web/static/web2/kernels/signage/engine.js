@@ -59,5 +59,5 @@
 
   const escapeHtml = (s) => String(s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
-  window.CKKernels.push({ id: "signage", icon: "📡", title: "signage", mount, onEvent });
+  window.CKKernels.push({ id: "signage", icon: "sensors", title: "signage", mount, onEvent });
 })();

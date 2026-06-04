@@ -154,5 +154,5 @@
   let toastEl = null;
   function toast(t) { if (!toastEl) { toastEl = document.createElement("div"); toastEl.className = "toast"; document.body.appendChild(toastEl); } toastEl.textContent = t; toastEl.classList.add("show"); clearTimeout(toast._t); toast._t = setTimeout(() => toastEl.classList.remove("show"), 1900); }
 
-  window.CKKernels.push({ id: "board", icon: "▦", title: "board", mount, onActivate });
+  window.CKKernels.push({ id: "board", icon: "view_kanban", title: "board", mount, onActivate });
 })();
