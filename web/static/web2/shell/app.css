@@ -177,8 +177,17 @@ pre{margin:0;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-heig
 .st-header .vbadge{font-size:11px;color:var(--ok);background:#e8f8f1;border-radius:6px;padding:2px 8px}
 .st-header .hmeta{display:flex;gap:12px;margin-top:6px;font-size:11px;color:var(--mut);font-family:ui-monospace,Menlo,monospace;flex-wrap:wrap}
 .st-header .urn{color:var(--acc)} .hk{font-size:16px;font-weight:650} .hsub,.hhint{color:var(--mut);font-size:12px;margin-top:3px}
-.st-canvas{flex:1;position:relative;min-height:0;background:
-  radial-gradient(circle at 16px 16px,#e9eef5 1px,transparent 1px) 0 0/24px 24px,#fcfdfe}
+.st-canvas{flex:1;position:relative;min-height:0;background:#fcfdfe;overflow:hidden}
+/* canvas toolbar */
+.st-cbar{display:flex;align-items:center;gap:14px;padding:7px 14px;border-bottom:1px solid var(--line);background:#fff;flex:0 0 auto;flex-wrap:wrap}
+.cbgrp{display:flex;align-items:center;gap:5px}
+.cbgrp.cbsize{margin-left:auto}
+.cblbl{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);font-weight:650;margin-right:2px}
+.cbtn{border:1px solid var(--line);background:#fff;color:#46566f;border-radius:7px;padding:4px 9px;font:inherit;font-size:12px;cursor:pointer;line-height:1}
+.cbtn:hover{border-color:#cfe0ff;color:var(--acc)}
+.cbtn.on{border-color:var(--acc);background:#f3f8ff;color:var(--acc)}
+.cbtn.gs{min-width:26px;text-align:center;font-weight:600}
+#cb-size{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--mut)}
 
 /* region 5 · features */
 .st-feat{border-right:0;border-left:1px solid var(--line)}
