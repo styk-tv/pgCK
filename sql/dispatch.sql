@@ -1,0 +1,179 @@
+-- ckp.dispatch(verb, payload) — Tier-1 governed action dispatcher (CKA-4).
+--
+-- Called by the pgCK bgworker (Rust) inside a BackgroundWorker::transaction for
+-- each inbound input.kernel.pgCK.action.<verb>. Returns the jsonb the bgworker
+-- publishes on result.kernel.pgCK.action.<verb>.
+--
+-- MAIN GOAL: each concept kernel HOLDS its instances; every instance is a valid
+-- shape (the SHACL gate in ckp.seal enforces it at write). The read surface is
+-- GENERIC and URN-addressed — list / count / last / get — standard queries for a
+-- standard URN, the same for every kernel. No bespoke per-kernel query code.
+--
+-- AGENCY: this is the participant/observer surface the KERNEL governs — reads,
+-- participant inputs the kernel seals, authoring. NO tool verb. Tools are
+-- kernel-initiated and dispatch outward to the per-kernel serverless executor
+-- (Tier 2). Unknown verb -> {ok:false, delegate:true} (the delegation seam,
+-- NOT an error). No Python anywhere; ships in the pgck extension.
+
+CREATE SCHEMA IF NOT EXISTS ckp;
+
+CREATE OR REPLACE FUNCTION ckp._slug(p text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
+  SELECT COALESCE(NULLIF(trim(both '-' FROM regexp_replace(lower(p), '[^a-z0-9]+', '-', 'g')), ''), 'x')
+$$;
+
+-- one instance projected as the standard envelope (id, type, body, proof, verify)
+CREATE OR REPLACE FUNCTION ckp._envelope(p_id text) RETURNS jsonb LANGUAGE sql STABLE AS $$
+  SELECT jsonb_build_object('id', i.id, 'type', i.body->>'type', 'body', i.body,
+    'verified', ckp.verify(i.id),
+    'proof_digest', (SELECT digest FROM ckp.proof p WHERE p.about=i.id ORDER BY p.id DESC LIMIT 1),
+    'ts', i.ts_created)
+  FROM ckp.instances i WHERE i.id = p_id
+$$;
+
+-- GENERIC URN-addressed instance ops: list / last / count / get.
+-- Selector: {type?: <type IRI or suffix>, kernel?: <target_kernel value>}.
+CREATE OR REPLACE FUNCTION ckp._query(p_verb text, p_payload jsonb)
+RETURNS jsonb LANGUAGE plpgsql STABLE AS $q$
+DECLARE
+  N      text := 'https://conceptkernel.org/ontology/v3.7/';
+  p_type text := p_payload->>'type';
+  p_kern text := p_payload->>'kernel';
+  p_n    int  := COALESCE((p_payload->>'n')::int, (p_payload->>'limit')::int,
+                          CASE WHEN p_verb='instances.last' THEN 10 ELSE 50 END);
+BEGIN
+  IF p_verb = 'instance.get' THEN
+    RETURN jsonb_build_object('ok', true, 'instance', ckp._envelope(p_payload->>'id'));
+  ELSIF p_verb = 'instances.count' THEN
+    RETURN jsonb_build_object('ok', true, 'count', (
+      SELECT count(*) FROM ckp.instances
+      WHERE (p_type IS NULL OR body->>'type'=p_type OR body->>'type' LIKE '%'||p_type)
+        AND (p_kern IS NULL OR body->>(N||'target_kernel')=p_kern)));
+  ELSE  -- instances.list / instances.last
+    RETURN jsonb_build_object('ok', true, 'count', (
+        SELECT count(*) FROM ckp.instances
+        WHERE (p_type IS NULL OR body->>'type'=p_type OR body->>'type' LIKE '%'||p_type)
+          AND (p_kern IS NULL OR body->>(N||'target_kernel')=p_kern)),
+      'instances', COALESCE((
+        SELECT jsonb_agg(ckp._envelope(id) ORDER BY ts DESC)
+        FROM (SELECT id, ts_created ts FROM ckp.instances
+          WHERE (p_type IS NULL OR body->>'type'=p_type OR body->>'type' LIKE '%'||p_type)
+            AND (p_kern IS NULL OR body->>(N||'target_kernel')=p_kern)
+          ORDER BY ts_created DESC LIMIT p_n) s), '[]'::jsonb));
+  END IF;
+END;
+$q$;
+
+CREATE OR REPLACE FUNCTION ckp.dispatch(p_verb text, p_payload jsonb)
+RETURNS jsonb LANGUAGE plpgsql AS $fn$
+DECLARE
+  N      text := 'https://conceptkernel.org/ontology/v3.7/';
+  RL     text := 'http://www.w3.org/2000/01/rdf-schema#label';
+  req    jsonb := p_payload->'req';
+  res    jsonb;
+  v_proj text := COALESCE(current_setting('ckp.project', true), 'demo');
+  v_idk  text := COALESCE(current_setting('ckp.identity_key', true), 'pgck-localhost');
+BEGIN
+  PERFORM set_config('ckp.project', v_proj, false);
+  PERFORM set_config('ckp.identity_key', v_idk, false);
+
+  CASE p_verb
+
+  -- ---- generic URN-addressed instance ops (the main goal) --------------
+  WHEN 'instances.list', 'instances.last', 'instances.count', 'instance.get' THEN
+    res := ckp._query(p_verb, p_payload);
+
+  -- ---- discovery -------------------------------------------------------
+  WHEN 'affordances' THEN
+    res := jsonb_build_object('ok', true, 'affordances', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object('name', j->>'a', 'in', j->>'it', 'out', j->>'ot'))
+      FROM pgrdf.sparql($q$ PREFIX ckp:<https://conceptkernel.org/ontology/v3.8/core#>
+        SELECT ?a ?it ?ot WHERE { GRAPH ?g { ?a a ckp:Affordance .
+          OPTIONAL { ?a ckp:inTopic ?it } OPTIONAL { ?a ckp:outTopic ?ot } } } ORDER BY ?a $q$) AS j
+    ), '[]'::jsonb));
+
+  WHEN 'kernels.list' THEN
+    res := jsonb_build_object('ok', true, 'kernels', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object('name', COALESCE(body->>RL, regexp_replace(id,'^backlog:','')),
+        'id', id, 'urn', 'ckp://Kernel#'||ckp._slug(COALESCE(body->>RL, regexp_replace(id,'^backlog:','')))) ORDER BY id)
+      FROM ckp.instances WHERE body->>'type' = N||'Goal' AND id LIKE 'backlog:%'), '[]'::jsonb));
+
+  WHEN 'provenance' THEN
+    DECLARE tid text := p_payload->>'id';
+    BEGIN
+      res := jsonb_build_object('ok', true, 'id', tid, 'verified', ckp.verify(tid),
+        'body', (SELECT body FROM ckp.instances WHERE id=tid),
+        'proof', (SELECT jsonb_build_object('digest',digest,'method',method,'verified_at',verified_at) FROM ckp.proof WHERE about=tid ORDER BY id DESC LIMIT 1),
+        'ledger', COALESCE((SELECT jsonb_agg(jsonb_build_object('seq',seq,'prev_seq',prev_seq,'body_sha256',body_sha256,'ts',ts) ORDER BY seq) FROM ckp.ledger WHERE instance_id=tid),'[]'::jsonb));
+    END;
+
+  WHEN 'instance.verify' THEN
+    res := jsonb_build_object('ok', true, 'id', p_payload->>'id', 'verified', ckp.verify(p_payload->>'id'));
+
+  -- ---- participant input (kernel governs by sealing) -------------------
+  WHEN 'participant.join' THEN
+    res := jsonb_build_object('ok', true, 'sub', p_payload->>'name',
+      'urn', 'urn:ckp:participant:'||ckp._slug(p_payload->>'name'));
+
+  WHEN 'kernel.create' THEN
+    DECLARE nm text := p_payload->>'name'; gid text;
+    BEGIN
+      IF nm IS NULL OR btrim(nm)='' THEN res := jsonb_build_object('ok',false,'error','kernel name required');
+      ELSE
+        gid := 'backlog:'||nm;
+        PERFORM ckp.seal(gid, jsonb_build_object('type', N||'Goal', '@id', 'ckp://Goal#'||gid, N||'goal_id', gid,
+          RL, nm, N||'title', nm, N||'created_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"')));
+        res := jsonb_build_object('ok',true,'kernel',nm,'id',gid);
+      END IF;
+    END;
+
+  WHEN 'task.create' THEN
+    DECLARE t jsonb := p_payload->'task'; k text := p_payload->'task'->>'target_kernel';
+            sub text := p_payload->>'sub'; tid text; qseq int; v_body jsonb;
+    BEGIN
+      IF k IS NULL OR (p_payload->'task'->>'title') IS NULL THEN
+        res := jsonb_build_object('ok',false,'error','kernel and title required');
+      ELSE
+        SELECT COALESCE(MAX((i.body->>(N||'queue_seq'))::int),0)+1 INTO qseq
+          FROM ckp.instances i WHERE i.body->>(N||'target_kernel')=k AND i.body->>'type'=N||'Task';
+        tid := 'task-'||(extract(epoch from clock_timestamp())*1e9)::bigint::text;
+        v_body := jsonb_build_object('type', N||'Task', '@id', 'ckp://Task#'||tid, N||'task_id', tid,
+          N||'title', t->>'title', N||'part_of_goal', 'backlog:'||k, N||'target_kernel', k,
+          N||'lifecycle_state', COALESCE(t->>'lifecycle_state','planned'),
+          N||'priority', COALESCE(t->>'priority','5'), N||'queue_seq', qseq::text,
+          N||'created_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'));
+        IF sub IS NOT NULL THEN
+          v_body := v_body || jsonb_build_object(N||'created_by','urn:ckp:participant:'||ckp._slug(sub),
+                                             'participant', jsonb_build_object('sub', sub));
+        END IF;
+        PERFORM ckp.seal(tid, v_body);
+        res := jsonb_build_object('ok',true,'id',tid,'verified',ckp.verify(tid),
+          'proof_digest',(SELECT digest FROM ckp.proof WHERE about=tid ORDER BY id DESC LIMIT 1));
+      END IF;
+    EXCEPTION WHEN OTHERS THEN res := jsonb_build_object('ok',false,'error',SQLERRM);
+    END;
+
+  WHEN 'task.update' THEN
+    DECLARE tid text := p_payload->>'id'; cur jsonb;
+    BEGIN
+      SELECT body INTO cur FROM ckp.instances WHERE id=tid;
+      IF cur IS NULL THEN res := jsonb_build_object('ok',false,'error','instance not found');
+      ELSE
+        cur := cur - 'participant';
+        IF p_payload ? 'lifecycle_state' THEN cur := cur || jsonb_build_object(N||'lifecycle_state', p_payload->>'lifecycle_state'); END IF;
+        IF p_payload ? 'priority' THEN cur := cur || jsonb_build_object(N||'priority', p_payload->>'priority'); END IF;
+        PERFORM ckp.seal(tid, cur);
+        res := jsonb_build_object('ok',true,'id',tid,'verified',ckp.verify(tid),
+          'proof_digest',(SELECT digest FROM ckp.proof WHERE about=tid ORDER BY id DESC LIMIT 1));
+      END IF;
+    EXCEPTION WHEN OTHERS THEN res := jsonb_build_object('ok',false,'error',SQLERRM);
+    END;
+
+  -- ---- unknown verb = the Tier-2 tool-delegation seam ------------------
+  ELSE
+    res := jsonb_build_object('ok', false, 'delegate', true,
+      'error', 'verb not governed in-kernel: '||p_verb);
+  END CASE;
+
+  RETURN res || jsonb_build_object('req', req);
+END;
+$fn$;

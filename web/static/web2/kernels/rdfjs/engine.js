@@ -21,10 +21,13 @@
     if (!data || typeof data !== "object") return [];
     const type = data.type || data["@type"] || "Instance";
     const id = data[N + "task_id"] || data.id || (data.body && (data.body[N + "task_id"])) || "anon";
-    const subj = "ckp://" + local(type) + "#" + String(id);
+    // prefer the self-identifying @id (stamped at ckp.seal projection); fall back
+    // to composing the subject from type + id for pre-@id bodies.
+    const subj = data["@id"] || ("ckp://" + local(type) + "#" + String(id));
     const subjFull = (raw && (raw.subject || raw.subj)) || "";
     const out = [];
     for (const [k, v] of Object.entries(data)) {
+      if (k === "@id") continue;
       if (k === "type" || k === "@type") out.push({ s: subj, p: "a", o: local(type), wssSubject: subjFull });
       else if (v != null && typeof v !== "object") out.push({ s: subj, p: k, o: String(v), wssSubject: subjFull });
     }
