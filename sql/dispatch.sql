@@ -188,6 +188,18 @@ BEGIN
                   ORDER BY i.body->>(N||'target_kernel'), NULLIF(i.body->>(N||'queue_seq'),'')::int), '[]'::jsonb)
                 FROM ckp.instances i WHERE i.body->>'type' = N||'Task'));
 
+  -- ---- raw instance bodies — bulk replay for CKHexStore + corpus capture ---
+  -- returns the literal IRI-keyed JSON-LD bodies (with @id + type), the shape a
+  -- browser quad store ingests and a fixture corpus records (SPEC.CK.HEXSTORE Q4).
+  WHEN 'snapshot.bodies' THEN
+    DECLARE k text := p_payload->>'kernel';
+    BEGIN
+      res := jsonb_build_object('ok', true,
+        'bodies', (SELECT coalesce(jsonb_agg(i.body ORDER BY i.id), '[]'::jsonb)
+                   FROM ckp.instances i
+                   WHERE k IS NULL OR i.body->>(N||'target_kernel') = k));
+    END;
+
   -- ---- concept link (Edge) — captured so the structure is recoverable ---
   WHEN 'edge.create' THEN
     DECLARE src text := p_payload->>'source'; pred text := p_payload->>'predicate';
