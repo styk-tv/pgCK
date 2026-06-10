@@ -115,7 +115,7 @@ jobs:
       # LATEST.md unless this attestation verifies — that's how we know
       # no workstation push slipped in.
       - name: Attest extension OCI artifact
-        uses: actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@v2
         with:
           subject-name: ${{ steps.push.outputs.repo }}
           subject-digest: ${{ steps.push.outputs.digest }}

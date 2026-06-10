@@ -2,7 +2,11 @@
 
 All notable changes to `pgCK` are logged here.
 
-## v0.3.1 - 2026-06-10
+## v0.3.2 - 2026-06-10
+
+**Supersedes v0.3.1**, whose CI release failed on the arm64 SLSA attestation step
+(`Failed to persist attestation: Requires authentication`). `actions/attest-build-provenance` bumped
+`@v1`→`@v2` (Node-24) in `release.yml` + `publish-pgck-web.yml`; identical Track B extension content.
 
 **CKP v3.9 Track B "Registry as routing authority"** — the sealed affordance registry is now the sole
 router for `ckp.dispatch`. Verbs migrate to the `instance.*` surface (legacy names retained as aliases

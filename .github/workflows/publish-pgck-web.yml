@@ -84,7 +84,7 @@ jobs:
       # update-latest-md.yml REQUIRES this attestation to verify before it
       # advances LATEST.md (workstation pushes therefore can't ship a head).
       - name: Attest pgck-web image
-        uses: actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@v2
         with:
           subject-name: ghcr.io/styk-tv/pgck-web
           subject-digest: ${{ steps.push.outputs.digest }}
