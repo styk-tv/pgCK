@@ -4,29 +4,29 @@
   Provenance v1 attestations have been verified against the GHCR digests below.
   Each invocation refreshes the section whose upstream workflow fired and
   preserves the other section verbatim. Do NOT edit by hand — the next workflow
-  run will overwrite your changes. Last refresh: 2026-06-10 19:42:54Z (side: ext).
+  run will overwrite your changes. Last refresh: 2026-06-10 21:05:44Z (side: ext).
 -->
 
 # pgCK — latest published artifacts
 
 Two publishable surfaces ship from this repo: the PostgreSQL **extension** (oras-pulled OCI artifact) and the **pgck-web** FastAPI runtime (docker image). This file tracks the head of each on **PostgreSQL 17**. Older PG majors (14, 15, 16) are still built per release — see [Repo packages view](https://github.com/styk-tv/pgCK/pkgs/container/pgck) for the full matrix.
 
-## pgCK extension — `v0.3.3` (PostgreSQL 17)
+## pgCK extension — `v0.3.4` (PostgreSQL 17)
 
-`oras pull ghcr.io/styk-tv/pgck:0.3.3-pg17-<arch>` → drop `lib/pgck.so` + `share/extension/{pgck.control, pgck--0.3.3.sql}` next to your `postgres:17` install.
+`oras pull ghcr.io/styk-tv/pgck:0.3.4-pg17-<arch>` → drop `lib/pgck.so` + `share/extension/{pgck.control, pgck--0.3.4.sql}` next to your `postgres:17` install.
 
 | arch  | Pull URI                                  | Digest                                                                  | Created (UTC)       |
 |-------|-------------------------------------------|-------------------------------------------------------------------------|---------------------|
-| amd64 | `ghcr.io/styk-tv/pgck:0.3.3-pg17-amd64`   | `sha256:9ecd1727581c504c1efb6e67850d4245b7030cbc6dbfcf7d0628ded4ac34eca5` | 2026-06-10 19:42:17 |
-| arm64 | `ghcr.io/styk-tv/pgck:0.3.3-pg17-arm64`   | `sha256:9a903dabbf2df40abd1258e00bc0afec4503331b93234e154d33aa144a95c462` | 2026-06-10 19:41:46 |
+| amd64 | `ghcr.io/styk-tv/pgck:0.3.4-pg17-amd64`   | `sha256:72a2d2ab92671fc99b411b620f2b41a42fae3924f767b91bd2c0dd65719b0d46` | 2026-06-10 21:05:01 |
+| arm64 | `ghcr.io/styk-tv/pgck:0.3.4-pg17-arm64`   | `sha256:f651cfd747815ac9d56c08f06e75fd416fcac7d010ff152ba50d13dd664980cf` | 2026-06-10 21:04:17 |
 
 |                       |                                                                          |
 |-----------------------|--------------------------------------------------------------------------|
 | Artifact type         | `application/vnd.styk.pgck.extension.v1`                                 |
-| Tarball mirror        | https://github.com/styk-tv/pgCK/releases/tag/v0.3.3                  |
+| Tarball mirror        | https://github.com/styk-tv/pgCK/releases/tag/v0.3.4                  |
 | Repo packages view    | https://github.com/styk-tv/pgCK/pkgs/container/pgck                      |
-| Older PG majors       | `0.3.3-pg{14,15,16}-{amd64,arm64}` published alongside           |
-| Provenance            | SLSA Build Provenance v1 — verify with `gh attestation verify oci://ghcr.io/styk-tv/pgck:0.3.3-pg17-amd64 --repo styk-tv/pgCK` |
+| Older PG majors       | `0.3.4-pg{14,15,16}-{amd64,arm64}` published alongside           |
+| Provenance            | SLSA Build Provenance v1 — verify with `gh attestation verify oci://ghcr.io/styk-tv/pgck:0.3.4-pg17-amd64 --repo styk-tv/pgCK` |
 
 ## pgck-web — `v0.2.7`
 
