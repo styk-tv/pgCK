@@ -2,6 +2,49 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.3.0 - 2026-06-10
+
+**CKP v3.9 "Critical Isolation Alpha"** — the database door is structurally real. The extension now
+isolates the pgRDF engine behind a Postgres role floor: even an operator with DB credentials holds
+exactly one capability, `ckp.dispatch`. Intermediary release so `web2/` development continues on the
+new alignment; the typed four-tuple registry / governance plane (CI-B…CI-E) is the next thread.
+
+### Added — CKP v3.9 Track A (role isolation)
+
+- **CI-A-4 — the role floor.** Roles `ck_substrate` (non-login; sole pgrdf operator + ckp internals
+  owner) and `ck_participant` (the only role connections/agents receive). `pgrdf.*` + the ckp internal
+  tables REVOKEd from PUBLIC; `ck_substrate` **owns** pgrdf's storage (partition creation needs
+  ownership, not just GRANT). `sql/pgck--0.2.2--0.2.3.sql` · test `s11`.
+- **CI-A-3 — the frozen Ring-1 set.** Ten `SECURITY DEFINER` wrappers owned by `ck_substrate`
+  (`_seal`/`_validate`/`_read_typed`/`_traverse`/`_verify`/`_materialize`/`_stage_parse`/
+  `_graph_apply`/`_recompile`/`_ledger_read`) — the only paths that touch `pgrdf.*`.
+  `sql/pgck--0.2.3--0.2.4.sql` · test `s12`.
+- **CI-A-2 — the dispatch door.** `ckp.dispatch` is `SECURITY DEFINER` owned by `ck_substrate`,
+  granted to `ck_participant` and nothing else. `sql/pgck--0.2.4--0.2.5.sql` · test `s13`.
+- **CI-A-1 — Track A flip.** `ck_participant` LOGIN; a sidecar `psql` connecting *as* `ck_participant`
+  proves a real connection holds exactly `ckp.dispatch`. `sql/pgck--0.2.5--0.2.6.sql` · test `s14`.
+- **Alpha — web2 verbs under the floor.** `sql/dispatch.sql` (the web2 verb surface) is baked into the
+  extension and floored: `ckp.dispatch(text,jsonb)` SECURITY DEFINER, granted to `ck_participant`, so
+  web2 keeps working on the isolated substrate. `sql/pgck--0.2.6--0.3.0.sql` · test `s15`.
+
+### Verification
+
+- `just smoke-s4` green end-to-end: `s4` (seal), `s9` (participant), `s11`–`s14` (floor / Ring-1 /
+  dispatch-only / sidecar), and `s15` — web2 reads (`snapshot.board`, `instances.count`, `kernels.list`)
+  **and** a `task.create` seal (SHACL gate → ledger → proof) through the floored dispatch as
+  `ck_participant`, while the floor still denies direct `pgrdf.*` / `ckp.instances`.
+
+### Chore (separate concern — repo hygiene)
+
+- Untracked a mistakenly-committed `.venv/` (1392 files); gitignored `SPEC*` (private design docs) and
+  `.venv/`; relocated Playwright MCP screenshots out of the repo root to `tests/e2e/screenshots/`.
+
+### Notes
+
+- Builds + GHCR pushes run on GitHub Actions only (SLSA Build Provenance v1); `LATEST.md` advances
+  through the attestation gate. This is the milestone **CK.Lib.Js** syncs toward (strip client RDF,
+  keep JWT) and **oci-germination** bundles (run in-bundle clients as `ck_participant`, not superuser).
+
 ## pgck-web/v0.2.7 - 2026-05-29
 
 Web release: **U1 — both HTML pages are now static** (no-FastAPI UI-increment journey, step 1; roadmap §20). FastAPI stops rendering HTML.

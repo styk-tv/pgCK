@@ -90,6 +90,61 @@ pub(crate) fn nats_js_stream() -> Option<String> {
 // Ship the working governed-write path as the extension's bootstrap SQL.
 extension_sql_file!("../sql/pgck--0.2.2.sql", name = "pgck_bootstrap");
 
+// CI-A-4 (CKP v3.9 §7, SPEC.ROADMAP.v3.9.CHECKLIST index 24): the Ring-0
+// role-isolation floor. Runs after the bootstrap so its REVOKE/GRANT apply to
+// the ckp + pgrdf objects the bootstrap defines. Fresh CREATE EXTENSION includes
+// this; existing installs reach it via the sql/pgck--0.2.2--0.2.3.sql upgrade.
+extension_sql_file!(
+    "../sql/pgck--0.2.2--0.2.3.sql",
+    name = "pgck_ci_a4_role_floor",
+    requires = ["pgck_bootstrap"]
+);
+
+// CI-A-3 (CKP v3.9 §3, SPEC.ROADMAP.v3.9.CHECKLIST index 23): the frozen Ring-1
+// primitive set — SECURITY DEFINER wrappers owned by ck_substrate, the only code
+// paths permitted to invoke pgrdf.*. Requires the role floor (CI-A-4).
+extension_sql_file!(
+    "../sql/pgck--0.2.3--0.2.4.sql",
+    name = "pgck_ci_a3_ring1",
+    requires = ["pgck_ci_a4_role_floor"]
+);
+
+// CI-A-2 (CKP v3.9 §7/§2, SPEC.ROADMAP.v3.9.CHECKLIST index 22): the locked
+// four-tuple ckp.dispatch door — SECURITY DEFINER owned by ck_substrate, granted
+// to ck_participant and nothing else. Requires the role floor (CI-A-4).
+extension_sql_file!(
+    "../sql/pgck--0.2.4--0.2.5.sql",
+    name = "pgck_ci_a2_dispatch_door",
+    requires = ["pgck_ci_a4_role_floor"]
+);
+
+// CI-A-1 (CKP v3.9 §7, SPEC.ROADMAP.v3.9.CHECKLIST index 21): Track A ship-it —
+// ck_participant LOGIN so the sidecar harness demonstrates the §7 exit over a real
+// connection (the F-H "agent with DB creds" shape).
+extension_sql_file!(
+    "../sql/pgck--0.2.5--0.2.6.sql",
+    name = "pgck_ci_a1_participant_login",
+    requires = ["pgck_ci_a2_dispatch_door"]
+);
+
+// Critical Isolation Alpha (v0.3.0): bring the existing web2 verb surface
+// (sql/dispatch.sql — task.create/update, snapshot.*, edge.create, notify, instances.*,
+// …) INTO the extension so it can be governed, then floor it. Without this the web2
+// verbs are an orphan that was never loaded; with it, web2 keeps working under the floor.
+extension_sql_file!(
+    "../sql/dispatch.sql",
+    name = "pgck_web2_dispatch",
+    requires = ["pgck_ci_a4_role_floor"]
+);
+
+// Floor the web2 dispatch: SECURITY DEFINER owned by ck_substrate, granted to
+// ck_participant; PUBLIC denied. Requires the verbs to be loaded first.
+extension_sql_file!(
+    "../sql/pgck--0.2.6--0.3.0.sql",
+    name = "pgck_alpha_web2_floor",
+    requires = ["pgck_web2_dispatch"]
+);
+
 /// Registered at load time (shared_preload_libraries = 'pgck').
 /// Spawns the pgCK background worker.
 #[pg_guard]
@@ -143,14 +198,14 @@ pub extern "C-unwind" fn pgck_bridge_main(_arg: pg_sys::Datum) {
 /// `SELECT pgck_version();`
 #[pg_extern]
 fn pgck_version() -> &'static str {
-    "pgck 0.2.2 (rc3)"
+    "pgck 0.3.0 (rc3)"
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
     fn version_present() {
-        assert_eq!(crate::pgck_version(), "pgck 0.2.2 (rc3)");
+        assert_eq!(crate::pgck_version(), "pgck 0.3.0 (rc3)");
     }
 }
 
