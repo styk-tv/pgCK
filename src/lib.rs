@@ -154,6 +154,15 @@ extension_sql_file!(
     requires = ["pgck_alpha_web2_floor"]
 );
 
+// CKP v3.9 Track C (apply-time plan compiler + epoch invalidation). CI-C-4 adds the
+// ckp.plans table; CI-C-3/CI-C-2 accrete here. Requires the registry — plans are keyed by
+// the same (kernel, verb, epoch).
+extension_sql_file!(
+    "../sql/pgck--0.3.2--0.3.3.sql",
+    name = "pgck_trackc_plans",
+    requires = ["pgck_trackb_registry"]
+);
+
 /// Registered at load time (shared_preload_libraries = 'pgck').
 /// Spawns the pgCK background worker.
 #[pg_guard]
@@ -207,14 +216,14 @@ pub extern "C-unwind" fn pgck_bridge_main(_arg: pg_sys::Datum) {
 /// `SELECT pgck_version();`
 #[pg_extern]
 fn pgck_version() -> &'static str {
-    "pgck 0.3.2 (rc3)"
+    "pgck 0.3.3 (rc3)"
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
     fn version_present() {
-        assert_eq!(crate::pgck_version(), "pgck 0.3.2 (rc3)");
+        assert_eq!(crate::pgck_version(), "pgck 0.3.3 (rc3)");
     }
 }
 

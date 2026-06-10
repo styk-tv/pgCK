@@ -2,6 +2,32 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.3.3 - 2026-06-10
+
+**CKP v3.9 Track C "Plan compiler + epoch invalidation"** — affordance query templates compile from the
+kernel's **sealed** declarations (never caller input) into parameterized statements; runtime binds caller
+values positionally (`EXECUTE … USING`, never concatenates); a type change recompiles + bumps the compile
+epoch atomically and clears the engine plan cache. **The F-H staleness root cause is eliminated.**
+
+### Added — CKP v3.9 Track C (compiler + epoch)
+
+- **CI-C-4 — `ckp.plans` table.** Derived compiled-plan state keyed `(kernel, verb, epoch)` — engine
+  state, not graph facts (v3.9 §5.3). `sql/pgck--0.3.2--0.3.3.sql` · test `s21`.
+- **CI-C-3 — apply-time compiler.** `ckp.compile_plans` stamps pgCK's sealed read templates into
+  `ckp.plans` at the kernel epoch (idempotent); `ckp.plan_exec` resolves a plan and binds caller values
+  via `EXECUTE … USING` — a SQL-injection param is bound as a literal, not interpolated (proven in `s22`).
+- **CI-C-2 — epoch + atomic invalidation.** `ckp.kernel_epoch` holds the current epoch; `ckp.bump_epoch`
+  advances it + recompiles + clears the pgRDF plan cache (`pgrdf.plan_cache_clear()`) in one txn; a missing
+  plan recompiles-then-retries in-call. **Closes F-H.** test `s23`.
+- **CI-C-1 — Track C flip.** Exit holds: a type change recompiles + bumps the epoch atomically; a
+  deliberately staled client is corrected in-call. Released as `v0.3.3`.
+
+### Verification
+
+Smoke `s4` + `s9` + `s11–s23` green (build via colima/docker; compile → parameterized-bind + epoch
+invalidation proven; `s15` guards web2 no-regression). The live web2 dispatch is unchanged — the plan
+compiler is the typed-read substrate the registry routes into (wired into dispatch at CI-E).
+
 ## v0.3.2 - 2026-06-10
 
 **Supersedes v0.3.1**, whose CI release failed on the arm64 SLSA attestation step
