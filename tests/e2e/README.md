@@ -124,6 +124,22 @@ SKIP_WEB_SERVER=1 npx playwright test
 DEBUG=pw:api npx playwright test
 ```
 
+### Screenshots (convention — keep them out of the repo root)
+
+All screenshots live under **`tests/e2e/screenshots/`** (gitignored — binary artifacts are
+never committed to the public `styk-tv/pgCK` remote). This is the home for:
+
+- Test-runner failure screenshots / traces (the config writes runner artifacts under
+  `test-results/`, also gitignored).
+- Ad-hoc `page.screenshot({ path: 'screenshots/<name>.png' })` calls — the relative path
+  resolves against this directory (Playwright runs with cwd `tests/e2e`).
+- **Playwright MCP** captures during manual verification: pass the filename as
+  `tests/e2e/screenshots/<name>.png` (the MCP server's *default* output dir is a global
+  Claude setting, so it does not honor this dir automatically — name the path explicitly, or
+  set the playwright-mcp `--output-dir` to this folder).
+
+Do **not** write screenshots to the repo root. They were relocated here on 2026-06-10.
+
 ## Test Structure
 
 ### Display Page (`display-page.spec.ts`)

@@ -20,6 +20,12 @@ __pycache__/
 # local working docs/drafts; visible in the workspace, not tracked by git
 /_WIP/
 
+# Authoritative specs/roadmaps promoted to the workspace for working visibility, but the
+# remote is the PUBLIC repo styk-tv/pgCK — anything starting with SPEC stays private
+# (roadmap §15). Covers the v3.9 spec, the Critical-Isolation roadmap, the checklist, and any
+# future SPEC.* drafts. No SPEC* file is tracked today, so this shadows nothing. Never commit.
+SPEC*
+
 # Playwright local test harness (install with `npm i` when needed; never tracked)
 /node_modules/
 /package.json
@@ -27,8 +33,11 @@ __pycache__/
 /.playwright-mcp/
 /test-results/
 /playwright-report/
+# Screenshot artifacts (MCP + page.screenshot) — home is tests/e2e/screenshots/, never tracked
+/tests/e2e/screenshots/
 
-# local dev dispatcher venv + built nats-client ext (devops scaffolding)
+# Python virtualenvs — never track (.venv was committed by mistake; untracked 2026-06-10)
+/.venv/
 .venv-dispatcher/
 compose/extensions/pgck-natsclient/
 
