@@ -33,6 +33,9 @@ ckp:inTopic     a owl:DatatypeProperty .
 ckp:outTopic    a owl:DatatypeProperty .
 ckp:inShape     a owl:ObjectProperty .
 ckp:sparql      a owl:DatatypeProperty .
+ckp:plane       a owl:DatatypeProperty .   # v3.9 §2.2: "instance" | "governance" — the dispatch plane route (CI-B-5)
+ckp:epoch       a owl:DatatypeProperty .   # v3.9 §5.3: compile epoch on a sealed affordance — stale-plan detection (CI-B-5)
+ckp:delegate    a owl:DatatypeProperty .   # v3.9 §2.2: a SEALED delegation fact (boolean) — {delegate:true}, not an absence (CI-B-4)
 
 ckp:about       a owl:ObjectProperty .
 ckp:affordance  a owl:ObjectProperty .
@@ -60,7 +63,13 @@ ckp:AffordanceShape a sh:NodeShape ;
   sh:targetClass ckp:Affordance ;
   sh:property [ sh:path ckp:inTopic ; sh:minCount 1 ; sh:datatype xsd:string ] ;
   sh:property [ sh:path ckp:inShape ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
-  sh:property [ sh:path ckp:outTopic ; sh:maxCount 1 ; sh:datatype xsd:string ] .
+  sh:property [ sh:path ckp:outTopic ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  # v3.9 §2.2 / §9 — the dispatch plane + compile epoch on each affordance. Optional for the
+  # delta (existing affordances predate them; CI-B-2 defaults a missing plane to "instance");
+  # if present, plane MUST be one of the two enum values.
+  sh:property [ sh:path ckp:plane ; sh:maxCount 1 ; sh:in ( "instance" "governance" ) ] ;
+  sh:property [ sh:path ckp:epoch ; sh:maxCount 1 ; sh:datatype xsd:integer ] ;
+  sh:property [ sh:path ckp:delegate ; sh:maxCount 1 ; sh:datatype xsd:boolean ] .
 
 # A ledger entry MUST carry a non-empty HMAC signature and a chain pointer.
 ckp:LedgerEntryShape a sh:NodeShape ;

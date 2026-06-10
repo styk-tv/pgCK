@@ -65,6 +65,16 @@ smoke-s4: pgrdf-fetch build-ext compose-recreate
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s4_seal_reject.sql
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s4_verify.sql
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s9_seal_participant.sql
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s11_ci_a4_role_floor.sql
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s12_ci_a3_ring1_definer.sql
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s13_ci_a2_dispatch_only.sql
+    DOCKER_CONTEXT={{docker_context}} PGCK_COMPOSE_PROJECT={{compose_project}} bash sql/test/s14_ci_a1_sidecar.sh
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s15_alpha_web2_verbs.sql
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s16_ci_b5_plane_epoch.sql
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s17_ci_b4_registry.sql
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s18_ci_b3_validate_report.sql
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s19_ci_b2_plane_route.sql
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s20_ci_b1_routing_authority.sql
 
 smoke-s3: smoke-s4
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 \

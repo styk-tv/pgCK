@@ -72,15 +72,39 @@ DECLARE
   res    jsonb;
   v_proj text := COALESCE(current_setting('ckp.project', true), 'demo');
   v_idk  text := COALESCE(current_setting('ckp.identity_key', true), 'pgck-localhost');
+  v_canon  text;   -- CI-B-2: canonical instance.* name (registry lookup key)
+  v_aff    jsonb;  -- CI-B-1: the sealed affordance row (the registry IS the routing authority)
+  v_legacy text;   -- CI-B-2: the legacy handler name (alias window)
 BEGIN
   PERFORM set_config('ckp.project', v_proj, false);
   PERFORM set_config('ckp.identity_key', v_idk, false);
 
-  CASE p_verb
+  -- CI-B-1/B-2 — the sealed registry is the SOLE routing authority. Resolve the canonical
+  -- name + its sealed affordance row; an unregistered verb fails typed (unknown_affordance)
+  -- with zero payload evaluation (no fallthrough); a delegate=true row is the Tier-2 tool
+  -- seam; governance-plane verbs never execute here (proposal/vote/apply — CI-D). Otherwise
+  -- resolve the legacy handler name (alias window) so the CASE below is unchanged and v0.3.0
+  -- web2 keeps working.
+  v_canon := ckp.verb_canon(p_verb);
+  v_aff   := ckp.registry_lookup('pgCK', v_canon);
+  IF v_aff IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'unknown_affordance', 'verb', p_verb)
+      || jsonb_build_object('req', req);
+  ELSIF COALESCE((v_aff->>'delegate')::boolean, false) THEN
+    RETURN jsonb_build_object('ok', false, 'delegate', true, 'verb', p_verb,
+      'error', 'verb delegated to tool tier: '||p_verb) || jsonb_build_object('req', req);
+  ELSIF v_aff->>'plane' = 'governance' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'governance_plane_unavailable',
+      'plane', 'governance', 'verb', p_verb, 'canonical', v_canon)
+      || jsonb_build_object('req', req);
+  END IF;
+  v_legacy := ckp.verb_to_legacy(p_verb, p_payload);
+
+  CASE v_legacy
 
   -- ---- generic URN-addressed instance ops (the main goal) --------------
   WHEN 'instances.list', 'instances.last', 'instances.count', 'instance.get' THEN
-    res := ckp._query(p_verb, p_payload);
+    res := ckp._query(v_legacy, p_payload);
 
   -- ---- discovery -------------------------------------------------------
   WHEN 'affordances' THEN

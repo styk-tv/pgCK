@@ -2,6 +2,44 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.3.1 - 2026-06-10
+
+**CKP v3.9 Track B "Registry as routing authority"** — the sealed affordance registry is now the sole
+router for `ckp.dispatch`. Verbs migrate to the `instance.*` surface (legacy names retained as aliases
+for one minor — CK.Lib.Js confirmed the op→verb table); unknown verbs fail typed with zero payload
+evaluation; governance-plane verbs never execute on the instance path. web2's `v0.3.0` verb surface is
+unchanged (the alias window).
+
+### Added — CKP v3.9 Track B (sealed registry + typed dispatch)
+
+- **CI-B-5 — plane + epoch.** `ckp:plane` (instance|governance) + `ckp:epoch` on `ckp:Affordance`,
+  enforced by `AffordanceShape` (optional + `sh:in`-constrained, so existing affordances don't break).
+  `ontology/core.ttl` · test `s16`.
+- **CI-B-4 — the exact-match registry.** `ckp.affordance_registry` keyed `(kernel, verb)`;
+  `ckp.registry_refresh` indexes the sealed affordance facts; `ckp.registry_lookup` is parameterized
+  equality only (no `LIKE`/dynamic eval). `ckp:delegate` is a sealed fact. `sql/pgck--0.3.0--0.3.1.sql`
+  · test `s17`.
+- **CI-B-3 — the ValidationReport gate.** `ckp.validate_report(ttl, shapes) → {conforms, violations[]}`
+  surfaces field-level diagnostics via the Ring-1 `_validate` primitive (closes rc-07). test `s18`.
+- **CI-B-2 — plane route + verb migration.** `ckp.verb_canon` (legacy→`instance.*`) + `ckp.verb_to_legacy`
+  (`instance.*`→handler, routing `instance.create` by payload type) drive a non-breaking dispatch
+  preamble; pgCK's core verb surface is seeded with planes. Governance-plane verbs → propose stub.
+  test `s19`.
+- **CI-B-1 — registry is the routing authority.** Every shipped verb resolves through the registry; an
+  unregistered verb → `{ok:false, error:'unknown_affordance'}` (no fallthrough); a `delegate=true` row
+  → `{delegate:true}` (a sealed delegation fact, not an absence). test `s20`.
+
+### Verification
+
+Smoke `s4` + `s9` + `s11–s20` green (build via colima/docker). The `instance.*` surface and the
+registry gate are proven; `s15` guards web2 no-regression.
+
+### Coordination
+
+- CK.Lib.Js confirmed the `task.*`→`instance.*` op→verb mapping (one fix applied: `kernel.create` →
+  `instance.create`; `instance.validate` registered) + the alias window + no transport change this step
+  (`pgCK/_WIP/NOTIFIES.CK.Lib.Js.v1.5.0.trackb-instance-verb-migration*`).
+
 ## v0.3.0 - 2026-06-10
 
 **CKP v3.9 "Critical Isolation Alpha"** — the database door is structurally real. The extension now
