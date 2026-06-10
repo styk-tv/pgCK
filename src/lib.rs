@@ -163,6 +163,14 @@ extension_sql_file!(
     requires = ["pgck_trackb_registry"]
 );
 
+// CKP v3.9 Track D (the governance type plane). CI-D-5 adds kernel.propose_change;
+// CI-D-4/D-3/D-2 accrete here. Requires the plan compiler (apply recompiles via Track C).
+extension_sql_file!(
+    "../sql/pgck--0.3.3--0.3.4.sql",
+    name = "pgck_trackd_governance",
+    requires = ["pgck_trackc_plans"]
+);
+
 /// Registered at load time (shared_preload_libraries = 'pgck').
 /// Spawns the pgCK background worker.
 #[pg_guard]
@@ -216,14 +224,14 @@ pub extern "C-unwind" fn pgck_bridge_main(_arg: pg_sys::Datum) {
 /// `SELECT pgck_version();`
 #[pg_extern]
 fn pgck_version() -> &'static str {
-    "pgck 0.3.3 (rc3)"
+    "pgck 0.3.4 (rc3)"
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
     fn version_present() {
-        assert_eq!(crate::pgck_version(), "pgck 0.3.3 (rc3)");
+        assert_eq!(crate::pgck_version(), "pgck 0.3.4 (rc3)");
     }
 }
 

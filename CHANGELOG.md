@@ -2,6 +2,34 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.3.4 - 2026-06-10
+
+**CKP v3.9 Track D "The governance type plane"** — a SHACL-shape / type change lands ONLY via a sealed
+proposal → quorum vote → apply cascade, with a complete proof chain. A direct attempt is structurally
+impossible (Track A); a dispatch attempt on the instance plane is plane-rejected (Track B). The one
+caller-Turtle path is fenced (Rust-parse → meta-fence). web2's instance surface is unchanged.
+
+### Added — CKP v3.9 Track D (governance type plane)
+
+- **CI-D-6 — governance ontology.** `ckp:Proposal`/`Vote`/`QuorumLevel`/`Grant`/`Transition` classes +
+  properties + `ProposalShape`/`VoteShape`/`GrantShape`/`TransitionShape` in `core.ttl`. test `s24`.
+- **CI-D-5 — `kernel.propose_change`.** Seals a `ckp:Proposal{pending}` from a closed op-set; injection-safe
+  field gate (op enum, `about` IRI-pattern, quorum int) → `ProposalShape` → seal. test `s25`.
+- **CI-D-4 — `kernel.vote` + quorum.** Seals a `ckp:Vote` about a pending Proposal; `quorum_met` =
+  COUNT(approve) ≥ `requiresQuorum`. A human approval is a Vote sealed by a human identity. test `s26`.
+- **CI-D-3 — `kernel.apply` cascade.** One txn: quorum gate → `bump_epoch` (recompile + cache clear — the
+  shape version advances) → seal `applied`. Below-quorum / re-apply rejected. test `s27`.
+- **CI-D-2 — fenced `raw_ttl` + materialization policy.** `ckp.stage_ttl`: the caller's TTL is Rust-parsed
+  into a scratch graph (no SQL string-building) and meta-fenced (only rdf/rdfs/owl/sh predicates — no
+  instance data or foreign triples). `ckp.set_materialize_policy` (trigger/profile). test `s28`.
+- **CI-D-1 — Track D flip.** A shape change lands only via quorum, full proof chain; direct = structurally
+  impossible (CI-A), instance-dispatch = plane-rejected (CI-B). Released as `v0.3.4`.
+
+### Verification
+
+Smoke `s4` + `s9` + `s11–s28` green. The dispatch governance branch routes propose/vote/apply; a
+handler-less governance verb stays plane-rejected (`s19`); web2 instance surface unchanged (`s15`).
+
 ## v0.3.3 - 2026-06-10
 
 **CKP v3.9 Track C "Plan compiler + epoch invalidation"** — affordance query templates compile from the

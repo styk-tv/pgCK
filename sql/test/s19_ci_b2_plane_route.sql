@@ -48,18 +48,23 @@ BEGIN
   IF ckp.verb_to_legacy('instance.create', '{"task":{}}'::jsonb) <> 'task.create' THEN RAISE EXCEPTION 's19 FAIL: verb_to_legacy(instance.create,task) wrong'; END IF;
 END $$;
 
--- (d) a governance-plane verb is plane-rejected (the propose stub), NOT executed.
+-- (d) a governance-plane verb with NO handler is plane-rejected (the stub), never instance-plane.
+-- (propose/vote/apply are now implemented at CI-D; a seeded handler-less governance verb keeps
+-- this assertion durable — it tests the governance branch's default stub directly.)
 DO $$
 DECLARE res jsonb; failed text;
 BEGIN
+  INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane)
+    VALUES ('pgCK','kernel.unhandled_gov','input.kernel.pgCK.action.kernel.unhandled_gov','governance')
+    ON CONFLICT (kernel, verb) DO UPDATE SET plane='governance';
   SET LOCAL ROLE ck_participant;
   BEGIN
-    res := ckp.dispatch('kernel.propose_change', '{}'::jsonb);
+    res := ckp.dispatch('kernel.unhandled_gov', '{}'::jsonb);
   EXCEPTION WHEN OTHERS THEN failed := SQLERRM; END;
   RESET ROLE;
   IF failed IS NOT NULL THEN RAISE EXCEPTION 's19 FAIL: governance verb errored (should return a typed stub): %', failed; END IF;
   IF (res->>'ok') IS DISTINCT FROM 'false' OR res->>'error' <> 'governance_plane_unavailable' THEN
-    RAISE EXCEPTION 's19 FAIL: governance verb not plane-rejected: %', res;
+    RAISE EXCEPTION 's19 FAIL: handler-less governance verb not plane-rejected: %', res;
   END IF;
 END $$;
 

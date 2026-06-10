@@ -24,6 +24,13 @@ ckp:LedgerEntry a rdfs:Class ; rdfs:comment "Append-only HMAC-authenticated audi
 ckp:Proof       a rdfs:Class ; rdfs:comment "Verifiable HMAC-backed attestation about an instance." .
 ckp:Provenance  a rdfs:Class ; rdfs:comment "PROV-O subset for derivation." .
 
+# Governance type plane (v3.9 §9 / CI-D-6)
+ckp:Proposal    a rdfs:Class ; rdfs:comment "A proposed governed type change — pending until quorum applies it." .
+ckp:Vote        a rdfs:Class ; rdfs:comment "A sealed vote about a Proposal." .
+ckp:QuorumLevel a rdfs:Class ; rdfs:comment "A named quorum requirement for a governed change." .
+ckp:Grant       a rdfs:Class ; rdfs:comment "Binds a role to a Permission (domain × action × target)." .
+ckp:Transition  a rdfs:Class ; rdfs:comment "A sealed allowed (from → to) edge in a kernel's transition map." .
+
 # ---- Properties ----------------------------------------------------
 
 ckp:organKind   a owl:DatatypeProperty .   # "ck" | "tool" | "data"
@@ -50,6 +57,19 @@ ckp:ts          a owl:DatatypeProperty .
 ckp:method      a owl:DatatypeProperty .
 ckp:digest      a owl:DatatypeProperty .
 ckp:verifiedAt  a owl:DatatypeProperty .
+
+# Governance type plane (v3.9 §9 / CI-D-6)
+ckp:proposalState  a owl:DatatypeProperty .   # "pending" | "applied" | "rejected"
+ckp:proposalOp     a owl:DatatypeProperty .   # add_class | add_property | modify_shape_constraint | add_affordance | set_transition_map | set_quorum | set_materialize_policy
+ckp:requiresQuorum a owl:DatatypeProperty .   # integer vote threshold for a governed change
+ckp:voteValue      a owl:DatatypeProperty .   # "approve" | "reject"
+ckp:role           a owl:DatatypeProperty .   # RBAC role name
+ckp:grant          a owl:ObjectProperty .     # → ckp:Grant
+ckp:permDomain     a owl:DatatypeProperty .   # Permission domain
+ckp:permAction     a owl:DatatypeProperty .   # Permission action
+ckp:permTarget     a owl:DatatypeProperty .   # Permission target
+ckp:fromState      a owl:DatatypeProperty .   # transition-map source state
+ckp:toState        a owl:DatatypeProperty .   # transition-map destination state
 
 # ---- SHACL shapes — the protocol governs itself --------------------
 
@@ -90,3 +110,34 @@ ckp:ProofShape a sh:NodeShape ;
   sh:property [ sh:path ckp:digest    ; sh:minCount 1 ; sh:datatype xsd:string ;
                 sh:pattern "^[0-9a-f]{64}$" ] ;
   sh:property [ sh:path ckp:verifiedAt ; sh:minCount 1 ; sh:datatype xsd:dateTime ] .
+
+# ---- Governance shapes (v3.9 §9 / CI-D-6) — the type plane governs itself ----
+
+# A Proposal is DATA about a future type change — pending until quorum applies it.
+ckp:ProposalShape a sh:NodeShape ;
+  sh:targetClass ckp:Proposal ;
+  sh:property [ sh:path ckp:about ; sh:minCount 1 ; sh:nodeKind sh:IRI ] ;
+  sh:property [ sh:path ckp:proposalState ; sh:minCount 1 ;
+                sh:in ( "pending" "applied" "rejected" ) ] ;
+  sh:property [ sh:path ckp:requiresQuorum ; sh:maxCount 1 ; sh:datatype xsd:integer ] .
+
+# A Vote is sealed BY an identity and is ABOUT a Proposal.
+ckp:VoteShape a sh:NodeShape ;
+  sh:targetClass ckp:Vote ;
+  sh:property [ sh:path ckp:about ; sh:minCount 1 ; sh:nodeKind sh:IRI ] ;
+  sh:property [ sh:path ckp:voteValue ; sh:minCount 1 ;
+                sh:in ( "approve" "reject" ) ] .
+
+# A Grant binds a role to a Permission (domain × action × target).
+ckp:GrantShape a sh:NodeShape ;
+  sh:targetClass ckp:Grant ;
+  sh:property [ sh:path ckp:role ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path ckp:permDomain ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path ckp:permAction ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path ckp:permTarget ; sh:minCount 1 ; sh:datatype xsd:string ] .
+
+# A Transition is a sealed allowed (from → to) edge in a kernel's transition map.
+ckp:TransitionShape a sh:NodeShape ;
+  sh:targetClass ckp:Transition ;
+  sh:property [ sh:path ckp:fromState ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path ckp:toState ; sh:minCount 1 ; sh:datatype xsd:string ] .

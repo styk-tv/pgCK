@@ -94,6 +94,14 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'delegate', true, 'verb', p_verb,
       'error', 'verb delegated to tool tier: '||p_verb) || jsonb_build_object('req', req);
   ELSIF v_aff->>'plane' = 'governance' THEN
+    -- CI-D: the governance plane routes to the sealed type-change verbs (propose/vote/apply).
+    IF v_canon = 'kernel.propose_change' THEN
+      RETURN ckp.propose_change(v_proj, p_payload) || jsonb_build_object('req', req);
+    ELSIF v_canon = 'kernel.vote' THEN
+      RETURN ckp.vote(p_payload) || jsonb_build_object('req', req);
+    ELSIF v_canon = 'kernel.apply' THEN
+      RETURN ckp.apply(p_payload) || jsonb_build_object('req', req);
+    END IF;
     RETURN jsonb_build_object('ok', false, 'error', 'governance_plane_unavailable',
       'plane', 'governance', 'verb', p_verb, 'canonical', v_canon)
       || jsonb_build_object('req', req);
