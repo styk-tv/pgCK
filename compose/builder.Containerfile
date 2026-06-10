@@ -2,6 +2,10 @@
 FROM docker.io/library/rust:1.91-bookworm AS builder
 ARG PG_MAJOR=17
 ARG PGRX_VERSION=0.16
+# NATS profile: embedded-nats (compose dev — pgCK hosts its own NATS) or
+# nats-client (bundle/cluster — pgCK is a client of a separate nats-server,
+# e.g. ck-allinone). Mutually exclusive; pick one. Default keeps compose intact.
+ARG NATS_FEATURE=embedded-nats
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && apt-get update && \
@@ -25,7 +29,7 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,target=/work/target,sharing=locked \
-    cargo pgrx package --no-default-features --features pg${PG_MAJOR},embedded-nats \
+    cargo pgrx package --no-default-features --features pg${PG_MAJOR},${NATS_FEATURE} \
       --pg-config "$(which pg_config)" && \
     mkdir -p /artifacts/lib /artifacts/share/extension && \
     cp /work/target/release/pgck-pg${PG_MAJOR}/usr/lib/postgresql/${PG_MAJOR}/lib/pgck.so /artifacts/lib/ && \

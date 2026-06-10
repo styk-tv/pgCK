@@ -1,76 +1,185 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>pgCK Kernel Board</title>
-    <link rel="stylesheet" href="/assets/app.css?v=u1" />
-  </head>
-  <body>
-    <nav class="nav-menu">
-      <a href="/" class="nav-link display-link">Display</a>
-      <a href="/tasks.html" class="nav-link board-link">Board</a>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>pgCK · board</title>
+<style>
+  :root{
+    --bg:#fbfcfd; --card:#ffffff; --ink:#1b2533; --mut:#7b8aa0; --line:#e7ebf1;
+    --acc:#2f7bf6; --ok:#15b886; --warn:#f0a020; --plan:#9aa7bd;
+    --shadow:0 1px 2px rgba(20,30,50,.05),0 1px 12px rgba(20,30,50,.04);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.45 system-ui,-apple-system,"Inter","Segoe UI",Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .top{display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid var(--line);background:#fff}
+  .top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.2px}
+  .top .dot{width:8px;height:8px;border-radius:50%;background:var(--plan)}
+  .top .dot.on{background:var(--ok)} .top .dot.off{background:#e2554f}
+  .spacer{flex:1}
+  .id{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut)}
+  .chip{padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;cursor:pointer;font:inherit;color:var(--ink)}
+  .chip:hover{border-color:#cfd6e2}
+  .chip.you{color:var(--acc);border-color:#cfe0ff;background:#f3f8ff}
+  .board{display:flex;gap:14px;align-items:flex-start;padding:18px 20px;overflow-x:auto;height:calc(100% - 52px)}
+  .col{flex:0 0 268px;display:flex;flex-direction:column;gap:10px}
+  .colhead{display:flex;align-items:center;gap:8px;padding:2px 4px}
+  .colhead .name{font-weight:650;font-size:14px}
+  .colhead .count{font-size:12px;color:var(--mut);background:#eef1f6;border-radius:999px;padding:1px 8px}
+  .colhead .add{margin-left:auto;width:26px;height:26px;border-radius:8px;border:1px solid var(--line);
+    background:#fff;color:var(--mut);font-size:17px;line-height:1;cursor:pointer}
+  .colhead .add:hover{color:var(--acc);border-color:#cfe0ff}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:11px 12px;box-shadow:var(--shadow);cursor:pointer}
+  .card:hover{border-color:#d9e0ea}
+  .card .t{font-weight:560;margin-bottom:8px}
+  .card .meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{border:0;background:#fff;color:var(--mut);font:inherit;font-size:11px;padding:3px 8px;cursor:pointer}
+  .seg button.on.plan,.seg button.on.planned{background:#eef1f6;color:#516079}
+  .seg button.on.in_progress{background:#eaf2ff;color:var(--acc)}
+  .seg button.on.done{background:#e8f8f1;color:var(--ok)}
+  .pri{font-size:11px;color:var(--mut);background:#f4f6fa;border-radius:6px;padding:2px 7px}
+  .proof{font-size:11px;color:var(--ok);background:#e8f8f1;border-radius:6px;padding:2px 7px}
+  .proof.no{color:var(--warn);background:#fdf3e2}
+  .addcol{flex:0 0 200px}
+  .addcol .ghost{border:1px dashed var(--line);border-radius:11px;padding:14px;color:var(--mut);background:#fff;cursor:pointer;text-align:center}
+  .addcol .ghost:hover{border-color:#cfe0ff;color:var(--acc)}
+  .composer{background:#fff;border:1px solid #cfe0ff;border-radius:11px;padding:11px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:9px}
+  .composer input[type=text]{border:0;border-bottom:1px solid var(--line);font:inherit;font-size:14px;padding:4px 2px;outline:none}
+  .composer input[type=text]:focus{border-color:var(--acc)}
+  .composer .lbl{font-size:11px;color:var(--mut);display:flex;justify-content:space-between}
+  .composer input[type=range]{width:100%;accent-color:var(--acc)}
+  .composer .go{align-self:flex-end;display:flex;gap:6px}
+  .btn{border:0;border-radius:8px;padding:6px 12px;font:inherit;font-weight:600;cursor:pointer}
+  .btn.p{background:var(--acc);color:#fff} .btn.g{background:#eef1f6;color:var(--mut)}
+  .drawer{position:fixed;top:0;right:0;height:100%;width:380px;max-width:92vw;background:#fff;border-left:1px solid var(--line);
+    box-shadow:-8px 0 30px rgba(20,30,50,.08);transform:translateX(100%);transition:transform .18s ease;padding:18px 20px;overflow:auto}
+  .drawer.open{transform:none}
+  .drawer h2{margin:0 0 2px;font-size:14px}
+  .drawer .x{position:absolute;top:14px;right:16px;border:0;background:none;font-size:18px;color:var(--mut);cursor:pointer}
+  .kv{font-size:12px;margin:10px 0}
+  .kv b{display:block;color:var(--mut);font-weight:500;margin-bottom:2px}
+  .mono{font-family:ui-monospace,Menlo,monospace;font-size:11px;word-break:break-all;background:#f7f9fc;border:1px solid var(--line);border-radius:7px;padding:7px 9px}
+  .ledrow{display:flex;gap:8px;justify-content:space-between;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--mut);border-top:1px dashed var(--line);padding:6px 0}
+  .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1b2533;color:#fff;padding:8px 14px;border-radius:9px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+  <div class="top">
+    <span class="dot" id="dot"></span><h1>pgCK · board</h1>
+    <nav style="display:flex;gap:3px;margin-left:8px">
+      <a href="/" style="font-size:12px;color:#516079;text-decoration:none;padding:3px 9px;border-radius:7px">Display</a>
+      <a href="/assets/tasks.html" style="font-size:12px;color:#2f7bf6;text-decoration:none;padding:3px 9px;border-radius:7px;background:#eef3fb">Board</a>
+      <a href="/assets/explorer/index.html" style="font-size:12px;color:#516079;text-decoration:none;padding:3px 9px;border-radius:7px">Explorer</a>
+      <a href="/assets/forge/index.html" style="font-size:12px;color:#516079;text-decoration:none;padding:3px 9px;border-radius:7px">Forge</a>
+      <a href="/assets/tutorial.html" style="font-size:12px;color:#516079;text-decoration:none;padding:3px 9px;border-radius:7px">Tutorial</a>
     </nav>
-    <script>
-      // U1: static page. Config client-derived from the serving host.
-      (function () {
-        var host = location.host || "pgck.localhost";
-        var wsScheme = location.protocol === "http:" ? "ws" : "wss";
-        window.PGCK_DISPLAY_CONFIG = {
-          nats_ws_url: wsScheme + "://" + host + "/wss",
-          nats_subject: "event.pgCK.Display",
-          nats_subject_long: "event.kernel.pgCK.Display.broadcast",
-          display_kernel: "pgCK.Display",
-          cklib_base: "/cklib",
-          protocol_version: 1
-        };
-      })();
-    </script>
+    <span class="chip" style="cursor:default" id="conn">connecting…</span>
+    <div class="spacer"></div>
+    <div class="id" id="idbox"></div>
+  </div>
+  <div class="board" id="board"></div>
+  <div class="drawer" id="drawer"><button class="x" id="dx">×</button><div id="dcontent"></div></div>
+  <div class="toast" id="toast"></div>
 
-    <main class="shell">
-      <section class="composer-card">
-        <div class="eyebrow">Create task</div>
-        <h1>Owner composer</h1>
-        <p class="composer-copy">Goal selector, kernel selector, priority, and detail drive governed task creation.</p>
-        <p id="form-status" class="form-status">Ready to seal tasks.</p>
-        <form id="task-form">
-          <label class="field">
-            <span>Goal selector</span>
-            <select id="goal-select" name="goal_id"></select>
-          </label>
-          <label class="field">
-            <span>Target kernel</span>
-            <select id="kernel-select" name="target_kernel"></select>
-          </label>
-          <label class="field">
-            <span>Title</span>
-            <input id="title-input" name="title" type="text" maxlength="180" />
-          </label>
-          <label class="field">
-            <span>Detail</span>
-            <textarea id="detail-input" name="detail" rows="3"></textarea>
-          </label>
-          <label class="field">
-            <span>Priority</span>
-            <input id="priority-input" name="priority" type="number" min="0" max="9" value="1" />
-          </label>
-          <button class="submit-button" type="submit">Create task</button>
-        </form>
-      </section>
+<script type="module">
+import { CKClient } from "/cklib/ck-client.js";
+const $=(s,r=document)=>r.querySelector(s), el=(t,c)=>{const e=document.createElement(t);if(c)e.className=c;return e;};
+const wsScheme=location.protocol==="http:"?"ws":"wss";
+const ck=new CKClient({kernel:"pgCK",wssEndpoint:`${wsScheme}://${location.host}/wss`,subscribe:["event","result"],dictVersion:0,clientId:"ck-browser"});
 
-      <section class="board-card">
-        <div class="board-toolbar">
-          <div>
-            <div class="eyebrow">Kernel board</div>
-            <p class="board-copy">Tasks render into their ConceptKernel columns and live-sort by priority then queue sequence.</p>
-          </div>
-          <div id="kernel-toggles" class="kernel-toggles"></div>
-        </div>
-        <div id="board-columns" class="board-columns"></div>
-      </section>
-    </main>
+const LIFE=["planned","in_progress","done"];
+const state={kernels:[],tasks:[],sub:null,urn:null,anon:"anon-"+Math.random().toString(16).slice(2,8),composing:null};
+const pending=new Map(); let seq=0;
+const call=(action,extra={})=>new Promise((res,rej)=>{const req=`b-${Date.now()}-${++seq}`;const to=setTimeout(()=>{pending.delete(req);rej(new Error("Server temporarily unavailable — kernel dispatcher not responding (run VS Code task: pgck: dev dispatcher)."));},7000);pending.set(req,d=>{clearTimeout(to);res(d);});ck.send({action,req,...extra});});
+ck.on("result",m=>{const d=m.data||{};const p=pending.get(d.req);if(p){pending.delete(d.req);p(d);}});
+ck.on("event",m=>{const d=m.data||{};if(d.kind==="board_changed")snapshot();});
+ck.on("status",({connection})=>{const c=$("#conn"),dot=$("#dot");
+  if(connection==="connected"){c.textContent="live · NATS WSS";dot.className="dot on";}
+  else if(connection==="connecting"){c.textContent="connecting…";dot.className="dot";}
+  else{c.textContent=connection;dot.className="dot off";}});
 
-    <audio id="audio-player" preload="auto"></audio>
-    <script src="/assets/board-app.js?v=u1" defer></script>
-  </body>
+const toast=t=>{const e=$("#toast");e.textContent=t;e.classList.add("show");setTimeout(()=>e.classList.remove("show"),1800);};
+const who=()=>state.sub||null;
+
+async function snapshot(){try{const d=await call("snapshot.board");if(d.ok){state.kernels=d.kernels||[];state.tasks=d.tasks||[];render();}}catch(e){toast(e.message);}}
+
+function renderId(){const b=$("#idbox");b.innerHTML="";
+  if(state.sub){const c=el("span","chip you");c.textContent=`you · ${state.sub}`;c.title=state.urn;c.onclick=()=>openUrn(state.urn);b.append(c);}
+  else{const a=el("span","chip");a.style.cursor="default";a.textContent=`anonymous · ${state.anon}`;
+    const u=el("span","chip");u.textContent="upgrade ↑";u.onclick=upgrade;b.append(a,u);}}
+
+function render(){renderId();const board=$("#board");board.innerHTML="";
+  for(const k of state.kernels){
+    const col=el("div","col");
+    const h=el("div","colhead");const n=el("span","name");n.textContent=k.name;
+    const tasks=state.tasks.filter(t=>t.target_kernel===k.name).sort((a,b)=>(+b.priority||0)-(+a.priority||0)||(+a.queue_seq||0)-(+b.queue_seq||0));
+    const cnt=el("span","count");cnt.textContent=tasks.length;
+    const add=el("button","add");add.textContent="+";add.title="add task";add.onclick=()=>{state.composing=k.name;render();};
+    h.append(n,cnt,add);col.append(h);
+    if(state.composing===k.name)col.append(composer(k.name));
+    for(const t of tasks)col.append(card(t));
+    board.append(col);
+  }
+  const ac=el("div","col addcol");const g=el("div","ghost");g.textContent="+ concept kernel";
+  g.onclick=()=>{const name=prompt("New concept kernel name");if(name&&name.trim())addKernel(name.trim());};
+  ac.append(g);board.append(ac);
+}
+
+function composer(kernel){const c=el("div","composer");
+  const title=el("input");title.type="text";title.placeholder="task title";
+  const l1=el("div","lbl");const ls=el("span");ls.textContent="priority";const lv=el("span");lv.textContent="5";l1.append(ls,lv);
+  const r=el("input");r.type="range";r.min=1;r.max=9;r.value=5;r.oninput=()=>lv.textContent=r.value;
+  let life="planned";const seg=el("div","seg");
+  LIFE.forEach(s=>{const b=el("button",(s===life?"on "+s:""));b.textContent=s==="in_progress"?"doing":s;b.onclick=()=>{life=s;[...seg.children].forEach((x,i)=>x.className=(LIFE[i]===s?"on "+s:""));};seg.append(b);});
+  const go=el("div","go");const ok=el("button","btn p");ok.textContent="seal →";const no=el("button","btn g");no.textContent="cancel";
+  const submit=async()=>{const t=title.value.trim();if(!t)return;ok.disabled=true;
+    try{const d=await call("task.create",{task:{target_kernel:kernel,title:t,priority:r.value,lifecycle_state:life},sub:who()});
+      if(d.ok){toast("sealed · "+d.proof_digest.slice(0,10)+"…");state.composing=null;await snapshot();}else toast("rejected: "+d.error);}
+    catch(e){toast(e.message);}ok.disabled=false;};
+  ok.onclick=submit;title.onkeydown=e=>{if(e.key==="Enter")submit();if(e.key==="Escape"){state.composing=null;render();}};
+  no.onclick=()=>{state.composing=null;render();};
+  go.append(no,ok);c.append(title,l1,r,seg,go);setTimeout(()=>title.focus(),0);return c;}
+
+function card(t){const c=el("div","card");c.onclick=e=>{if(e.target.closest(".seg"))return;openProv(t.id);};
+  const ti=el("div","t");ti.textContent=t.title||t.id;
+  const m=el("div","meta");
+  const seg=el("div","seg");
+  LIFE.forEach(s=>{const b=el("button",(s===t.lifecycle_state?"on "+s:""));b.textContent=s==="in_progress"?"doing":s;
+    b.onclick=ev=>{ev.stopPropagation();cycle(t,s);};seg.append(b);});
+  const pri=el("span","pri");pri.textContent="P"+(t.priority||"·");
+  const pf=el("span","proof"+(t.verified?"":" no"));pf.textContent=t.verified?("✓ "+(t.proof_digest||"").slice(0,7)):"unverified";
+  m.append(seg,pri,pf);c.append(ti,m);return c;}
+
+async function cycle(t,to){try{const d=await call("task.update",{id:t.id,lifecycle_state:to});if(d.ok){toast("updated · "+(d.proof_digest||"").slice(0,8)+"…");await snapshot();}else toast(d.error);}catch(e){toast(e.message);}}
+async function addKernel(name){try{const d=await call("kernel.create",{name});if(d.ok){toast("kernel · "+name);await snapshot();}else toast(d.error);}catch(e){toast(e.message);}}
+async function upgrade(){const name=prompt("Upgrade identity — your name");if(!name||!name.trim())return;
+  try{const d=await call("participant.join",{name:name.trim()});if(d.ok){state.sub=d.sub;state.urn=d.urn;renderId();toast("you are "+d.urn);}}catch(e){toast(e.message);}}
+
+async function openProv(id){const dr=$("#drawer"),c=$("#dcontent");c.innerHTML="loading…";dr.classList.add("open");
+  try{const d=await call("provenance",{id});if(!d.ok){c.textContent=d.error;return;}
+    const b=d.body||{};const N="https://conceptkernel.org/ontology/v3.7/";const lk=k=>b[N+k]||"";
+    c.innerHTML="";const h=el("h2");h.textContent=lk("title")||id;c.append(h);
+    const v=el("div","kv");v.innerHTML=`<b>verified (HMAC chain)</b>${d.verified?'<span style="color:var(--ok)">✓ true</span>':'<span style="color:var(--warn)">✗ false</span>'}`;c.append(v);
+    c.append(kv("URN",id,true));
+    if(d.proof)c.append(kv("proof digest · "+(d.proof.method||""),d.proof.digest,true));
+    c.append(kv("target_kernel →",lk("target_kernel")));
+    c.append(kv("part_of_goal →",lk("part_of_goal")));
+    c.append(kv("lifecycle · priority · seq",lk("lifecycle_state")+"  ·  P"+lk("priority")+"  ·  #"+lk("queue_seq")));
+    if(lk("created_by"))c.append(kv("created_by →",lk("created_by"),true));
+    const lh=el("div","kv");lh.innerHTML="<b>ledger chain (append-only, signed)</b>";c.append(lh);
+    (d.ledger||[]).forEach(r=>{const row=el("div","ledrow");row.innerHTML=`<span>#${r.seq}${r.prev_seq?' ← '+r.prev_seq:''}</span><span>${(r.body_sha256||'').slice(0,16)}…</span>`;c.append(row);});
+  }catch(e){c.textContent=e.message;}}
+function kv(label,val,mono){const d=el("div","kv");const b=el("b");b.textContent=label;const v=el("div",mono?"mono":"");v.textContent=val;d.append(b,v);return d;}
+function openUrn(urn){const dr=$("#drawer"),c=$("#dcontent");c.innerHTML="";const h=el("h2");h.textContent="identity";c.append(h,kv("participant URN",urn,true),kv("status","upgraded from anonymous"));dr.classList.add("open");}
+$("#dx").onclick=()=>$("#drawer").classList.remove("open");
+
+renderId();
+ck.connect().then(snapshot).catch(()=>{$("#conn").textContent="connect failed";});
+</script>
+</body>
 </html>

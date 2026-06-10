@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>pgCK · kernel explorer</title>
+<style>
+  :root{
+    --bg:#fbfcfd; --card:#fff; --ink:#1b2533; --mut:#7b8aa0; --line:#e7ebf1;
+    --acc:#2f7bf6; --ok:#15b886; --warn:#f0a020; --vio:#8a6df0; --grn:#15b886;
+    --shadow:0 1px 2px rgba(20,30,50,.05),0 1px 12px rgba(20,30,50,.04);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--ink);
+    font:14px/1.45 system-ui,-apple-system,"Inter","Segoe UI",Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;
+    display:flex;flex-direction:column}
+  .top{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line);background:#fff;flex:0 0 auto}
+  .top h1{margin:0;font-size:14px;font-weight:650}
+  .top a{color:var(--mut);text-decoration:none;font-size:13px;border:1px solid var(--line);border-radius:7px;padding:4px 10px}
+  .top a:hover{color:var(--acc);border-color:#cfe0ff}
+  .dot{width:8px;height:8px;border-radius:50%;background:#9aa7bd}.dot.on{background:var(--ok)}
+  .conn{font-size:12px;color:var(--mut)}
+  .spacer{flex:1}
+  #split{flex:1;display:flex;min-height:0}
+  #left{flex:0 0 50%;overflow:auto;padding:16px 18px;border-right:0}
+  #right{flex:1;overflow:auto;padding:16px 20px;background:#fff}
+  #divider{flex:0 0 10px;cursor:col-resize;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(#fff,#fff);border-left:1px solid var(--line);border-right:1px solid var(--line)}
+  #divider .grip{width:4px;height:34px;border-radius:3px;background:#d4dbe6}
+  #divider:hover .grip{background:var(--acc)}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);margin:18px 0 8px;font-weight:600}
+  h2:first-child{margin-top:0}
+  .add{display:flex;gap:8px;margin-bottom:14px}
+  .add input{flex:1;border:1px solid var(--line);border-radius:9px;padding:8px 11px;font:inherit;outline:none}
+  .add input:focus{border-color:var(--acc)}
+  .btn{border:0;border-radius:9px;padding:8px 13px;font:inherit;font-weight:600;cursor:pointer;background:var(--acc);color:#fff}
+  .btn.g{background:#eef1f6;color:var(--mut)}
+  .filter{width:100%;border:1px solid var(--line);border-radius:9px;padding:7px 11px;font:inherit;outline:none;margin-bottom:10px}
+  .chips{display:flex;gap:6px;margin-bottom:12px}
+  .chip{font-size:12px;padding:4px 11px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--mut);cursor:pointer}
+  .chip.on{background:#eaf2ff;color:var(--acc);border-color:#cfe0ff}
+  .klist{display:flex;flex-direction:column;gap:7px}
+  .krow{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff;cursor:pointer;box-shadow:var(--shadow)}
+  .krow:hover{border-color:#cfe0ff}
+  .krow.sel{border-color:var(--acc);background:#f3f8ff}
+  .krow .kn{font-weight:600}
+  .krow .ku{font-size:11px;color:var(--mut);font-family:ui-monospace,Menlo,monospace}
+  .krow .kc{margin-left:auto;font-size:12px;color:var(--mut);background:#eef1f6;border-radius:999px;padding:1px 9px}
+  .hint{color:var(--mut);font-size:13px;margin-top:40px;text-align:center}
+  .rk h3{margin:0;font-size:17px}
+  .rk .urn{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--acc)}
+  .legend{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0 4px}
+  .lg{font-size:11px;padding:2px 9px;border-radius:6px;background:#f4f6fa;color:var(--mut)}
+  .inst{border:1px solid var(--line);border-radius:11px;margin-bottom:11px;background:#fff;box-shadow:var(--shadow);overflow:hidden}
+  .inst .hd{display:flex;align-items:center;gap:9px;padding:11px 13px;cursor:pointer}
+  .inst .hd .t{font-weight:600}
+  .inst .hd .u{font-size:11px;color:var(--mut);font-family:ui-monospace,Menlo,monospace}
+  .inst .hd .v{margin-left:auto;font-size:11px;color:var(--ok);background:#e8f8f1;border-radius:6px;padding:2px 8px}
+  .inst .hd .v.no{color:var(--warn);background:#fdf3e2}
+  .inst .bd{display:none;border-top:1px solid var(--line);padding:11px 13px;background:#fcfdff}
+  .inst.open .bd{display:block}
+  .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);margin:9px 0 4px}
+  pre{margin:0;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.5;background:#f7f9fc;border:1px solid var(--line);border-radius:8px;padding:9px 11px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+  .key{color:var(--vio)} .val{color:#2a6}
+  .led{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--mut);display:flex;justify-content:space-between;border-top:1px dashed var(--line);padding:5px 0}
+  table.tri{width:100%;border-collapse:collapse;font-size:12px}
+  table.tri td{padding:5px 7px;border-bottom:1px solid var(--line);vertical-align:top;font-family:ui-monospace,Menlo,monospace}
+  .s{color:var(--acc)} .p{color:var(--vio)} .o{color:var(--grn)}
+  .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1b2533;color:#fff;padding:8px 14px;border-radius:9px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+  <div class="top">
+    <span class="dot" id="dot"></span><h1>pgCK · kernel explorer</h1>
+    <span class="conn" id="conn">connecting…</span>
+    <div class="spacer"></div>
+    <nav style="display:flex;gap:3px">
+      <a href="/">Display</a><a href="/assets/tasks.html">Board</a>
+      <a href="/assets/explorer/index.html" style="color:#2f7bf6;border-color:#cfe0ff;background:#f3f8ff">Explorer</a>
+      <a href="/assets/forge/index.html">Forge</a><a href="/assets/tutorial.html">Tutorial</a>
+    </nav>
+  </div>
+  <div id="split">
+    <div id="left"></div>
+    <div id="divider"><div class="grip"></div></div>
+    <div id="right"><div class="hint">select a concept kernel on the left to inspect what is stored</div></div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+<script type="module">
+import { CKClient } from "/cklib/ck-client.js";
+const $=(s,r=document)=>r.querySelector(s), el=(t,c)=>{const e=document.createElement(t);if(c)e.className=c;return e;};
+const ck=new CKClient({kernel:"pgCK",wssEndpoint:`${location.protocol==="http:"?"ws":"wss"}://${location.host}/wss`,subscribe:["event","result"],dictVersion:0,clientId:"ck-browser"});
+const pending=new Map();let seq=0;
+const call=(action,extra={})=>new Promise((res,rej)=>{const req=`x-${Date.now()}-${++seq}`;const to=setTimeout(()=>{pending.delete(req);rej(new Error("Server temporarily unavailable — kernel dispatcher not responding (run VS Code task: pgck: dev dispatcher)."));},8000);pending.set(req,d=>{clearTimeout(to);res(d);});ck.send({action,req,...extra});});
+ck.on("result",m=>{const d=m.data||{};const p=pending.get(d.req);if(p){pending.delete(d.req);p(d);}});
+ck.on("event",m=>{if((m.data||{}).kind==="board_changed"){loadKernels();if(state.sel)openKernel(state.sel,true);}});
+ck.on("status",({connection})=>{const c=$("#conn"),d=$("#dot");c.textContent=connection==="connected"?"live · NATS WSS":connection;d.className="dot"+(connection==="connected"?" on":"");});
+const toast=t=>{const e=$("#toast");e.textContent=t;e.classList.add("show");setTimeout(()=>e.classList.remove("show"),1700);};
+
+const state={kernels:[],counts:{},sel:null,filter:"",mode:"all"};
+
+/* ---- draggable split, persisted ---- */
+const KEY="pgck.explorer.split";
+const apply=p=>{$("#left").style.flexBasis=p+"%";};
+let pct=Math.min(80,Math.max(20,+localStorage.getItem(KEY)||50));apply(pct);
+let drag=false;
+$("#divider").addEventListener("mousedown",e=>{drag=true;e.preventDefault();document.body.style.userSelect="none";});
+window.addEventListener("mousemove",e=>{if(!drag)return;pct=Math.min(80,Math.max(20,e.clientX/window.innerWidth*100));apply(pct);});
+window.addEventListener("mouseup",()=>{if(drag){drag=false;document.body.style.userSelect="";localStorage.setItem(KEY,pct.toFixed(1));}});
+
+/* ---- left: kernels + inline add + filter ---- */
+async function loadKernels(){try{const d=await call("snapshot.board");if(!d.ok)return;
+  state.kernels=d.kernels||[];state.counts={};
+  for(const t of (d.tasks||[]))state.counts[t.target_kernel]=(state.counts[t.target_kernel]||0)+1;
+  renderLeft();}catch(e){toast(e.message);}}
+
+function renderLeft(){const L=$("#left");L.innerHTML="";
+  const h=el("h2");h.textContent="concept kernels";L.append(h);
+  // inline quick-add (no native popup)
+  const add=el("div","add");const inp=el("input");inp.placeholder="new concept kernel name";
+  const b=el("button","btn");b.textContent="add";
+  const go=async()=>{const n=inp.value.trim();if(!n)return;b.disabled=true;try{const d=await call("kernel.create",{name:n});if(d.ok){toast("kernel · "+n);inp.value="";await loadKernels();}else toast(d.error);}catch(e){toast(e.message);}b.disabled=false;};
+  b.onclick=go;inp.onkeydown=e=>{if(e.key==="Enter")go();};add.append(inp,b);L.append(add);
+  // filter
+  const f=el("input","filter");f.placeholder="filter kernels…";f.value=state.filter;f.oninput=()=>{state.filter=f.value;renderList();};L.append(f);
+  const chips=el("div","chips");
+  [["all","all"],["nonempty","has tasks"],["empty","empty"]].forEach(([m,t])=>{const c=el("span","chip"+(state.mode===m?" on":""));c.textContent=t;c.onclick=()=>{state.mode=m;renderLeft();};chips.append(c);});
+  L.append(chips);
+  const list=el("div","klist");list.id="klist";L.append(list);renderList();
+}
+function renderList(){const list=$("#klist");if(!list)return;list.innerHTML="";
+  const q=state.filter.toLowerCase();
+  for(const k of state.kernels){
+    const cnt=state.counts[k.name]||0;
+    if(q&&!k.name.toLowerCase().includes(q))continue;
+    if(state.mode==="nonempty"&&cnt===0)continue;
+    if(state.mode==="empty"&&cnt>0)continue;
+    const row=el("div","krow"+(state.sel===k.name?" sel":""));
+    const box=el("div");const n=el("div","kn");n.textContent=k.name;const u=el("div","ku");u.textContent="ckp://Kernel#"+slug(k.name);box.append(n,u);
+    const c=el("span","kc");c.textContent=cnt;
+    row.append(box,c);row.onclick=()=>openKernel(k.name);list.append(row);
+  }
+}
+const slug=s=>(s||"").trim().toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"anon";
+
+/* ---- right: deep detail (what's stored) ---- */
+async function openKernel(name,quiet){state.sel=name;renderList();
+  const R=$("#right");if(!quiet)R.innerHTML='<div class="hint">loading…</div>';
+  try{const d=await call("kernel.detail",{kernel:name});if(!d.ok){R.innerHTML='<div class="hint">'+(d.error||"error")+'</div>';return;}
+    R.innerHTML="";
+    const head=el("div","rk");const h3=el("h3");h3.textContent=name;const urn=el("div","urn");urn.textContent=d.urn;head.append(h3,urn);R.append(head);
+    const lg=el("div","legend");["instances (ckp.instances)","proof (ckp.proof · HMAC)","ledger (ckp.ledger · signed chain)","graph (pgRDF triples)"].forEach(t=>{const s=el("span","lg");s.textContent=t;lg.append(s);});R.append(lg);
+
+    const h2a=el("h2");h2a.textContent="instances · "+(d.tasks||[]).length;R.append(h2a);
+    for(const t of (d.tasks||[]))R.append(instance(t));
+
+    const h2b=el("h2");h2b.textContent="graph projection · "+(d.triples||[]).length+" triples";R.append(h2b);
+    const tbl=el("table","tri");
+    for(const tr of (d.triples||[])){const row=el("tr");
+      row.innerHTML=`<td class="s">${short(tr.s)}</td><td class="p">${local(tr.p)}</td><td class="o">${short(tr.o)}</td>`;tbl.append(row);}
+    R.append(tbl);
+  }catch(e){R.innerHTML='<div class="hint">'+e.message+'</div>';}
+}
+const short=v=>String(v||"").replace(/^ckp:\/\//,"").replace(/^https?:\/\/[^#]*#/,"");
+const local=v=>String(v||"").replace(/^.*[#/]/,"");
+
+function instance(t){const N="https://conceptkernel.org/ontology/v3.7/";const lk=k=>t.body[N+k]||"";
+  const c=el("div","inst");
+  const hd=el("div","hd");const ti=el("div","t");ti.textContent=lk("title")||t.id;
+  const u=el("div","u");u.textContent="ckp://Task#"+t.id;
+  const v=el("div","v"+(t.verified?"":" no"));v.textContent=t.verified?"✓ verified":"✗";
+  hd.append(ti,u,v);hd.onclick=()=>c.classList.toggle("open");c.append(hd);
+  const bd=el("div","bd");
+  bd.append(lab("stored body (ckp.instances · IRI-keyed JSONB)"));
+  bd.append(pre(prettyBody(t.body)));
+  if(t.proof_digest){bd.append(lab("proof (ckp.proof · HMAC-SHA256)"));bd.append(pre(t.proof_digest));}
+  bd.append(lab("ledger chain (ckp.ledger · append-only, signed)"));
+  (t.ledger||[]).forEach(r=>{const row=el("div","led");row.innerHTML=`<span>#${r.seq}${r.prev_seq?' ← '+r.prev_seq:' (root)'}</span><span>${(r.body_sha256||'').slice(0,18)}…</span>`;bd.append(row);});
+  c.append(bd);return c;
+}
+function prettyBody(body){return Object.entries(body).map(([k,v])=>{const kk=k==="type"?"type":local(k);return `  <span class="key">${kk}</span>: <span class="val">${esc(String(v))}</span>`;}).join("\n");}
+const esc=s=>s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+function lab(t){const d=el("div","lbl");d.textContent=t;return d;}
+function pre(html){const p=el("pre");p.innerHTML=html;return p;}
+
+ck.connect().then(loadKernels).catch(()=>{$("#conn").textContent="connect failed";});
+</script>
+</body>
+</html>

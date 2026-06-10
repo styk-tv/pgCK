@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CKP v3.8 — Interactive Intro (live against pgck.localhost)</title>
+  <style>
+    :root { --bg:#0b1220; --panel:#13203a; --ink:#eaf2ff; --mut:#8aa0c4; --ok:#3ad29f; --bad:#ff6b6b; --acc:#5aa9ff; }
+    * { box-sizing:border-box; }
+    body { margin:0; font:15px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--bg); color:var(--ink); }
+    header { padding:18px 22px; border-bottom:1px solid #22324f; }
+    header h1 { margin:0 0 4px; font-size:18px; }
+    header .sub { color:var(--mut); font-size:13px; }
+    #status { float:right; font-size:13px; padding:3px 10px; border-radius:12px; background:#22324f; }
+    #status.ok { background:rgba(58,210,159,.18); color:var(--ok); }
+    #status.warn { background:rgba(90,169,255,.18); color:var(--acc); }
+    #status.err { background:rgba(255,107,107,.18); color:var(--bad); }
+    main { max-width:920px; margin:0 auto; padding:22px; }
+    .step { background:var(--panel); border:1px solid #22324f; border-radius:10px; padding:16px 18px; margin:14px 0; }
+    .step h2 { margin:0 0 6px; font-size:15px; color:var(--acc); }
+    .step p { margin:6px 0; color:var(--mut); }
+    button { font:inherit; background:var(--acc); color:#04122b; border:0; border-radius:7px; padding:8px 14px; cursor:pointer; font-weight:600; }
+    button:disabled { opacity:.45; cursor:default; }
+    button.ghost { background:#22324f; color:var(--ink); }
+    code, pre { background:#0a1426; border:1px solid #22324f; border-radius:6px; }
+    code { padding:1px 6px; color:var(--acc); }
+    pre { padding:10px 12px; overflow:auto; margin:8px 0 0; white-space:pre-wrap; color:var(--ink); }
+    .out { margin-top:10px; font-size:13px; }
+    .out.ok { color:var(--ok); }
+    .out.bad { color:var(--bad); }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .pill { font-size:12px; padding:2px 8px; border-radius:10px; background:#22324f; color:var(--mut); }
+    .pill.ok { background:rgba(58,210,159,.18); color:var(--ok); }
+    .pill.bad { background:rgba(255,107,107,.18); color:var(--bad); }
+    a { color:var(--acc); }
+  </style>
+</head>
+<body>
+  <header>
+    <span id="status">connecting…</span>
+    <nav style="display:flex;gap:3px;margin-bottom:8px">
+      <a href="/" style="font-size:12px;color:#8aa0c4;text-decoration:none;padding:3px 9px;border:1px solid #22324f;border-radius:7px">Display</a>
+      <a href="/assets/tasks.html" style="font-size:12px;color:#8aa0c4;text-decoration:none;padding:3px 9px;border:1px solid #22324f;border-radius:7px">Board</a>
+      <a href="/assets/explorer/index.html" style="font-size:12px;color:#8aa0c4;text-decoration:none;padding:3px 9px;border:1px solid #22324f;border-radius:7px">Explorer</a>
+      <a href="/assets/forge/index.html" style="font-size:12px;color:#8aa0c4;text-decoration:none;padding:3px 9px;border:1px solid #22324f;border-radius:7px">Forge</a>
+      <a href="/assets/tutorial.html" style="font-size:12px;color:#47d7ac;text-decoration:none;padding:3px 9px;border:1px solid #2a5f4f;border-radius:7px;background:#0f2620">Tutorial</a>
+    </nav>
+    <h1>CKP v3.8 — Interactive Intro</h1>
+    <div class="sub">A concept kernel is a <b>governed graph</b>. This page talks to the live kernel at
+      <code>pgck.localhost</code> over <b>NATS WSS</b> — every action below is a real seal, validated by SHACL,
+      proven by HMAC. No REST.</div>
+  </header>
+
+  <main>
+    <div class="step">
+      <h2>0 · The wire</h2>
+      <p>The browser publishes <code>input.kernel.pgCK.action.&lt;verb&gt;</code> and listens on
+        <code>result.kernel.pgCK.action.&lt;verb&gt;</code>. A dev dispatcher maps verbs to <code>ckp.seal</code> /
+        <code>ckp.verify</code> (the Rust CKA-4 dispatcher will replace it). Connection:</p>
+      <div class="row"><span class="pill" id="p-conn">connecting</span>
+        <span class="pill">kernel: pgCK</span><span class="pill" id="p-url">wss://pgck.localhost/wss</span></div>
+    </div>
+
+    <div class="step">
+      <h2>1 · Inspect the kernel — the affordances it exposes</h2>
+      <p>A kernel <b>registers the affordances it exposes</b> (<code>ckp:Affordance</code>: inTopic / outTopic / inShape).
+        Ask it, live — no static file:</p>
+      <button id="b-aff">action.affordances →</button>
+      <pre id="o-aff">(not run)</pre>
+    </div>
+
+    <div class="step">
+      <h2>2 · The rule (a SHACL shape that cannot drift)</h2>
+      <p>The board kernel's <code>TaskShape</code> requires <code>part_of_goal</code> + <code>target_kernel</code>
+        (and the kernel requires <code>task_id, priority, queue_seq, created_at</code>). The gate runs <i>inside</i> the
+        seal transaction — violations roll the whole write back.</p>
+    </div>
+
+    <div class="step">
+      <h2>3 · Add a valid instance → get a proof</h2>
+      <p>Seal a complete Task. The kernel validates it, projects its link-triples, appends the HMAC ledger, and returns a
+        <b>proof digest</b>.</p>
+      <button id="b-good">seal a valid Task →</button>
+      <pre id="o-good">(not run)</pre>
+    </div>
+
+    <div class="step">
+      <h2>4 · Break the rule → governed rejection</h2>
+      <p>Same Task, but with <code>part_of_goal</code> removed. The SHACL gate rejects it — nothing is written. This is the
+        point: malformed state <b>cannot land</b>.</p>
+      <button id="b-bad" class="ghost">seal an invalid Task →</button>
+      <pre id="o-bad">(not run)</pre>
+    </div>
+
+    <div class="step">
+      <h2>5 · Verify the proof</h2>
+      <p><code>ckp.verify</code> walks the HMAC chain for the instance you sealed in step 3.</p>
+      <button id="b-ver">action.instance.verify →</button>
+      <pre id="o-ver">(not run)</pre>
+    </div>
+  </main>
+
+  <script type="module">
+    import { CKClient } from "/cklib/ck-client.js";
+
+    const wsScheme = location.protocol === "http:" ? "ws" : "wss";
+    const URL = `${wsScheme}://${location.host}/wss`;
+    document.getElementById("p-url").textContent = URL;
+
+    const statusEl = document.getElementById("status");
+    const pConn = document.getElementById("p-conn");
+    const setStatus = (t, cls) => { statusEl.textContent = t; statusEl.className = cls; };
+
+    const ck = new CKClient({
+      kernel: "pgCK", wssEndpoint: URL,
+      subscribe: ["event", "result"], dictVersion: 0, clientId: "ck-browser",
+    });
+
+    // request/reply correlation by `req`
+    const pending = new Map();
+    let seq = 0;
+    const newReq = () => `tut-${Date.now()}-${++seq}`;
+
+    ck.on("result", (msg) => {
+      const d = msg.data || {};
+      const p = pending.get(d.req);
+      if (p) { pending.delete(d.req); p(d); }
+    });
+    ck.on("status", ({ connection }) => {
+      if (connection === "connected") { setStatus("subscribed", "ok"); pConn.textContent = "connected"; pConn.className = "pill ok"; }
+      else if (connection === "connecting") { setStatus("connecting…", "warn"); }
+      else { setStatus(connection, "err"); pConn.textContent = connection; pConn.className = "pill bad"; }
+    });
+
+    function call(action, extra, timeoutMs = 6000) {
+      const req = newReq();
+      return new Promise((resolve, reject) => {
+        const t = setTimeout(() => { pending.delete(req); reject(new Error("Server temporarily unavailable — kernel dispatcher not responding (run VS Code task: pgck: dev dispatcher).")); }, timeoutMs);
+        pending.set(req, (d) => { clearTimeout(t); resolve(d); });
+        ck.send({ action, req, ...extra });
+      });
+    }
+
+    const show = (el, obj, ok) => {
+      const node = document.getElementById(el);
+      node.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+      node.className = ok === undefined ? "" : (ok ? "out ok" : "out bad");
+    };
+
+    const goodTask = () => ({
+      task_id: newReq(), title: "Write the CKP intro tutorial",
+      part_of_goal: "FC-G-0001", target_kernel: "pgCK",
+      lifecycle_state: "in_progress", priority: "5", queue_seq: "1",
+      created_at: new Date().toISOString(),
+    });
+
+    let lastGoodId = null;
+
+    document.getElementById("b-aff").onclick = async (e) => {
+      e.target.disabled = true; show("o-aff", "…asking the kernel…");
+      try { const d = await call("affordances", {}); show("o-aff", d.affordances || d, d.ok); }
+      catch (err) { show("o-aff", String(err.message), false); }
+      e.target.disabled = false;
+    };
+
+    document.getElementById("b-good").onclick = async (e) => {
+      e.target.disabled = true; show("o-good", "…sealing…");
+      const task = goodTask();
+      try {
+        const d = await call("task.create", { task });
+        lastGoodId = d.id || task.task_id;
+        show("o-good", d.ok
+          ? `✓ sealed  ${d.id}\n  proof_digest: ${d.proof_digest}\n  verified: ${d.verified}`
+          : `✗ ${d.error}`, d.ok);
+      } catch (err) { show("o-good", String(err.message), false); }
+      e.target.disabled = false;
+    };
+
+    document.getElementById("b-bad").onclick = async (e) => {
+      e.target.disabled = true; show("o-bad", "…sealing (no part_of_goal)…");
+      const task = goodTask(); delete task.part_of_goal;
+      try {
+        const d = await call("task.create", { task });
+        show("o-bad", d.ok
+          ? `(unexpected) sealed ${d.id}`
+          : `✗ rejected by the gate — nothing written:\n  ${d.error}`, !d.ok);
+      } catch (err) { show("o-bad", String(err.message), false); }
+      e.target.disabled = false;
+    };
+
+    document.getElementById("b-ver").onclick = async (e) => {
+      e.target.disabled = true;
+      if (!lastGoodId) { show("o-ver", "run step 3 first", false); e.target.disabled = false; return; }
+      show("o-ver", `…verifying ${lastGoodId}…`);
+      try { const d = await call("instance.verify", { id: lastGoodId }); show("o-ver", `verified(${d.id}) = ${d.verified}`, d.verified); }
+      catch (err) { show("o-ver", String(err.message), false); }
+      e.target.disabled = false;
+    };
+
+    setStatus("connecting…", "warn");
+    ck.connect().catch((err) => setStatus(`connect failed: ${err.message}`, "err"));
+  </script>
+</body>
+</html>

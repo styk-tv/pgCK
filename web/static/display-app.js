@@ -50,6 +50,8 @@ async function startCKClient() {
     kernel: config.display_kernel,
     wssEndpoint: config.nats_ws_url,
     subscribe: ["event"],
+    // also monitor the whole governed pgCK event flow (CSVC: extraSubjects -> 'broadcast')
+    extraSubjects: ["event.kernel.pgCK.>"],
     dictVersion: 0,
     clientId: "ck-browser",
     maxReconnectAttempts: 10,
@@ -70,8 +72,8 @@ async function startCKClient() {
     }
   });
 
-  ck.on("event", (msg) => dispatchBroadcast(msg.data));
-  ck.on("broadcast", (msg) => dispatchBroadcast(msg.data));
+  ck.on("event", (msg) => { logEvent(msg); dispatchBroadcast(msg.data); });
+  ck.on("broadcast", (msg) => { logEvent(msg); dispatchBroadcast(msg.data); });
   ck.on("error", (err) => console.error("[display] CKClient error:", err));
 
   try {
@@ -81,6 +83,27 @@ async function startCKClient() {
     console.error("[display] CKClient connect failed:", err);
     setTimeout(startCKClient, 3000);
   }
+}
+
+// Rolling, bounded live event feed. Fixed-size displacement (oldest DOM node
+// removed once over FEED_MAX) so a constant flow never grows memory.
+const FEED_MAX = 60;
+function logEvent(msg) {
+  const feed = document.getElementById("event-feed");
+  if (!feed) return;
+  const d = msg && msg.data;
+  let summary = "";
+  if (d && typeof d === "object") summary = d.kind || d.id || d.title || Object.keys(d).slice(0, 4).join(", ");
+  else if (d != null) summary = String(d);
+  const subj = (msg.subject || "").replace(/^event\.(kernel\.)?/, "").replace(/^pgCK\./, "");
+  const line = document.createElement("div");
+  line.className = "evt";
+  const t = document.createElement("span"); t.className = "t"; t.textContent = new Date().toLocaleTimeString();
+  const s = document.createElement("span"); s.className = "s"; s.textContent = subj || "event";
+  const dd = document.createElement("span"); dd.className = "d"; dd.textContent = summary;
+  line.append(t, s, dd);
+  feed.prepend(line);
+  while (feed.childElementCount > FEED_MAX) feed.removeChild(feed.lastElementChild);
 }
 
 function dispatchBroadcast(data) {

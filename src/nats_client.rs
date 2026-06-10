@@ -236,6 +236,13 @@ fn run_client_thread(url: String, js_stream: Option<String>, rx: mpsc::Receiver<
                             "pgck nats-client: core publish failed: subject={subject} err={e}"
                         );
                     }
+                    // The command loop blocks on a sync mpsc recv() inside the
+                    // single-thread runtime, which starves async-nats's
+                    // background flusher — so an un-flushed publish would sit
+                    // buffered and never reach the server. Flush explicitly.
+                    if let Err(e) = client.flush().await {
+                        eprintln!("pgck nats-client: flush failed: subject={subject} err={e}");
+                    }
                 }
                 Cmd::PublishJs {
                     subject,

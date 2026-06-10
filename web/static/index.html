@@ -1,68 +1,115 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>pgCK Display — NATS Messages</title>
-    <link rel="stylesheet" href="/assets/app.css?v=u1" />
-  </head>
-  <body>
-    <nav class="nav-menu">
-      <a href="/" class="nav-link display-link">Display</a>
-      <a href="/tasks.html" class="nav-link board-link">Board</a>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>pgCK · signage</title>
+<style>
+  :root{--bg:#fbfcfd;--card:#fff;--ink:#1b2533;--mut:#7b8aa0;--line:#e7ebf1;--acc:#2f7bf6;--ok:#15b886;--vio:#8a6df0;--warn:#e2554f;
+    --shadow:0 1px 2px rgba(20,30,50,.05),0 1px 14px rgba(20,30,50,.05);}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Inter","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column}
+  .top{display:flex;align-items:center;gap:12px;padding:13px 22px;border-bottom:1px solid var(--line);background:#fff;flex:0 0 auto}
+  .top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.2px}
+  .dot{width:8px;height:8px;border-radius:50%;background:#9aa7bd}.dot.on{background:var(--ok)}
+  .conn{font-size:12px;color:var(--mut)}.spacer{flex:1}
+  nav{display:flex;gap:3px}
+  nav a{font-size:12px;color:#516079;text-decoration:none;padding:4px 10px;border-radius:8px}
+  nav a:hover{color:var(--acc);background:#f0f5ff}
+  nav a.on{color:var(--acc);background:#eef3fb}
+  main{flex:1;min-height:0;display:flex;flex-direction:column;max-width:960px;width:100%;margin:0 auto;padding:22px;gap:16px}
+  /* hero: the latest announcement, big */
+  .hero{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:26px 28px;box-shadow:var(--shadow);
+    display:flex;flex-direction:column;gap:8px;transition:border-color .3s}
+  .hero .kind{display:inline-flex;align-self:flex-start;align-items:center;gap:8px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;
+    color:var(--acc);background:#eef3fb;border-radius:999px;padding:4px 12px}
+  .hero .title{font-size:30px;font-weight:680;line-height:1.15;letter-spacing:-.3px}
+  .hero .sub{color:var(--mut);font-size:14px;font-family:ui-monospace,Menlo,monospace;word-break:break-word}
+  .hero.idle .title{color:var(--mut);font-weight:500;font-size:22px}
+  /* stream: rolling announcements */
+  .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);font-weight:600;margin:2px 4px}
+  .stream{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:8px}
+  .ann{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 14px;box-shadow:var(--shadow);
+    display:flex;align-items:center;gap:12px;animation:in .25s ease}
+  @keyframes in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+  .ann .t{font-size:11px;color:var(--mut);font-family:ui-monospace,Menlo,monospace;min-width:64px}
+  .ann .badge{font-size:11px;font-weight:600;padding:2px 9px;border-radius:7px;white-space:nowrap}
+  .ann .body{flex:1;min-width:0}
+  .ann .ti{font-weight:560}
+  .ann .meta{font-size:11px;color:var(--mut);font-family:ui-monospace,Menlo,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .b-task{background:#eef3fb;color:var(--acc)} .b-part{background:#f5f2ff;color:var(--vio)}
+  .b-board{background:#e8f8f1;color:var(--ok)} .b-disp{background:#fff4e6;color:#c47d12} .b-evt{background:#eef1f6;color:#516079}
+</style>
+</head>
+<body>
+  <div class="top">
+    <span class="dot" id="dot"></span><h1>pgCK · signage</h1>
+    <span class="conn" id="conn">connecting…</span>
+    <div class="spacer"></div>
+    <nav>
+      <a href="/" class="on">Display</a>
+      <a href="/assets/tasks.html">Board</a>
+      <a href="/assets/explorer/index.html">Explorer</a>
+      <a href="/assets/forge/index.html">Forge</a>
+      <a href="/assets/tutorial.html">Tutorial</a>
     </nav>
-    <script>
-      // U1: static page. Config is client-derived from the serving host —
-      // no FastAPI injection. Identity/session arrive dynamically via the
-      // NATS envelope (headers) -> pgCK Participant/Session (U2), not baked here.
-      (function () {
-        var host = location.host || "pgck.localhost";
-        var wsScheme = location.protocol === "http:" ? "ws" : "wss";
-        window.PGCK_DISPLAY_CONFIG = {
-          nats_ws_url: wsScheme + "://" + host + "/wss",
-          nats_subject: "event.pgCK.Display",
-          nats_subject_long: "event.kernel.pgCK.Display.broadcast",
-          display_kernel: "pgCK.Display",
-          cklib_base: "/cklib",
-          protocol_version: 1
-        };
-      })();
-    </script>
+  </div>
+  <main>
+    <div class="hero idle" id="hero">
+      <span class="kind" id="hero-kind">live</span>
+      <div class="title" id="hero-title">Waiting for the kernel to speak…</div>
+      <div class="sub" id="hero-sub">Monitoring <code>event.kernel.pgCK.&gt;</code> — seal a task on the Board and watch it land here.</div>
+    </div>
+    <div class="lbl">announcements <span style="opacity:.6">— rolling, newest first</span></div>
+    <div class="stream" id="stream"></div>
+  </main>
 
-    <main class="shell">
-      <section class="status-card">
-        <div class="eyebrow">pgCK display — NATS messages</div>
-        <div class="status-row">
-          <span class="status-dot" id="connection-dot"></span>
-          <span id="connection-status">Connecting…</span>
-        </div>
-        <dl class="meta">
-          <div>
-            <dt>NATS WS</dt>
-            <dd id="nats-url"></dd>
-          </div>
-          <div>
-            <dt>Subject</dt>
-            <dd id="nats-subject"></dd>
-          </div>
-          <div>
-            <dt>Audio</dt>
-            <dd id="audio-status">Idle</dd>
-          </div>
-        </dl>
-        <button class="audio-button" id="audio-unlock">Enable audio</button>
-      </section>
+<script type="module">
+import { CKClient } from "/cklib/ck-client.js";
+const $=(s)=>document.querySelector(s);
+const wsScheme=location.protocol==="http:"?"ws":"wss";
+const ck=new CKClient({kernel:"pgCK.Display",wssEndpoint:`${wsScheme}://${location.host}/wss`,
+  subscribe:["event"],extraSubjects:["event.kernel.pgCK.>"],dictVersion:0,clientId:"ck-browser"});
 
-      <section class="protocol-card">
-        <div class="eyebrow">Protocol</div>
-        <p>This page receives NATS broadcast messages: theme changes, audio, and live events.</p>
-        <div id="protocol-output" class="protocol-output">Loading protocol…</div>
-        <div class="eyebrow">Last payload</div>
-        <pre id="last-payload" class="last-payload">No payload received yet.</pre>
-      </section>
-    </main>
+ck.on("status",({connection})=>{const c=$("#conn"),d=$("#dot");
+  c.textContent=connection==="connected"?"live · NATS WSS":connection; d.className="dot"+(connection==="connected"?" on":"");});
+ck.on("event",(m)=>announce(m)); ck.on("broadcast",(m)=>announce(m));
+ck.on("error",(e)=>console.error("[signage]",e));
 
-    <audio id="audio-player" preload="auto"></audio>
-    <script type="module" src="/assets/display-app.js?v=u1"></script>
-  </body>
+const STREAM_MAX=40;
+function classify(subject,data){
+  const leaf=(subject||"").replace(/^event\.(kernel\.)?/,"").replace(/^pgCK\./,"");
+  const d=data&&typeof data==="object"?data:{};
+  if(/task/i.test(leaf)||d.kind==="task_upsert"){return {badge:"b-task",kind:"task",title:d.title||(d.task&&d.task.title)||d.id||"task event",meta:leaf};}
+  if(/participant/i.test(leaf)){return {badge:"b-part",kind:"participant",title:(d.sub||d.name||"someone")+" joined",meta:leaf};}
+  if(/board/i.test(leaf)){return {badge:"b-board",kind:"board",title:"Board updated",meta:leaf};}
+  if(/display|theme|audio/i.test(leaf)||d.kind){return {badge:"b-disp",kind:d.kind||"display",title:(d.kind==="theme"?"Theme changed":d.kind==="audio"?"Audio cue":d.message||"display")+"",meta:leaf};}
+  return {badge:"b-evt",kind:"event",title:d.title||d.id||leaf||"event",meta:leaf};
+}
+function announce(m){
+  const c=classify(m.subject,m.data);
+  const now=new Date().toLocaleTimeString();
+  // hero = latest
+  const hero=$("#hero"); hero.classList.remove("idle");
+  $("#hero-kind").textContent=c.kind;
+  $("#hero-title").textContent=c.title;
+  $("#hero-sub").textContent=`${c.meta}   ·   ${now}`;
+  // light theme tweak on theme broadcast (accent only — page stays light)
+  if(m.data&&m.data.kind==="theme"&&m.data.theme&&m.data.theme.accent){
+    document.documentElement.style.setProperty("--acc",m.data.theme.accent);
+  }
+  // stream card (bounded, displace oldest)
+  const stream=$("#stream");
+  const el=document.createElement("div"); el.className="ann";
+  el.innerHTML=`<span class="t">${now}</span><span class="badge ${c.badge}">${c.kind}</span>`+
+    `<span class="body"><span class="ti"></span> <span class="meta"></span></span>`;
+  el.querySelector(".ti").textContent=c.title;
+  el.querySelector(".meta").textContent=c.meta;
+  stream.prepend(el);
+  while(stream.childElementCount>STREAM_MAX) stream.removeChild(stream.lastElementChild);
+}
+ck.connect().catch(e=>$("#conn").textContent="connect failed");
+</script>
+</body>
 </html>

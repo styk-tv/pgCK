@@ -1,4 +1,5 @@
 @prefix ckp:  <https://conceptkernel.org/ontology/v3.7/> .
+@prefix core: <https://conceptkernel.org/ontology/v3.8/core#> .
 @prefix sh:   <http://www.w3.org/ns/shacl#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
@@ -28,3 +29,52 @@ ckp:TaskShape a sh:NodeShape ;
   sh:property [ sh:path ckp:created_at ; sh:minCount 1 ; sh:datatype xsd:string ] ;
   sh:property [ sh:path ckp:created_by ; sh:datatype xsd:string ] ;
   sh:property [ sh:path ckp:detail ; sh:datatype xsd:string ] .
+
+# ---- Affordances (U2-a) ---------------------------------------------------
+# pgCK registers the capabilities it exposes as core:Affordance instances in
+# its OWN kernel graph (urn:ckp:<project>/kernel/ck, parsed here by
+# ckp.load_kernel). Vocabulary is v3.8/core# — that is where ckp:Affordance,
+# inTopic/outTopic/inShape, and AffordanceShape live (ontology/core.ttl,
+# ontology/affordance.ttl, examples/example.kernel.ttl). Goal/Task above stay
+# v3.7/; the file is intentionally bi-namespace during the v3.7→v3.8 migration.
+#
+# Gating: ckp.seal()'s step-1 required-prop check reads the shape whose
+# sh:targetClass matches the body's `type` FROM THIS kernel/ck graph — so the
+# AffordanceShape below (requiring core:inTopic) is what makes a malformed
+# affordance roll back. (Note: core.ttl also ships an AffordanceShape, but in
+# the core graph, which seal step-1 does not consult — hence the declaration
+# here. A future ext change could let step-1 also consult the core graph and
+# retire this duplicate.)
+#
+# Discovery: the live `affordances` query (U2-b / CKA-3) SPARQLs these back out
+# of the graph — replacing the static protocol.json.
+
+core:AffordanceShape a sh:NodeShape ;
+  sh:targetClass core:Affordance ;
+  sh:property [ sh:path core:inTopic ; sh:minCount 1 ; sh:datatype xsd:string ] .
+
+:DisplayBroadcast a core:Affordance ;
+  rdfs:label "Display broadcast" ;
+  core:inTopic  "input.kernel.pgCK.action.display.broadcast" ;
+  core:outTopic "event.kernel.pgCK.Display.<kind>" .
+
+:TaskCreate a core:Affordance ;
+  rdfs:label "Task upsert" ;
+  core:inTopic  "input.kernel.pgCK.action.task.create" ;
+  core:outTopic "event.kernel.pgCK.task.upserted" ;
+  core:inShape  ckp:TaskShape .
+
+:SnapshotBoard a core:Affordance ;
+  rdfs:label "Board snapshot (read)" ;
+  core:inTopic  "input.kernel.pgCK.action.snapshot.board" ;
+  core:outTopic "result.kernel.pgCK.action.snapshot.board" .
+
+:ParticipantJoin a core:Affordance ;
+  rdfs:label "Participant join (presence)" ;
+  core:inTopic  "input.kernel.pgCK.action.participant.join" ;
+  core:outTopic "event.kernel.pgCK.participant.joined" .
+
+:AffordanceDiscovery a core:Affordance ;
+  rdfs:label "Affordance discovery" ;
+  core:inTopic  "input.kernel.pgCK.action.affordances" ;
+  core:outTopic "result.kernel.pgCK.action.affordances" .

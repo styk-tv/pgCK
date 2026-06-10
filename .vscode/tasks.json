@@ -147,6 +147,34 @@
         "clear": true
       },
       "problemMatcher": []
+    },
+    {
+      "label": "pgck: dev dispatcher",
+      "detail": "Local Tier-1 request/reply dispatcher (dev scaffold) so browser tools (tutorial/board/explorer/forge) work until the Rust CKA-4 dispatcher ships. Logs every request. Ctrl-C to stop.",
+      "type": "shell",
+      "command": "scripts/run-dispatcher.sh",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true,
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "pgck: kernel logs",
+      "detail": "Tail the pgck-allinone container — bgworker (nats-client) + NATS + postgres.",
+      "type": "shell",
+      "command": "docker logs -f pgck-allinone",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false,
+        "clear": true
+      },
+      "problemMatcher": []
     }
   ]
 }
