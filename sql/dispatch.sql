@@ -106,6 +106,21 @@ BEGIN
       'plane', 'governance', 'verb', p_verb, 'canonical', v_canon)
       || jsonb_build_object('req', req);
   END IF;
+  -- CI-E-5: instance.query is the typed derived-QueryShape read (the legacy instances.list alias
+  -- keeps its list behavior below — routed by the ORIGINAL verb, not the shared canonical).
+  IF p_verb = 'instance.query' THEN
+    RETURN ckp.query(p_payload) || jsonb_build_object('req', req);
+  ELSIF p_verb = 'instance.reach' THEN
+    RETURN ckp.reach(p_payload) || jsonb_build_object('req', req);
+  ELSIF p_verb = 'instance.transition' THEN
+    RETURN ckp.transition(p_payload) || jsonb_build_object('req', req);
+  ELSIF p_verb = 'instance.snapshot' THEN
+    RETURN ckp.snapshot(p_payload) || jsonb_build_object('req', req);
+  ELSIF p_verb = 'concept.match' THEN
+    RETURN ckp.concept_match(p_payload) || jsonb_build_object('req', req);
+  ELSIF p_verb = 'instance.explain' THEN
+    RETURN ckp.explain(p_payload) || jsonb_build_object('req', req);
+  END IF;
   v_legacy := ckp.verb_to_legacy(p_verb, p_payload);
 
   CASE v_legacy

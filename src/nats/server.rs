@@ -12,7 +12,7 @@ use crate::nats::parser::{parse_line, ClientMsg};
 use crate::nats::router::Router;
 
 const INFO: &str =
-    "INFO {\"server_name\":\"pgck\",\"version\":\"0.3.4\",\"max_payload\":1048576}\r\n";
+    "INFO {\"server_name\":\"pgck\",\"version\":\"0.3.5\",\"max_payload\":1048576}\r\n";
 const MAX_PAYLOAD: usize = 1024 * 1024;
 
 #[derive(Clone, Debug)]
@@ -178,7 +178,7 @@ mod tests {
         let info = read_line(&mut reader).await;
         assert!(info.starts_with("INFO "));
         assert!(info.contains("\"server_name\":\"pgck\""));
-        assert!(info.contains("\"version\":\"0.3.4\""));
+        assert!(info.contains("\"version\":\"0.3.5\""));
         assert!(info.contains(&format!("\"max_payload\":{}", super::MAX_PAYLOAD)));
 
         writer.write_all(b"PING\r\n").await.unwrap();

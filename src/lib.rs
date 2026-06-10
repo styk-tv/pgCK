@@ -171,6 +171,15 @@ extension_sql_file!(
     requires = ["pgck_trackc_plans"]
 );
 
+// CKP v3.9 Track E (the enumerable typed read surface). CI-E-5 adds instance.query;
+// CI-E-4/E-3/E-2 accrete here. Requires the governance plane (concept.match is sealed
+// via proposal/apply at CI-E-2).
+extension_sql_file!(
+    "../sql/pgck--0.3.4--0.3.5.sql",
+    name = "pgck_tracke_reads",
+    requires = ["pgck_trackd_governance"]
+);
+
 /// Registered at load time (shared_preload_libraries = 'pgck').
 /// Spawns the pgCK background worker.
 #[pg_guard]
@@ -224,14 +233,14 @@ pub extern "C-unwind" fn pgck_bridge_main(_arg: pg_sys::Datum) {
 /// `SELECT pgck_version();`
 #[pg_extern]
 fn pgck_version() -> &'static str {
-    "pgck 0.3.4 (rc3)"
+    "pgck 0.3.5 (rc3)"
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
     fn version_present() {
-        assert_eq!(crate::pgck_version(), "pgck 0.3.4 (rc3)");
+        assert_eq!(crate::pgck_version(), "pgck 0.3.5 (rc3)");
     }
 }
 

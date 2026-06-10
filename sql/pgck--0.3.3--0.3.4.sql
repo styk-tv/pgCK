@@ -258,13 +258,14 @@ LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = ckp, public, pg_temp
 AS $stage$
 DECLARE
-  v_scratch   int := 1200000000 + pg_backend_pid();
+  v_iri       text := 'urn:ckp:stage:'||pg_backend_pid();
+  v_scratch   int;
   v_quads     bigint;
   v_forbidden jsonb;
 BEGIN
   -- 1. STAGE — parse the caller's TTL via the engine into a scratch graph. Never concatenated
   --    into SQL; a malformed payload fails in the parser, not in our code.
-  PERFORM pgrdf.add_graph(v_scratch, format('urn:ckp:stage:%s', v_scratch));
+  v_scratch := pgrdf.add_graph(v_iri);   -- get-or-create BY IRI (stable id; no fixed-id collision)
   PERFORM pgrdf.clear_graph(v_scratch);
   BEGIN
     v_quads := pgrdf.parse_turtle(p_ttl, v_scratch, 'urn:ckp:stage#');
@@ -278,12 +279,12 @@ BEGIN
   --    fence violation. The caller may EXTEND the type ontology, never inject data.
   SELECT jsonb_agg(DISTINCT j->>'p') INTO v_forbidden
   FROM pgrdf.sparql(format($q$
-    SELECT ?p WHERE { GRAPH <urn:ckp:stage:%s> { ?s ?p ?o }
+    SELECT ?p WHERE { GRAPH <%s> { ?s ?p ?o }
       FILTER( !STRSTARTS(STR(?p), "http://www.w3.org/1999/02/22-rdf-syntax-ns#")
            && !STRSTARTS(STR(?p), "http://www.w3.org/2000/01/rdf-schema#")
            && !STRSTARTS(STR(?p), "http://www.w3.org/2002/07/owl#")
            && !STRSTARTS(STR(?p), "http://www.w3.org/ns/shacl#") ) }
-  $q$, v_scratch)) j;
+  $q$, v_iri)) j;
 
   PERFORM pgrdf.clear_graph(v_scratch);
 

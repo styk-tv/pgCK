@@ -2,6 +2,44 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.0 - 2026-06-10
+
+**CKP v3.9 "Critical Isolation" — ENFORCED.** The epoch is complete. An enumerable, typed read surface
+closes the three-ring architecture: every read is typed + bounded, no caller SQL/SPARQL expression
+position is reachable, and the entity-linking hot loop runs end-to-end with **no participant ever holding
+more than `EXECUTE ckp.dispatch`**.
+
+### Added — CKP v3.9 Track E (the typed read surface)
+
+- **CI-E-5 — `instance.query`.** Typed query: closed operator enum, declared-property keys, bounded
+  limit/offset; compiled from fixed per-operator templates (quote_literal values + enum operators, numeric
+  guards). test `s29`.
+- **CI-E-4 — `instance.reach`.** Bounded transitive traversal; `via` is a registry-checked predicate IRI
+  (never parsed); `+` only; depth capped at `pgrdf.path_max_depth`. test `s30`.
+- **CI-E-3 — `instance.transition` + authz'd snapshot.** `to_state` gated against the sealed transition
+  map; `instance.snapshot` under a per-requester grant (closes F-E). test `s31`.
+- **CI-E-2 — `concept.match` + `instance.explain`.** A sealed label-search exposed under a verb (callers
+  bind the term only); `instance.explain` reports direct-vs-inferred via the engine `is_inferred` column
+  (full derivation chain deferred — engine ask #1). test `s32`.
+- **CI-E-1 — Track E flip / v0.4.0.** The hot loop runs end-to-end as `ck_participant` (propose → vote →
+  apply → create → verify); the floor holds. test `s33`. Also: `stage_ttl` now get-or-creates its scratch
+  graph by IRI (no fixed-graph-id collision across runs).
+
+### The epoch (v0.3.0 → v0.4.0)
+
+| Release | Track | Lands |
+|---|---|---|
+| `v0.3.0` | A | the Postgres role floor — `ckp.dispatch` is the only door |
+| `v0.3.2` | B | the sealed registry as routing authority |
+| `v0.3.3` | C | apply-time plan compiler + epoch invalidation (F-H gone) |
+| `v0.3.4` | D | the governance type plane (propose → quorum → apply; fenced raw_ttl) |
+| **`v0.4.0`** | **E** | **the enumerable typed read surface — Critical Isolation enforced** |
+
+### Verification
+
+Smoke `s4` + `s9` + `s11–s33` green. The entity-linking hot loop, the three governance verbs, the four
+typed reads, and the role floor all proven through the single floored `ckp.dispatch` door.
+
 ## v0.3.4 - 2026-06-10
 
 **CKP v3.9 Track D "The governance type plane"** — a SHACL-shape / type change lands ONLY via a sealed
