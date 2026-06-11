@@ -12,7 +12,9 @@
    - **Total closed:** M / T (= X%) — running count across every release since the roadmap was opened
    - **Total tasks:** T — current size of the per-track countdown (changes only when the roadmap is amended; deletions or additions must be called out)
 
-   Source of truth: `_WIP/SPEC.pgCK.ROADMAP.v0.2-devel.md` (or its successor). Counts are sanity-checked against the per-track tables; the user should never have to open the roadmap to see where things stand.
+   Source of truth: the local-only per-track roadmap (kept outside the public repo surface). Counts are sanity-checked against the per-track tables; the user should never have to open the roadmap to see where things stand.
+
+7. **Every release MUST update `CHANGELOG.md`** (modeled on CK.Lib.Js PROVENANCE §5). Add a new top entry for the version that states two things concretely: **what changed** — the shipped surface in plain terms — and **what tests passed** (e.g. `smoke s4 / s9 / s11–s33 green`, both arches attestation-verified). The CHANGELOG is the human-readable half of provenance; the attestation is the cryptographic half — a release is not complete until both exist. `CHANGELOG.md` is hand-maintained and authoritative for narrative: never auto-generated, never scrubbed of history. It is the record of what was actually done.
 
 Everything else in this document explains how those rules are enforced.
 
@@ -30,7 +32,7 @@ Every artifact this repo publishes — the pgCK extension OCI artifacts and the 
 
 | Surface | Build / push performed by | Provenance |
 |---|---|---|
-| `ghcr.io/styk-tv/pgck:<ver>-pg<PG>-<arch>` (extension OCI artifact) | `release` workflow on `v*` tag push | [SLSA Build Provenance v1](https://slsa.dev/spec/v1.0/provenance) via [`actions/attest-build-provenance@v1`](https://github.com/actions/attest-build-provenance), pushed as an OCI referrer |
+| `ghcr.io/styk-tv/pgck:<ver>-pg<PG>-<arch>` (extension OCI artifact) | `release` workflow on `v*` tag push | [SLSA Build Provenance v1](https://slsa.dev/spec/v1.0/provenance) via [`actions/attest-build-provenance@v2`](https://github.com/actions/attest-build-provenance), pushed as an OCI referrer |
 | `ghcr.io/styk-tv/pgck-web:<ver>-<arch>` (FastAPI image) | `Publish pgck-web OCI Layer` workflow on `pgck-web/v*` tag push | SLSA Build Provenance v1, same flow |
 | `https://github.com/styk-tv/pgCK/releases/tag/v<ver>` (tarballs) | `release` workflow's final job | Tarballs are repackaged from the pgrx build output of the same workflow run that attested the OCI artifact |
 | `LATEST.md` at the repo root | `update-latest-md` workflow on successful `workflow_run` of the above two | Refuses to advance unless `gh attestation verify` accepts every digest it's about to publish |
@@ -41,7 +43,7 @@ If `gh attestation verify` rejects an artifact, `LATEST.md` stays where it was. 
 
 ```sh
 # Extension OCI artifact (oras-pulled)
-gh attestation verify oci://ghcr.io/styk-tv/pgck:0.1.7-pg17-amd64 \
+gh attestation verify oci://ghcr.io/styk-tv/pgck:0.4.1-pg17-amd64 \
   --repo styk-tv/pgCK
 
 # pgck-web docker image
@@ -58,7 +60,8 @@ A successful verify means:
 
 ## Cutting a release (the only allowed flow)
 
-1. Bump versions:
+1. Bump versions + log the change:
+   - `CHANGELOG.md` — add a new top entry: **what changed** + **what tests passed** (Rule 7)
    - `Cargo.toml::package.version`
    - `pgck.control::default_version`
    - `src/lib.rs::pgck_version()` return literal + its test assertion
@@ -96,6 +99,6 @@ The repo's `.gitignore` keeps OCI credentials out of the tree, and the release J
 ## Audit trail
 
 - Workflow source: `.github/workflows/{release,publish-pgck-web,update-latest-md}.yml`
-- Attestation generator: `actions/attest-build-provenance@v1` (Sigstore-backed)
+- Attestation generator: `actions/attest-build-provenance@v2` (Sigstore-backed)
 - Verifier: `gh attestation verify` (built into `gh` 2.49+)
 - Renderer: `tools/render-latest-md.py`

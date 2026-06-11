@@ -43,9 +43,10 @@ pgCK is invoked through the **ordinary PostgreSQL wire protocol** — any client
 
 ## Status
 
-- ✅ **Governed write path works today** (PL/pgSQL, ships as the extension's bootstrap SQL): `ckp.bootstrap_kernel` / `ckp.validate` / `ckp.seal` / `ckp.verify`. Validate → instance → HMAC-authenticated ledger → verifiable proof, atomic, each protocol op SHACL-validated against the **core** ontology or it aborts. Governance is built into the core; no separate governance kernel.
-- ✅ **S3 embedded NATS server lands locally:** the `pgrx` background worker now hosts the raw NATS Core listener on `:4222`, with parser/router/server unit coverage and a compose-level `smoke-s3` round-trip gate.
-- 🔨 **Next Rust focus:** wire the governed SPI dispatch bridge, WSS client, affordance compile loop (`ckp.subscribe` / `ckp.publish` / `ckp.recompile_affordances`), and the CK-graph change trigger that reroutes live.
+- ✅ **Governed write path** (PL/pgSQL, ships as the extension's bootstrap SQL): `ckp.bootstrap_kernel` / `ckp.validate` / `ckp.seal` / `ckp.verify`. Validate → instance → HMAC-authenticated ledger → verifiable proof, atomic, each protocol op SHACL-validated against the **core** ontology or it aborts. Governance is built into the core; no separate governance kernel.
+- ✅ **Embedded NATS server:** the `pgrx` background worker hosts the raw NATS Core listener on `:4222`, with parser/router/server unit coverage and a compose-level `smoke-s3` round-trip gate.
+- ✅ **CKP v3.9 Critical Isolation** (`v0.4.1`, attested): one governed door — `ckp.dispatch(verb, payload)` — over a Postgres role floor where the connecting role holds *exactly* `EXECUTE ckp.dispatch` and can reach no table or internal directly. On the floor: a sealed affordance registry as the routing authority, an apply-time plan compiler with epoch invalidation, a governance type plane (propose → vote → apply), and an enumerable typed read surface (`instance.query` / `instance.reach` / `instance.transition` / `instance.snapshot` / `concept.match`). Every read is typed and bounded; no caller SQL/SPARQL expression position is reachable.
+- 🔨 **Next Rust focus:** the gateway→pod NATS-over-WSS client feeding the dispatch door, the outbound reply path, and the CK-graph change trigger that recompiles affordances and reroutes live.
 - ⏭ ed25519 (replace the shipped `hmac+sha256` proof method in `ckp.seal` / `ckp.verify`); `postgres_fdw` → Azure swap (call sites unchanged).
 
 ## Layout
@@ -116,7 +117,7 @@ Verified locally on **2026-05-24** with the `colima` Docker context:
 Runtime bind mounts such as `compose/extensions/`, `compose/dev-certs/`, `ontology/`,
 and `examples/` live on the macOS host under the repo workspace. PostgreSQL data now
 defaults to the named Docker volume `pgdata`, which avoids Colima bind-mount ownership
-failures while keeping the kernel-loading paths host-mounted under `/Users/neoxr/...`.
+failures while keeping the kernel-loading paths host-mounted under the repo workspace.
 Docker image layers, build cache, and named volumes still consume Colima VM disk.
 
 ## VS Code tasks

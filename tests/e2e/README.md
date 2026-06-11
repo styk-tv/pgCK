@@ -9,7 +9,7 @@ End-to-end tests for pgCK web services running over HTTPS via Envoy Gateway at `
 The tests require Envoy TLS termination at `pgck.localhost:443`:
 
 ```bash
-# From nx-cluster-v4/29-localhost-tls-envoy/
+# From $ENVOY_TLS_DIR/
 ./start.sh
 # Envoy listens on 443, routes to:
 #   - pgck-web on 8001 (/api/*, /static/*, /)
@@ -22,7 +22,7 @@ The tests require Envoy TLS termination at `pgck.localhost:443`:
 Self-signed certificates (mkcert) already generated and deployed:
 
 ```bash
-# Location: nx-cluster-v4/29-localhost-tls-envoy/certs/
+# Location: $ENVOY_TLS_DIR/certs/
 ls -la pgck.localhost.pem pgck.localhost-key.pem
 ```
 
@@ -202,7 +202,7 @@ curl http://127.0.0.1:8001/
 ### 3. Check Envoy Logs
 
 ```bash
-tail -f nx-cluster-v4/29-localhost-tls-envoy/logs/envoy.log
+tail -f $ENVOY_TLS_DIR/logs/envoy.log
 ```
 
 ### 4. Check Upstream Health
@@ -226,7 +226,7 @@ DEBUG=pw:api npx playwright test -g "should load" --headed
 Error: Error: write ECONNRESET
 ```
 
-Solution: Ensure certificates are deployed to `29-localhost-tls-envoy/certs/`
+Solution: Ensure certificates are deployed to `$ENVOY_TLS_DIR/certs/`
 
 ### **Web server fails to start**
 
@@ -264,7 +264,7 @@ Solution: Ensure Envoy is running:
 ```bash
 ps aux | grep envoy
 # Restart if needed:
-cd nx-cluster-v4/29-localhost-tls-envoy && ./start.sh
+cd $ENVOY_TLS_DIR && ./start.sh
 ```
 
 ## CI/CD Integration
@@ -283,8 +283,7 @@ In GitHub Actions or similar:
 
 ## References
 
-- **Envoy Config**: `nx-cluster-v4/29-localhost-tls-envoy/envoy.yaml`
-- **Spec**: `_WIP/SPEC.ENVOY.LOCALHOST.v0.2.md`
+- **Envoy Config**: `$ENVOY_TLS_DIR/envoy.yaml` (environment-specific local TLS proxy)
 - **Web Service**: `web/app.py` (FastAPI on port 8001)
 - **Playwright Docs**: https://playwright.dev
 

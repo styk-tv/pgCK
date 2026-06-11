@@ -2,6 +2,15 @@
 
 All notable changes to `pgCK` are logged here.
 
+## Unreleased
+
+Repo hygiene — no extension/behavior change; the full release suite stays green at `v0.4.1` (`smoke s4 / s9 / s11–s33`).
+
+- **docs:** refreshed the README "Status" to the shipped CKP v3.9 Critical Isolation surface (`v0.4.1`) — it had still listed the now-shipped dispatch bridge as "next"; corrected PROVENANCE to `actions/attest-build-provenance@v2` (matching the live workflows); genericized operator + home paths out of public docs.
+- **docs:** moved internal dev/planning material (`docs/DEV.*`, `docs/superpowers/`) into local-only `_WIP/`, per the public-surface policy — they are no longer in the public tree.
+- **process:** PROVENANCE Rule 7 — every release MUST update `CHANGELOG.md` with *what changed* + *what tests passed* (modeled on CK.Lib.Js).
+- **ci:** `cargo fmt` relay-code fix greens the `ci` fmt gate.
+
 ## v0.4.1 - 2026-06-11
 
 **Clean canonical tag for the CKP v3.9 epoch.** Functionally identical to `v0.4.0` (the full Critical
