@@ -120,6 +120,8 @@ BEGIN
     RETURN ckp.concept_match(p_payload) || jsonb_build_object('req', req);
   ELSIF p_verb = 'instance.explain' THEN
     RETURN ckp.explain(p_payload) || jsonb_build_object('req', req);
+  ELSIF p_verb = 'instance.retire' THEN
+    RETURN ckp.retire(p_payload) || jsonb_build_object('req', req);
   END IF;
   v_legacy := ckp.verb_to_legacy(p_verb, p_payload);
 

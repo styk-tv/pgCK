@@ -2,6 +2,21 @@
 
 All notable changes to `pgCK` are logged here.
 
+## Unreleased (on main, targets v0.4.3)
+
+- **`instance.retire` — the retraction seal** (the FINALIZED spec's last unbuilt verb, VISION §2.1):
+  retiring seals a NEW fact (`retired:true` + required reason) — ledger grows, proof verifies, the
+  original facts remain forever in the chain; `already_retired` / `unknown_instance` / `reason_required`
+  typed errors. Registry-seeded, dispatch-routed. Test `s35`.
+- **`ckp.validate_report` scratch graph by IRI** — removed the last fixed-numeric-graph-id pattern
+  (`1100000000+pid`), the same collision class that bit `stage_ttl`; get-or-create by IRI.
+- **web2 → `instance.*`**: all `task.create` / `task.update` / `kernel.create` call sites in `web/`
+  (board, studio, tasks, tutorial, explorer) now dispatch canonical `instance.create` / `instance.update`
+  (payload-key discrimination routes task-vs-kernel). `snapshot.board` intentionally stays during the
+  alias window (`instance.snapshot` is grant-checked). This is pgCK's own side of the alias-retirement
+  clock done.
+- Verification: `smoke-s34` (fresh cluster) + warm suite `s4`–`s35` 25/25 green at `0.4.3`.
+
 ## v0.4.2 - 2026-06-11
 
 **Install-from-zero completeness.** Answers the oci-germination install-cascade report (consumer
