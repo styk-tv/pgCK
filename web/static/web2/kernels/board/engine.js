@@ -90,7 +90,7 @@
     const submit = async () => {
       const t = title.value.trim(); if (!t) return; ok.disabled = true;
       try {
-        const d = await window.CKTransport.call("task.create", { task: { target_kernel: kernel, title: t, priority: r.value, lifecycle_state: life }, sub: who() });
+        const d = await window.CKTransport.call("instance.create", { task: { target_kernel: kernel, title: t, priority: r.value, lifecycle_state: life }, sub: who() });
         if (d && d.ok) { toast("sealed · " + (d.proof_digest || "").slice(0, 10) + "…"); composing = null; }
         else toast("rejected: " + ((d && d.error) || "?"));
       } catch (e) { toast("seal pending — inbound dispatch not yet answering"); composing = null; render(); }
@@ -108,14 +108,14 @@
     // optimistic local update so the board is responsive immediately
     t.state = to; render();
     try {
-      const d = await window.CKTransport.call("task.update", { id: t.id, lifecycle_state: to });
+      const d = await window.CKTransport.call("instance.update", { id: t.id, lifecycle_state: to });
       if (d && d.ok) toast("updated · " + ((d.proof_digest || "").slice(0, 8)) + "…");
     } catch (e) { /* local optimistic stands; re-seal will reconcile when inbound lands */ }
   }
 
   async function addKernelPrompt() {
     const name = prompt("New concept kernel name"); if (!name || !name.trim()) return;
-    try { const d = await window.CKTransport.call("kernel.create", { name: name.trim() }); if (d && d.ok) toast("kernel · " + name.trim()); }
+    try { const d = await window.CKTransport.call("instance.create", { name: name.trim() }); if (d && d.ok) toast("kernel · " + name.trim()); }
     catch (e) { toast("kernel create pending — inbound dispatch not yet answering"); }
   }
 

@@ -167,7 +167,7 @@
       e.target.disabled = true; show("o-good", "…sealing…");
       const task = goodTask();
       try {
-        const d = await call("task.create", { task });
+        const d = await call("instance.create", { task });
         lastGoodId = d.id || task.task_id;
         show("o-good", d.ok
           ? `✓ sealed  ${d.id}\n  proof_digest: ${d.proof_digest}\n  verified: ${d.verified}`
@@ -180,7 +180,7 @@
       e.target.disabled = true; show("o-bad", "…sealing (no part_of_goal)…");
       const task = goodTask(); delete task.part_of_goal;
       try {
-        const d = await call("task.create", { task });
+        const d = await call("instance.create", { task });
         show("o-bad", d.ok
           ? `(unexpected) sealed ${d.id}`
           : `✗ rejected by the gate — nothing written:\n  ${d.error}`, !d.ok);

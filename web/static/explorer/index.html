@@ -122,7 +122,7 @@ function renderLeft(){const L=$("#left");L.innerHTML="";
   // inline quick-add (no native popup)
   const add=el("div","add");const inp=el("input");inp.placeholder="new concept kernel name";
   const b=el("button","btn");b.textContent="add";
-  const go=async()=>{const n=inp.value.trim();if(!n)return;b.disabled=true;try{const d=await call("kernel.create",{name:n});if(d.ok){toast("kernel · "+n);inp.value="";await loadKernels();}else toast(d.error);}catch(e){toast(e.message);}b.disabled=false;};
+  const go=async()=>{const n=inp.value.trim();if(!n)return;b.disabled=true;try{const d=await call("instance.create",{name:n});if(d.ok){toast("kernel · "+n);inp.value="";await loadKernels();}else toast(d.error);}catch(e){toast(e.message);}b.disabled=false;};
   b.onclick=go;inp.onkeydown=e=>{if(e.key==="Enter")go();};add.append(inp,b);L.append(add);
   // filter
   const f=el("input","filter");f.placeholder="filter kernels…";f.value=state.filter;f.oninput=()=>{state.filter=f.value;renderList();};L.append(f);

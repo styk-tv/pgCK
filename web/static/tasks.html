@@ -138,7 +138,7 @@ function composer(kernel){const c=el("div","composer");
   LIFE.forEach(s=>{const b=el("button",(s===life?"on "+s:""));b.textContent=s==="in_progress"?"doing":s;b.onclick=()=>{life=s;[...seg.children].forEach((x,i)=>x.className=(LIFE[i]===s?"on "+s:""));};seg.append(b);});
   const go=el("div","go");const ok=el("button","btn p");ok.textContent="seal →";const no=el("button","btn g");no.textContent="cancel";
   const submit=async()=>{const t=title.value.trim();if(!t)return;ok.disabled=true;
-    try{const d=await call("task.create",{task:{target_kernel:kernel,title:t,priority:r.value,lifecycle_state:life},sub:who()});
+    try{const d=await call("instance.create",{task:{target_kernel:kernel,title:t,priority:r.value,lifecycle_state:life},sub:who()});
       if(d.ok){toast("sealed · "+d.proof_digest.slice(0,10)+"…");state.composing=null;await snapshot();}else toast("rejected: "+d.error);}
     catch(e){toast(e.message);}ok.disabled=false;};
   ok.onclick=submit;title.onkeydown=e=>{if(e.key==="Enter")submit();if(e.key==="Escape"){state.composing=null;render();}};
@@ -155,8 +155,8 @@ function card(t){const c=el("div","card");c.onclick=e=>{if(e.target.closest(".se
   const pf=el("span","proof"+(t.verified?"":" no"));pf.textContent=t.verified?("✓ "+(t.proof_digest||"").slice(0,7)):"unverified";
   m.append(seg,pri,pf);c.append(ti,m);return c;}
 
-async function cycle(t,to){try{const d=await call("task.update",{id:t.id,lifecycle_state:to});if(d.ok){toast("updated · "+(d.proof_digest||"").slice(0,8)+"…");await snapshot();}else toast(d.error);}catch(e){toast(e.message);}}
-async function addKernel(name){try{const d=await call("kernel.create",{name});if(d.ok){toast("kernel · "+name);await snapshot();}else toast(d.error);}catch(e){toast(e.message);}}
+async function cycle(t,to){try{const d=await call("instance.update",{id:t.id,lifecycle_state:to});if(d.ok){toast("updated · "+(d.proof_digest||"").slice(0,8)+"…");await snapshot();}else toast(d.error);}catch(e){toast(e.message);}}
+async function addKernel(name){try{const d=await call("instance.create",{name});if(d.ok){toast("kernel · "+name);await snapshot();}else toast(d.error);}catch(e){toast(e.message);}}
 async function upgrade(){const name=prompt("Upgrade identity — your name");if(!name||!name.trim())return;
   try{const d=await call("participant.join",{name:name.trim()});if(d.ok){state.sub=d.sub;state.urn=d.urn;renderId();toast("you are "+d.urn);}}catch(e){toast(e.message);}}
 

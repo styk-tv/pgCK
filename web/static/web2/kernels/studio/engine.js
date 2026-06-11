@@ -159,15 +159,15 @@
     const edges = [tk && `<div class="fedge"><span class="ep">target_kernel</span> → <span class="en">${esc(tk)}</span></div>`, goal && `<div class="fedge"><span class="ep">part_of_goal</span> → <span class="en">${esc(local(goal))}</span></div>`].filter(Boolean).join("") || `<div class="pnote">no outbound edges</div>`;
     const preds = Object.entries(t.body || {}).map(([k, v]) => `<div class="fpred"><span class="pk">${esc(local(k))}</span><span class="pv">${esc(String(v))}</span></div>`).join("");
     const worker = WORKERED.test(selKernel);
-    const acts = ["task.update", "task.create", "provenance"].map((a) => `<button class="fact">${a}</button>`).join("") + `<div class="pnote" style="margin-top:6px">${worker ? "external worker — NATS round-trip to trusted execution (SPIFFE node · workflow attestation)" : "pure-semantic kernel — no external worker"}</div>`;
+    const acts = ["instance.update", "instance.create", "provenance"].map((a) => `<button class="fact">${a}</button>`).join("") + `<div class="pnote" style="margin-top:6px">${worker ? "external worker — NATS round-trip to trusted execution (SPIFFE node · workflow attestation)" : "pure-semantic kernel — no external worker"}</div>`;
     const proofs = (t.proof_digest ? `<div class="fpred"><span class="pk">proof</span><span class="pv">${String(t.proof_digest).slice(0, 28)}…</span></div>` : "") + `<div class="fpred"><span class="pk">verified</span><span class="pv">${t.verified ? "✓ true (HMAC chain)" : "✗"}</span></div>` + `<div id="st-ledger" class="pnote">loading ledger…</div>`;
     F.innerHTML = sec("hub", "edges", edges) + sec("data_object", "predicates", preds) + sec("bolt", "actions", acts) + sec("verified_user", "proofs", proofs);
     loadLedger(t.id);
   }
   async function loadLedger(id) { try { const d = await window.CKTransport.call("provenance", { id }); const el = host.querySelector("#st-ledger"); if (!el) return; if (d && d.ok && (d.ledger || []).length) { el.className = "fledger"; el.innerHTML = d.ledger.map((r) => `<div class="lrow"><span>#${r.seq}${r.prev_seq ? " ← " + r.prev_seq : ""}</span><span>${(r.body_sha256 || "").slice(0, 14)}…</span></div>`).join(""); } else el.textContent = "no ledger rows"; } catch (e) { const el = host.querySelector("#st-ledger"); if (el) el.textContent = "ledger unavailable"; } }
 
-  async function updateLifecycle(to) { if (!selInstance) return; selInstance.state = to; renderParams(); renderHeader(); feedCanvas(); try { await window.CKTransport.call("task.update", { id: selInstance.id, lifecycle_state: to }); } catch (e) { } }
-  async function updatePriority(p) { if (!selInstance) return; selInstance.body[N + "priority"] = String(p); try { await window.CKTransport.call("task.update", { id: selInstance.id, priority: p }); } catch (e) { } renderInstances(); feedCanvas(); }
+  async function updateLifecycle(to) { if (!selInstance) return; selInstance.state = to; renderParams(); renderHeader(); feedCanvas(); try { await window.CKTransport.call("instance.update", { id: selInstance.id, lifecycle_state: to }); } catch (e) { } }
+  async function updatePriority(p) { if (!selInstance) return; selInstance.body[N + "priority"] = String(p); try { await window.CKTransport.call("instance.update", { id: selInstance.id, priority: p }); } catch (e) { } renderInstances(); feedCanvas(); }
 
   const local = (v) => String(v || "").replace(/^.*[#/]/, "");
   const esc = (s) => String(s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
