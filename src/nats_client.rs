@@ -183,7 +183,11 @@ fn run_relay_thread(url: String) {
             };
             // Preserve headers (Ck-Seq etc.) if present; pure fan-out otherwise.
             let publish = match msg.headers {
-                Some(h) => client.publish_with_headers(out.clone(), h, msg.payload).await,
+                Some(h) => {
+                    client
+                        .publish_with_headers(out.clone(), h, msg.payload)
+                        .await
+                }
                 None => client.publish(out.clone(), msg.payload).await,
             };
             if let Err(e) = publish {
