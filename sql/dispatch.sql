@@ -188,7 +188,7 @@ BEGIN
         v_body := jsonb_build_object('type', N||'Task', '@id', 'ckp://Task#'||tid, N||'task_id', tid,
           N||'title', t->>'title', N||'part_of_goal', 'backlog:'||k, N||'target_kernel', k,
           N||'lifecycle_state', COALESCE(t->>'lifecycle_state','planned'),
-          N||'priority', COALESCE(t->>'priority','5'), N||'queue_seq', qseq::text,
+          N||'priority', COALESCE(t->'priority','5'::jsonb), N||'queue_seq', to_jsonb(qseq),
           N||'created_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'));
         IF sub IS NOT NULL THEN
           v_body := v_body || jsonb_build_object(N||'created_by','urn:ckp:participant:'||ckp._slug(sub),
@@ -202,14 +202,22 @@ BEGIN
     END;
 
   WHEN 'task.update' THEN
-    DECLARE tid text := p_payload->>'id'; cur jsonb;
+    DECLARE tid text := p_payload->>'id'; cur jsonb; v_fld text;
     BEGIN
       SELECT body INTO cur FROM ckp.instances WHERE id=tid;
       IF cur IS NULL THEN res := jsonb_build_object('ok',false,'error','instance not found');
       ELSE
         cur := cur - 'participant';
-        IF p_payload ? 'lifecycle_state' THEN cur := cur || jsonb_build_object(N||'lifecycle_state', p_payload->>'lifecycle_state'); END IF;
-        IF p_payload ? 'priority' THEN cur := cur || jsonb_build_object(N||'priority', p_payload->>'priority'); END IF;
+        -- Apply EVERY patchable task field the caller sent (closed allow-list = the task
+        -- model's mutable properties; never arbitrary keys), preserving JSON type with ->
+        -- not ->> so a number stays a number end-to-end. Pre-0.4.3 this hardcoded only
+        -- lifecycle_state + priority — it silently dropped title (CK.Lib.Js report 2.1) and
+        -- ->> coerced priority 1 → "1" (report 2.2).
+        FOREACH v_fld IN ARRAY ARRAY['title','priority','lifecycle_state','part_of_goal','target_kernel'] LOOP
+          IF p_payload ? v_fld THEN
+            cur := cur || jsonb_build_object(N||v_fld, p_payload->v_fld);
+          END IF;
+        END LOOP;
         PERFORM ckp.seal(tid, cur);
         res := jsonb_build_object('ok',true,'id',tid,'verified',ckp.verify(tid),
           'proof_digest',(SELECT digest FROM ckp.proof WHERE about=tid ORDER BY id DESC LIMIT 1));
@@ -229,8 +237,8 @@ BEGIN
                   'target_kernel', i.body->>(N||'target_kernel'),
                   'part_of_goal', i.body->>(N||'part_of_goal'),
                   'lifecycle_state', i.body->>(N||'lifecycle_state'),
-                  'priority', i.body->>(N||'priority'),
-                  'queue_seq', i.body->>(N||'queue_seq'),
+                  'priority', i.body->(N||'priority'),
+                  'queue_seq', i.body->(N||'queue_seq'),
                   'created_by', i.body->>(N||'created_by'),
                   'proof_digest', (SELECT p.digest FROM ckp.proof p WHERE p.about = i.id ORDER BY p.id DESC LIMIT 1),
                   'verified', ckp.verify(i.id))

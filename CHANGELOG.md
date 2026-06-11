@@ -4,6 +4,14 @@ All notable changes to `pgCK` are logged here.
 
 ## Unreleased (on main, targets v0.4.3)
 
+- **`instance.update` fixes** (CK.Lib.Js bug report `instance-update-patch-gaps`): the `task.update`
+  handler was a hardcoded two-field allow-list (`lifecycle_state` + `priority`) that **silently dropped
+  any other patched field** including `title` (their 2.1), and stored via `->>` so a numeric `priority:1`
+  became the string `"1"` (their 2.2). Now applies the full closed task-field patch (title / priority /
+  lifecycle_state / part_of_goal / target_kernel) **preserving JSON type** (`->`), and `task.create` +
+  the `snapshot.board` projection preserve number types end-to-end too (a string priority from a
+  string-sending client is likewise preserved as a string — true type fidelity, no SHACL datatype is
+  pinned on these fields). Test `s36`. Their 2.3 (identity-per-session) noted for the F-A design.
 - **`instance.retire` — the retraction seal** (the FINALIZED spec's last unbuilt verb, VISION §2.1):
   retiring seals a NEW fact (`retired:true` + required reason) — ledger grows, proof verifies, the
   original facts remain forever in the chain; `already_retired` / `unknown_instance` / `reason_required`
