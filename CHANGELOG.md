@@ -2,6 +2,20 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.1 - 2026-06-11
+
+**Clean canonical tag for the CKP v3.9 epoch.** Functionally identical to `v0.4.0` (the full Critical
+Isolation surface, Tracks A–E) — re-released under a fresh, never-before-used tag because `v0.4.0`'s tag
+carried a failed first build (a version/tag mismatch) before its successful re-cut. **Tag hygiene rule:
+a tag that ever meant a broken build is burned and never reused; the next attempt takes the next number.**
+Also folds in the `cargo fmt` relay-code fix (greens the `ci` fmt gate; `RELAY_OUT_PREFIX`/`async_nats::`
+markers preserved). **Pin `v0.4.1`.**
+
+### Verification
+
+Smoke `s4` + `s9` + `s11–s33` green at `0.4.0` content; the version bump to `0.4.1` is a clean relabel
+(no SQL change). Attestation confirmed before this entry was finalized.
+
 ## v0.4.0 - 2026-06-10
 
 **CKP v3.9 "Critical Isolation" — ENFORCED.** The epoch is complete. An enumerable, typed read surface
