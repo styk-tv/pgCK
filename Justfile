@@ -127,6 +127,13 @@ smoke-nats-wss: nats-wss-up
       -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
       "https://127.0.0.1:${NATS_WSS_PORT:-8443}/" | grep -q '101 Switching Protocols'
 
+# s34 — install-from-zero gate: a virgin cluster + CREATE EXTENSION pgck CASCADE must yield
+# a working governed dispatch as a REAL ck_participant login, zero manual steps, floor intact
+# (answers oci-germination's install-cascade NOTIFY). Separate from smoke-s4 by design:
+# s4..s33 run against the warm compose volume; s34 proves the from-zero consumer journey.
+smoke-s34:
+    DOCKER_CONTEXT={{docker_context}} bash scripts/smoke-s34-fresh-install.sh
+
 browser-demo-test:
     pytest -q tests/test_web.py
 

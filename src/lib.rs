@@ -180,6 +180,17 @@ extension_sql_file!(
     requires = ["pgck_trackd_governance"]
 );
 
+// Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
+// NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
+// floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
+// exactly the dispatch door(s). MUST remain the LAST sql include — its closing floor
+// pass covers everything earlier files created. Gate: scripts/smoke-s34-fresh-install.sh.
+extension_sql_file!(
+    "../sql/pgck--0.4.1--0.4.2.sql",
+    name = "pgck_install_completeness",
+    requires = ["pgck_tracke_reads"]
+);
+
 /// Registered at load time (shared_preload_libraries = 'pgck').
 /// Spawns the pgCK background worker.
 #[pg_guard]
@@ -233,14 +244,14 @@ pub extern "C-unwind" fn pgck_bridge_main(_arg: pg_sys::Datum) {
 /// `SELECT pgck_version();`
 #[pg_extern]
 fn pgck_version() -> &'static str {
-    "pgck 0.4.1 (rc3)"
+    "pgck 0.4.2 (rc3)"
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
     fn version_present() {
-        assert_eq!(crate::pgck_version(), "pgck 0.4.1 (rc3)");
+        assert_eq!(crate::pgck_version(), "pgck 0.4.2 (rc3)");
     }
 }
 

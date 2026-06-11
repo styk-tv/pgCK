@@ -2,14 +2,55 @@
 
 All notable changes to `pgCK` are logged here.
 
-## Unreleased
+## v0.4.2 - 2026-06-11
 
-Repo hygiene — no extension/behavior change; the full release suite stays green at `v0.4.1` (`smoke s4 / s9 / s11–s33`).
+**Install-from-zero completeness.** Answers the oci-germination install-cascade report (consumer
+`ociger-ck-allinone` v0.7.14): on a **virgin cluster**, `CREATE EXTENSION pgck CASCADE` now yields a
+working governed dispatch for a real `ck_participant` login with **zero manual steps** — previously the
+seal-path tables, their ownership, the pgrdf floor grants, the ontology fixtures, and a hard-raising
+self-test each demanded an undocumented consumer workaround. No new verbs; the v3.9 surface is unchanged.
 
-- **docs:** refreshed the README "Status" to the shipped CKP v3.9 Critical Isolation surface (`v0.4.1`) — it had still listed the now-shipped dispatch bridge as "next"; corrected PROVENANCE to `actions/attest-build-provenance@v2` (matching the live workflows); genericized operator + home paths out of public docs.
-- **docs:** moved internal dev/planning material (`docs/DEV.*`, `docs/superpowers/`) into local-only `_WIP/`, per the public-surface policy — they are no longer in the public tree.
-- **process:** PROVENANCE Rule 7 — every release MUST update `CHANGELOG.md` with *what changed* + *what tests passed* (modeled on CK.Lib.Js).
-- **ci:** `cargo fmt` relay-code fix greens the `ci` fmt gate.
+### Fixed — the 5-step install cascade
+
+- **Tables at install (asks 1+2):** `ckp.{instances,ledger,proof,outbox}` (+ index + outbox trigger) are
+  created as top-level DDL in the install script, owned by `ck_substrate` from birth, and flagged
+  `pg_extension_config_dump` so seal data survives `pg_dump`. `ckp.bootstrap_kernel()` remains
+  (idempotent) for legacy callers — but is no longer required before dispatch works.
+- **Virgin-DB seal path:** `ckp.shapes_self_test` no longer RAISEs when a project's board graph was never
+  imported — an undeclared ontology is *valid silence* (VISION §2.1); the self-test arms itself the
+  moment `ckp.import_module()` lands shapes, and the stale-mount assert is preserved verbatim for
+  present graphs. This was the root cause that forced every consumer into the fixture hunt.
+- **Ontology fixtures shipped (ask 3):** release artifacts (tarball + OCI) now include `ontology/*.ttl`;
+  mount or copy the artifact's `ontology/` at `/ontology` (the documented default for `ckp.boot()` /
+  `ckp.import_module()`), exactly like `lib/` + `share/`.
+- **pgrdf floor re-assert (ask 4):** the migration re-grants + re-owns pgrdf storage to `ck_substrate`
+  idempotently, LAST in the install script. `ck_participant` gets **nothing** on pgrdf — consumers who
+  granted it as a workaround should revoke it (it breaches the v3.9 floor).
+- **Closing floor pass (ask 5):** every `ckp` function is uniformly `SECURITY DEFINER`, owned by
+  `ck_substrate`, `search_path`-pinned; procedures owner+path-pinned (kept INVOKER for `pg_read_file`);
+  `ck_participant` re-pinned to exactly schema USAGE + EXECUTE on the dispatch door(s).
+
+### Added
+
+- **`smoke-s34` — the install-from-zero gate** (`scripts/smoke-s34-fresh-install.sh`): a throwaway
+  virgin postgres-17 cluster + artifact mounts → `CREATE EXTENSION` → governed dispatch as a real
+  `ck_participant` login → `ok:true`; boot + module import from the shipped `/ontology` layout; floor
+  holds (participant reaches no table, no pgrdf). This is the consumer journey the warm-volume suite
+  (`s4`–`s33`) structurally could not see.
+
+### Docs / process (shipped with this tag)
+
+- README "Status" refreshed to the shipped CKP v3.9 surface; PROVENANCE corrected to
+  `attest-build-provenance@v2`; operator/home paths genericized; internal dev/planning docs moved to
+  local-only `_WIP/`; `RELEASE_NOTES` redirected to this changelog as the single log.
+- **PROVENANCE Rule 7:** every release MUST update `CHANGELOG.md` with *what changed* + *what tests
+  passed*.
+- `cargo fmt` relay-code fix (greens the `ci` fmt gate).
+
+### Verification
+
+`smoke-s34` (fresh cluster, zero manual steps, floor intact) + full warm suite `s4` / `s9` / `s11–s33`
+green; both arches attestation-verified before `LATEST.md` advanced.
 
 ## v0.4.1 - 2026-06-11
 
