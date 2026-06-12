@@ -139,6 +139,11 @@ BEGIN
         AND (p_payload ? 'type')
         AND NOT (p_payload ? 'task') THEN
     RETURN ckp.create_typed(p_payload) || jsonb_build_object('req', req);
+  -- Tier 2 / v0.5 T4: generic typed update. instance.update with a `patch` sub-object patches
+  -- by the type's declared properties (re-sealed); the legacy flat {id,…fields} form falls
+  -- through to verb_to_legacy -> task.update.
+  ELSIF p_verb = 'instance.update' AND (p_payload ? 'patch') THEN
+    RETURN ckp.update_typed(p_payload) || jsonb_build_object('req', req);
   END IF;
   v_legacy := ckp.verb_to_legacy(p_verb, p_payload);
 

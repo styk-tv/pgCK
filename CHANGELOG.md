@@ -2,6 +2,22 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.11 - 2026-06-12
+
+**v0.5 roadmap T4 — generic per-declared-shape `instance.update` patch.** The write-side mirror of
+`ckp.create_typed`.
+
+- **`ckp.update_typed`**: `instance.update {id, patch:{…}}` patches an instance by the type's **declared**
+  properties — a short key resolves to its declared property IRI; for a shaped type an **undeclared key is
+  rejected** (`undeclared_patch_key`); unshaped types namespace under the type's namespace. The patch is
+  merged into the current body (type-preserving — numbers stay numbers) and **re-sealed**, so the
+  required-props gate re-validates and the proof chain continues.
+- **Dispatch**: `instance.update` with a `patch` sub-object → the generic path; the legacy flat
+  `{id, …fields}` form still routes to `task.update` (back-compat).
+- **Exit test `s45`** — create a Ship `crew_size:12`; patch `crew_size→20` re-seals (number preserved,
+  `name` unchanged, re-verified); patching an undeclared field is rejected; the legacy flat update still
+  works. Warm suite (s4…s45) + s34 fresh-install green.
+
 ## v0.4.10 - 2026-06-12
 
 **v0.5 roadmap T3 — per-kernel sealed transition map.** `instance.transition` moves from one global

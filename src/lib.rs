@@ -257,6 +257,15 @@ extension_sql_file!(
     requires = ["pgck_v049_declared_predicates"]
 );
 
+// v0.4.11: v0.5 roadmap T4 — generic per-declared-shape update patch (ckp.update_typed): the
+// write-side mirror of create_typed. instance.update {id, patch:{…}} patches by the type's declared
+// properties, re-sealed; legacy flat {id,…fields} still routes to task.update. Gate: s45.
+extension_sql_file!(
+    "../sql/pgck--0.4.10--0.4.11.sql",
+    name = "pgck_v0411_update_patch",
+    requires = ["pgck_v0410_transition_map"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -265,7 +274,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v0410_transition_map"]
+    requires = ["pgck_v0411_update_patch"]
 );
 
 /// Registered at load time (shared_preload_libraries = 'pgck').
