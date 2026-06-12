@@ -124,6 +124,16 @@ BEGIN
     RETURN ckp.retire(p_payload) || jsonb_build_object('req', req);
   ELSIF p_verb = 'instance.validate' THEN
     RETURN ckp.validate_instance(p_payload) || jsonb_build_object('req', req);
+  -- Tier 2 (v0.4.4): generic typed create. A uniform {type:<class IRI>, …fields} body
+  -- routes to the §4 generic path, which seals it against the kernel's OWN declared shape.
+  -- The discriminator is a TOP-LEVEL `type`: the legacy concretion forms carry no top-level
+  -- `type` (task.create -> {task:{…}}, kernel.create -> {name:…}). `name` is NOT a usable
+  -- discriminator here — it is a perfectly ordinary property on a generic type — so a `{task}`
+  -- body still wins (the established concretion path) but everything else with a `type` is generic.
+  ELSIF p_verb = 'instance.create'
+        AND (p_payload ? 'type')
+        AND NOT (p_payload ? 'task') THEN
+    RETURN ckp.create_typed(p_payload) || jsonb_build_object('req', req);
   END IF;
   v_legacy := ckp.verb_to_legacy(p_verb, p_payload);
 

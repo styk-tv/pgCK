@@ -188,6 +188,16 @@ extension_sql_file!(
     requires = ["pgck_tracke_reads"]
 );
 
+// v0.4.4: Tier 2 (1/3) — generic typed instance.create (ckp.create_typed). Routes a
+// uniform {type,…fields} body by type against the kernel's declared shape; ckp.seal's
+// required-props gate makes the type real. Routing added in sql/dispatch.sql.
+// Gate: sql/test/s38_generic_typed_create.sql.
+extension_sql_file!(
+    "../sql/pgck--0.4.3--0.4.4.sql",
+    name = "pgck_v044_generic_create",
+    requires = ["pgck_v043_retire"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -196,7 +206,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v043_retire"]
+    requires = ["pgck_v044_generic_create"]
 );
 
 /// Registered at load time (shared_preload_libraries = 'pgck').

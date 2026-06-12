@@ -2,6 +2,28 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.4 - 2026-06-12
+
+**Tier 2 (1/3) — generic typed `instance.create`.** The adoption keystone (oci-germination + the CK.Lib.Js
+wire-contract Q2): `instance.create` now accepts a uniform `{type:<class IRI>, …fields}` body and routes it
+by `type` against the kernel's OWN declared SHACL shape — not only the Task/Goal payload-key concretion.
+
+- **`ckp.create_typed`** maps each caller field to the type's declared property IRIs (read from the kernel
+  graph's `sh:property`/`sh:path`), assembles the instance body, and seals it. The required-props gate is
+  `ckp.seal`'s existing one (against `urn:ckp:<project>/kernel/ck`), so `validate ⟺ seal` now holds for ANY
+  declared type, not just Task/Goal. A bare (non-IRI) `type` is rejected — it could never match a
+  `sh:targetClass`, so a "typed" claim would be vacuous.
+- **Dispatch routing**: a top-level `type` (with no `task` sub-object) selects the generic path; the legacy
+  `{task:{…}}` / `{name:…}` forms still route to `task.create` / `kernel.create` (back-compat during the
+  alias window — `name` is an ordinary property here, not a discriminator).
+- **Exit test `s38`** — an *adopter* models a Ship with a required `crew_size`: a Ship WITH it seals +
+  verifies and carries the declared property IRIs (number types preserved); a Ship MISSING it is REJECTED by
+  the gate; `instance.validate` predicts the same; the legacy `{task}` form still works. Warm suite 28/28
+  (s4…s38) + s34 fresh-install green.
+
+Still Tier 2: governance `apply` mutating the kernel shape (`_graph_apply`), reach edge-materialization,
+governed `concept.match` — plus F-A identity upstream.
+
 ## v0.4.3 - 2026-06-12
 
 **Tier-1 of the CK.Lib.Js v1.5.0 npm-gate punch-list** — three verbs a real client observed broken on
