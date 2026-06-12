@@ -43,11 +43,42 @@ pgCK is invoked through the **ordinary PostgreSQL wire protocol** — any client
 
 ## Status
 
-- ✅ **Governed write path** (PL/pgSQL, ships as the extension's bootstrap SQL): `ckp.bootstrap_kernel` / `ckp.validate` / `ckp.seal` / `ckp.verify`. Validate → instance → HMAC-authenticated ledger → verifiable proof, atomic, each protocol op SHACL-validated against the **core** ontology or it aborts. Governance is built into the core; no separate governance kernel.
-- ✅ **Embedded NATS server:** the `pgrx` background worker hosts the raw NATS Core listener on `:4222`, with parser/router/server unit coverage and a compose-level `smoke-s3` round-trip gate.
-- ✅ **CKP v3.9 Critical Isolation** (`v0.4.1`, attested): one governed door — `ckp.dispatch(verb, payload)` — over a Postgres role floor where the connecting role holds *exactly* `EXECUTE ckp.dispatch` and can reach no table or internal directly. On the floor: a sealed affordance registry as the routing authority, an apply-time plan compiler with epoch invalidation, a governance type plane (propose → vote → apply), and an enumerable typed read surface (`instance.query` / `instance.reach` / `instance.transition` / `instance.snapshot` / `concept.match`). Every read is typed and bounded; no caller SQL/SPARQL expression position is reachable.
-- 🔨 **Next Rust focus:** the gateway→pod NATS-over-WSS client feeding the dispatch door, the outbound reply path, and the CK-graph change trigger that recompiles affordances and reroutes live.
-- ⏭ ed25519 (replace the shipped `hmac+sha256` proof method in `ckp.seal` / `ckp.verify`); `postgres_fdw` → Azure swap (call sites unchanged).
+Every release is multi-arch (`amd64` + `arm64`) with a build-provenance attestation.
+**Current attested release: `v0.4.5`** (`ghcr.io/styk-tv/pgck:0.4.5-pg17-{amd64,arm64}`;
+verify with `gh attestation verify`). The capability boundary, honestly:
+
+**✅ Built + attested**
+
+- **CKP v3.9 Critical Isolation** (`v0.3.0`–`v0.4.1`): one governed door — `ckp.dispatch(verb, payload)` — over a Postgres role floor where the connecting role (`ck_participant`) holds *exactly* `EXECUTE ckp.dispatch` and can reach no table, no `pgrdf.*`, no internal directly. A sealed affordance registry is the routing authority; epoch invalidation clears the plan cache on every kernel change. No caller SQL/SPARQL expression position is reachable.
+- **Governed write + proof** (`ckp.seal` path): validate → instance → HMAC-chained ledger → verifiable proof, atomic; each op SHACL-gated against the kernel graph or it aborts. `instance.verify` re-checks the chain independently; `instance.retire` is a retraction seal.
+- **Install-from-zero** (`v0.4.2`): a fresh `CREATE EXTENSION pgck CASCADE` yields a working governed dispatch for a real `ck_participant` login — tables exist at install, the floor holds, zero manual setup (gate: `smoke-s34`).
+- **Generic typed instances** (`v0.4.5`): `instance.create` accepts a uniform `{type:<class IRI>, …fields}` body and routes it against the kernel's *own declared* SHACL shape — not a hardcoded Task/Goal shape. `validate ⟺ seal` for any declared type.
+- **Governed type evolution** (`v0.4.5`): `kernel.propose_change → vote → apply` actually **mutates the kernel shape** — a quorum-approved `add_property` constrains the very next seal. Consensus changes the type, with a full proof chain from proposal to applied epoch.
+- **Traversable links** (`v0.4.6`): `edge.create` materializes traversable quads, so `instance.reach` follows participant-created links transitively.
+- **Embedded NATS server:** the `pgrx` background worker hosts the raw NATS Core listener on `:4222`, with parser/router/server unit coverage and a compose-level `smoke-s3` round-trip gate.
+
+**🔄 Partial (honest)**
+
+- `instance.query` validates filter keys by regex, not yet the kernel's *derived* QueryShape; `instance.transition` uses one global transition map, not a per-kernel sealed map; `concept.match` is a label search, not the governed query-affordance form; `instance.reach`'s `via` is namespace-gated, not the declared predicate set. Each read stays typed/bounded/injection-safe; what is pending is the *kernel-derived* form.
+
+**⏭ Inherited / next**
+
+- **Identity (F-A):** `instance.snapshot` is grant-gated, but the dispatch boundary does not yet inject a verified caller identity (owned upstream by SPORE-GENESIS); per-session reply routing (F-C) is transport-side.
+- **Next Rust focus:** the gateway→pod NATS-over-WSS client feeding the dispatch door, and the outbound reply path.
+- ed25519 to replace the shipped `hmac+sha256` proof method in `ckp.seal` / `ckp.verify`; `postgres_fdw` → Azure swap (call sites unchanged).
+
+### Try it (from zero)
+
+With `pgrdf` and `pgck` available to the cluster (the compose loop below builds both):
+
+```sql
+CREATE EXTENSION pgck CASCADE;          -- brings pgrdf; tables + floor exist at install
+-- as a ck_participant login (holds only EXECUTE ckp.dispatch):
+SELECT ckp.dispatch('instance.create',
+  '{"type":"urn:ckp:demo/type/Ship","name":"Endeavour","crew_size":12}'::jsonb);
+-- sealed, verifiable, governed by the kernel's declared shape — or rejected if a
+-- required property is missing. Evolve that shape via kernel.propose_change → vote → apply.
+```
 
 ## Layout
 
@@ -111,7 +142,7 @@ Verified locally on **2026-05-24** with the `colima` Docker context:
 - Linux containers in Colima can bind-mount the macOS workspace and write artifacts
   back onto the host path.
 - `compose/builder.Containerfile` builds successfully under Colima.
-- The export image writes `pgck.so`, `pgck.control`, and `pgck--0.1.2.sql` back to
+- The export image writes `pgck.so`, `pgck.control`, and `pgck--<version>.sql` back to
   the mounted host directory on the host filesystem.
 
 Runtime bind mounts such as `compose/extensions/`, `compose/dev-certs/`, `ontology/`,
