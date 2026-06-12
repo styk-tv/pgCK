@@ -2,7 +2,27 @@
 
 All notable changes to `pgCK` are logged here.
 
-## Unreleased (on main, targets v0.4.3)
+## v0.4.3 - 2026-06-12
+
+**Tier-1 of the CK.Lib.Js v1.5.0 npm-gate punch-list** — three verbs a real client observed broken on
+the live bundle, each fixed to match what the substrate actually does (never a richer claim than the seal
+enforces). Does **not** fully unblock npm — `reach`/`match`-traversal, generic typed create, and the F-A
+identity items remain (Tier 2 / upstream); see the punch-list NOTIFY.
+
+- **`instance.validate` — now handled** (was registered with no dispatch branch → "ungoverned in-kernel").
+  It predicts the seal: runs the same required-props (`sh:minCount≥1`) gate `ckp.seal` enforces against the
+  project's kernel graph, so `validate ok` ⟺ `seal accepts`. An unimported type is valid silence
+  (conforms). Returns `{conforms, missing_required[]}`.
+- **`instance.transition` — state-key reconciled.** The gate read v3.8 `core#lifecycle_state` while
+  `task.create` writes v3.7 `lifecycle_state`, so every fresh task was `draft` to the gate (never
+  transitionable). It now reads the task model's own field and writes both it and a bare `state`; the
+  transition map covers the real `planned → in_progress → done` lifecycle (the draft/review/approved set
+  kept for other instances). Test `s37`.
+- **`concept.match` — finds real instances.** It searched `rdfs:label`, which Task/Goal instances don't
+  carry (they use v3.7 `title`), so it always returned `[]`. Now derives the label from the actual
+  label-bearing fields. Still the sealed, injection-safe, pgCK-authored query (the *governed* form is Tier 2).
+
+### Also in 0.4.3
 
 - **`instance.update` fixes** (CK.Lib.Js bug report `instance-update-patch-gaps`): the `task.update`
   handler was a hardcoded two-field allow-list (`lifecycle_state` + `priority`) that **silently dropped
