@@ -2,6 +2,24 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.12 - 2026-06-12
+
+**v0.5 roadmap T5 — full SHACL `ValidationReport` via `instance.validate`.** Validate moves from the
+required-props (`minCount`) gate to pgRDF's full W3C SHACL Core report (typed violations: datatype,
+cardinality, node-kind, pattern).
+
+- **`ckp._body_to_ttl`** projects a candidate instance body to RDF (type triple + each IRI-keyed property;
+  JSON number→numeric literal, string→escaped string literal, IRI-scheme string→IRI node).
+- **`ckp.validate_instance`**: resolves the body's short keys to declared property IRIs (mirroring
+  `create_typed`), projects to a scratch graph, runs `pgrdf.validate(…, mode => 'native')` (the W3C path;
+  not `'sparql'`, which is upstream-gated — pgRDF advisory §2), and returns `{conforms, violations, report}`.
+- **Contract:** the seal keeps its required-props gate (unchanged); validate is the **stricter superset** —
+  **validate-conforms ⟹ seal-accepts**, and validate additionally surfaces datatype/pattern/nodeKind
+  violations the seal does not yet enforce. An unshaped type has no `targetClass` match → `conforms:true`.
+- **Exit test `s46`** — a Ship with `crew_size : xsd:integer`: a valid Ship conforms (and seals — the ⟹
+  direction); missing `crew_size` → a cardinality violation; `crew_size:"twelve"` → a **datatype** violation.
+  Warm suite (s4…s46) + s34 fresh-install green.
+
 ## v0.4.11 - 2026-06-12
 
 **v0.5 roadmap T4 — generic per-declared-shape `instance.update` patch.** The write-side mirror of

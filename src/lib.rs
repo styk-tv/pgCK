@@ -266,6 +266,15 @@ extension_sql_file!(
     requires = ["pgck_v0410_transition_map"]
 );
 
+// v0.4.12: v0.5 roadmap T5 — full SHACL ValidationReport. ckp.validate_instance projects the
+// candidate body to RDF (ckp._body_to_ttl) + runs pgrdf.validate(…, mode=>'native') for the typed
+// W3C report; the stricter superset of the seal gate (validate-conforms => seal-accepts). Gate: s46.
+extension_sql_file!(
+    "../sql/pgck--0.4.11--0.4.12.sql",
+    name = "pgck_v0412_validation_report",
+    requires = ["pgck_v0411_update_patch"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -274,7 +283,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v0411_update_patch"]
+    requires = ["pgck_v0412_validation_report"]
 );
 
 /// Registered at load time (shared_preload_libraries = 'pgck').
