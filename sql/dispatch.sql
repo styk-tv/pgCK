@@ -278,11 +278,16 @@ BEGIN
   WHEN 'edge.create' THEN
     DECLARE src text := p_payload->>'source'; pred text := p_payload->>'predicate';
             tgt text := p_payload->>'target'; eid text; topic text;
+            v_dpred jsonb := ckp.declared_predicates(v_proj);   -- T2: declared predicate set
     BEGIN
       IF src IS NULL OR pred IS NULL OR tgt IS NULL THEN
         res := jsonb_build_object('ok',false,'error','source, predicate, target required');
       ELSIF src = tgt THEN
         res := jsonb_build_object('ok',false,'error','no self-loops (v3.7 Edge rule)');
+      -- T2 (v0.4.9): when the kernel declares predicates, the link predicate MUST be one of them;
+      -- a kernel that declares none stays permissive (back-compat).
+      ELSIF jsonb_array_length(v_dpred) > 0 AND NOT (v_dpred @> to_jsonb(pred)) THEN
+        res := jsonb_build_object('ok',false,'error','undeclared_predicate','predicate',pred,'declared',v_dpred);
       ELSE
         eid := 'edge:'||src||'.'||pred||'.'||tgt;
         topic := 'link.'||pred||'.'||src||'.'||tgt;

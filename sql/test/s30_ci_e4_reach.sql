@@ -21,6 +21,12 @@ BEGIN
     v_g, 'urn:ckp:s30#');
 END $$;
 
+-- T2 (v0.4.9): run in a project that declares NO kernel predicates, so reach's `via` falls back
+-- to the namespace allowlist (this fixture reaches over the core predicate `core#link`, which is a
+-- protocol relation the kernel did not declare in its own shape). The declared-predicate gate
+-- itself is exercised by s43.
+SET ckp.project = 's30-reach';
+
 -- (a) a declared predicate reaches the transitive closure (b and c from a).
 DO $$
 DECLARE res jsonb;

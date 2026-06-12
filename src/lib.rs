@@ -238,6 +238,15 @@ extension_sql_file!(
     requires = ["pgck_v047_query_affordance"]
 );
 
+// v0.4.9: v0.5 roadmap T2 — link/reach declared predicate set. ckp.declared_predicates reads the
+// kernel graph's sh:path set; ckp.reach + edge.create gate the predicate on it (namespace-allowlist
+// fallback when the kernel declares none). Gate: s43.
+extension_sql_file!(
+    "../sql/pgck--0.4.8--0.4.9.sql",
+    name = "pgck_v049_declared_predicates",
+    requires = ["pgck_v048_query_shape"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -246,7 +255,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v048_query_shape"]
+    requires = ["pgck_v049_declared_predicates"]
 );
 
 /// Registered at load time (shared_preload_libraries = 'pgck').

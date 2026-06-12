@@ -2,6 +2,21 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.9 - 2026-06-12
+
+**v0.5 roadmap T2 — `instance.link` / `instance.reach` declared predicate set.** The predicate gate moves
+from a namespace allowlist (`conceptkernel.org/%` / `urn:ckp:%`) to the kernel's **declared** predicates.
+
+- **`ckp.declared_predicates(project)`** reads the union of `sh:path` over the kernel graph's shapes — the
+  predicates a kernel declares (addable via the governance plane).
+- **`ckp.reach`** and **`edge.create`**: when the kernel declares predicates, `via`/`predicate` MUST be one
+  of them (`undeclared_predicate`) — even in the conceptkernel namespace; a kernel that declares none keeps
+  the namespace-allowlist fallback (back-compat; the s30/s40 fixtures declare no predicates). The IRI regex
+  gate stays in both modes.
+- **Exit test `s43`** — a kernel declaring `part_of`: `link(A,part_of,B)` seals + materializes,
+  `reach(A,part_of)` returns `{B,C}` transitively, and a namespaced-but-undeclared predicate is rejected by
+  both link and reach. Warm suite (s4…s43) + s34 fresh-install green.
+
 ## v0.4.8 - 2026-06-12
 
 **v0.5 roadmap T1 — `instance.query` derived QueryShape.** The first track toward v0.5 (the last green
