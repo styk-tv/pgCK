@@ -198,6 +198,16 @@ extension_sql_file!(
     requires = ["pgck_v043_retire"]
 );
 
+// v0.4.5: Tier 2 (2/3) — governance _graph_apply. ckp.apply now translates a passed
+// Proposal's op into the kernel graph (ckp._op_to_ttl -> ckp.apply_shape_ttl: stage ->
+// meta-fence -> copy_graph into urn:ckp:<proj>/kernel/ck) BEFORE the epoch bump, so a
+// quorum-approved add_property actually constrains the next seal. Gate: s39.
+extension_sql_file!(
+    "../sql/pgck--0.4.4--0.4.5.sql",
+    name = "pgck_v045_graph_apply",
+    requires = ["pgck_v044_generic_create"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -206,7 +216,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v044_generic_create"]
+    requires = ["pgck_v045_graph_apply"]
 );
 
 /// Registered at load time (shared_preload_libraries = 'pgck').

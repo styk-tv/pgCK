@@ -2,6 +2,32 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.5 - 2026-06-12
+
+**Tier 2 (2/3) — governance `apply` now mutates the kernel shape (`_graph_apply`).** The single biggest
+honesty gap in the v3.9 epoch is closed: before this, a quorum-approved Proposal advanced the epoch and
+sealed "applied" but **never changed the type**. Now `kernel.apply` translates the passed op into the kernel
+graph before the epoch bump, so consensus actually evolves the type.
+
+- **`ckp._op_to_ttl`** translates a passed Proposal op into SHACL: `add_property` →
+  `[ a sh:NodeShape ; sh:targetClass <C> ; sh:property [ sh:path <P> ; sh:minCount n ] ]`, `add_class` →
+  `<C> a owl:Class`. Every interpolated value is IRI/integer field-gated (no quote/space/newline can reach
+  the Turtle). Ops without a shape projection yet are a documented no-op (still epoch-bump + applied seal).
+- **`ckp.apply_shape_ttl`** stages the generated Turtle through the engine, applies the same meta-fence as
+  `ckp.stage_ttl` (only rdf/rdfs/owl/sh predicates admitted), then `copy_graph`s it into
+  `urn:ckp:<project>/kernel/ck` (the graph `ckp.seal` reads required props from) and materializes — one txn.
+  The caller never authors raw Turtle; they author a typed op and pgCK builds it.
+- **`ckp.apply`** runs the graph-apply at step 4a (before `bump_epoch`); its reply gains
+  `applied:{graph_changed, applied_quads}`. A shape op that fails to stage/fence returns `graph_apply_failed`
+  with no epoch change.
+- **Exit test `s39`** — the definitive loop: create a Ship (seals, unshaped) → propose + vote + apply
+  `add_property(crew_size, minCount 1)` (asserts `applied.graph_changed`, and the constraint is then a fact
+  in the kernel graph) → the SAME create is now **REJECTED** → a Ship WITH `crew_size` seals. The type
+  changed via consensus. Warm suite (s4…s39) + s34 fresh-install green.
+
+This makes the v3.9 governance plane real end-to-end (process **and** effect). Remaining Tier 2: reach
+edge-materialization + governed `concept.match`.
+
 ## v0.4.4 - 2026-06-12
 
 **Tier 2 (1/3) — generic typed `instance.create`.** The adoption keystone (oci-germination + the CK.Lib.Js
