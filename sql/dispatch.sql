@@ -105,6 +105,11 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'error', 'governance_plane_unavailable',
       'plane', 'governance', 'verb', p_verb, 'canonical', v_canon)
       || jsonb_build_object('req', req);
+  -- Tier 2 (3/3b): a governed query affordance (SPARQL text sealed via the governance plane,
+  -- compiled into ckp.plans at apply) routes here. The caller binds typed params only; the query
+  -- text is the kernel's OWN sealed fact, never caller input.
+  ELSIF v_aff->>'plane' = 'query' THEN
+    RETURN ckp.run_query_affordance(v_canon, p_payload) || jsonb_build_object('req', req);
   END IF;
   -- CI-E-5: instance.query is the typed derived-QueryShape read (the legacy instances.list alias
   -- keeps its list behavior below — routed by the ORIGINAL verb, not the shared canonical).

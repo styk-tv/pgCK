@@ -2,6 +2,30 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.7 - 2026-06-12
+
+**Tier 2 (3/3b) — governed query affordances (the §6.3 `concept.match` form).** A kernel can now
+declare a parameterized SPARQL query through the **governance plane** and expose it as a verb; callers
+bind typed parameters only and never see or alter the query text. This completes Tier 2 and makes the
+previously-vestigial plan compiler load-bearing.
+
+- **Declare + seal:** `kernel.propose_change` op `add_affordance` with `detail:{verb, query, params:[…]}`
+  → `vote` → `apply`. The query text is sealed as a governance fact with a full proposal→applied proof chain.
+- **`ckp.register_query_affordance`** (at `apply`): compiles the sealed query into `ckp.plans` keyed by
+  `(kernel, verb, epoch)` — exactly §5.3's "compiled query templates" — and adds a `plane='query'`
+  `affordance_registry` row. Verb + param **names** are gated at registration.
+- **`ckp.run_query_affordance`** (at dispatch, `plane='query'`): validates the caller's param **values**
+  (no quote/brace/backslash/`?`-var can pass) and binds them into the author's `$name$` placeholders, then
+  runs the sealed query. The query text is never caller input; a stray `query` key in the payload is ignored.
+- **Exit test `s41`** — govern-add a `demo.search` label query, dispatch it as a `ck_participant` with a
+  bound term (returns the match), confirm different terms bind differently, an injection-shaped value is
+  rejected (`invalid_param`), and a caller-supplied raw query is ignored (the sealed query still runs).
+
+With this, **all of Tier 2 is shipped**: generic typed create (v0.4.5), governance shape-mutation (v0.4.5),
+reach edge-materialization (v0.4.6), and governed query affordances (v0.4.7). Remaining v3.9 items are the
+inherited F-A identity (snapshot authz) + F-C result routing, and the engine asks (derivation-chain trace,
+incremental materialization).
+
 ## v0.4.6 - 2026-06-12
 
 **Tier 2 (3/3a) — `instance.reach` traverses participant-created links.** `edge.create` sealed an Edge

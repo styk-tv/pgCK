@@ -218,6 +218,17 @@ extension_sql_file!(
     requires = ["pgck_v045_graph_apply"]
 );
 
+// v0.4.7: Tier 2 (3/3b) — governed query affordances (§6.3 concept.match form). A query is
+// declared via the governance plane (propose add_affordance{verb,query,params} -> vote ->
+// apply), compiled into ckp.plans + a plane='query' registry row, and dispatched by binding
+// typed caller params into the sealed query text. Makes the plan compiler load-bearing.
+// Gate: s41.
+extension_sql_file!(
+    "../sql/pgck--0.4.6--0.4.7.sql",
+    name = "pgck_v047_query_affordance",
+    requires = ["pgck_v046_reach_edges"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -226,7 +237,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v046_reach_edges"]
+    requires = ["pgck_v047_query_affordance"]
 );
 
 /// Registered at load time (shared_preload_libraries = 'pgck').
