@@ -47,6 +47,16 @@ DROP TRIGGER IF EXISTS ckp_ledger_after_insert ON ckp.ledger;
 CREATE TRIGGER ckp_ledger_after_insert
   AFTER INSERT ON ckp.ledger
   FOR EACH ROW EXECUTE FUNCTION ckp.ledger_to_outbox();
+-- T6 (v0.4.13): the label-projection trigger feeds concept.match's governed search. Created here
+-- because this is the LAST include that has just (re)created ckp.instances; ckp.project_instance_label
+-- is defined in the 0.4.12--0.4.13 include above. Guarded so a partial upgrade can't fail the floor.
+DROP TRIGGER IF EXISTS ckp_instances_label_project ON ckp.instances;
+DO $$ BEGIN
+  IF to_regprocedure('ckp.project_instance_label()') IS NOT NULL THEN
+    EXECUTE 'CREATE TRIGGER ckp_instances_label_project AFTER INSERT OR UPDATE ON ckp.instances '
+         || 'FOR EACH ROW EXECUTE FUNCTION ckp.project_instance_label()';
+  END IF;
+END $$;
 
 -- Ownership lands with creation (ALTER TABLE OWNER also moves the serial sequences),
 -- so the SECURITY DEFINER subject operates its own tables — no call-time dependency.

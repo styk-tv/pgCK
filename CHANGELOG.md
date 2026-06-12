@@ -2,6 +2,24 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.13 - 2026-06-12
+
+**v0.5 roadmap T6 — governed `concept.match`.** The built-in label search is converted to the §6.3
+governed query-affordance form: its query text is now a sealed `ckp.plans` fact, callers bind only `term`.
+
+- **Projection:** an `AFTER INSERT/UPDATE` trigger on `ckp.instances` (`ckp.project_instance_label`)
+  projects each label-bearing instance to the per-project graph `urn:ckp:<project>/instances`
+  (`<@id> a <type> ; rdfs:label "<label>"`), so a SPARQL label search can find it.
+- **Seed:** the canonical `concept.match` SPARQL query (label search over the instance graph, param `term`)
+  is seeded as a governed plan in `ckp.plans`.
+- **Execution:** `ckp.concept_match` reads its governed plan, **binds** the project graph + the term
+  (escaped into the SPARQL literal — an injection-shaped term is bound, matching nothing, never injects),
+  runs it via `pgrdf.sparql`, and **ranks** exact > prefix > contains (preserved in pgCK); falls back to the
+  legacy in-table search when no plan exists. Reply gains `governed`.
+- **Exit test `s47`** — tasks projected by the trigger; `concept.match{term}` is served by the governed
+  plan (`governed:true`), returns the matching tasks, binds different terms differently, and binds an
+  injection term safely (count 0). Warm suite (s4…s47, incl. s32 ranking + s37) + s34 fresh-install green.
+
 ## v0.4.12 - 2026-06-12
 
 **v0.5 roadmap T5 — full SHACL `ValidationReport` via `instance.validate`.** Validate moves from the

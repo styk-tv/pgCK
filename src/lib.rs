@@ -275,6 +275,17 @@ extension_sql_file!(
     requires = ["pgck_v0411_update_patch"]
 );
 
+// v0.4.13: v0.5 roadmap T6 — governed concept.match. A label-projection trigger feeds the per-project
+// instance graph; the concept.match SPARQL query is seeded as a governed plan in ckp.plans; ckp.concept_match
+// runs the sealed query (escaped term bind, exact>prefix>contains rank) with a legacy in-table fallback.
+// The trigger itself is created in the install-completeness file below (which (re)creates ckp.instances).
+// Gate: s47.
+extension_sql_file!(
+    "../sql/pgck--0.4.12--0.4.13.sql",
+    name = "pgck_v0413_governed_match",
+    requires = ["pgck_v0412_validation_report"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -283,7 +294,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v0412_validation_report"]
+    requires = ["pgck_v0413_governed_match"]
 );
 
 /// Registered at load time (shared_preload_libraries = 'pgck').
