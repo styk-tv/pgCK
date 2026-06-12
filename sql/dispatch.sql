@@ -284,7 +284,10 @@ BEGIN
         PERFORM ckp.seal(eid, jsonb_build_object('type', N||'Edge', '@id', 'ckp://Edge#'||eid,
           N||'source', src, N||'predicate', pred, N||'target', tgt, N||'topic', topic,
           N||'created_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"')));
-        res := jsonb_build_object('ok',true,'id',eid,'topic',topic,'verified',ckp.verify(eid));
+        -- Tier 2 (3/3a): also materialize the traversable quad so instance.reach finds
+        -- this participant-created link (the Edge instance alone is not traversable).
+        res := jsonb_build_object('ok',true,'id',eid,'topic',topic,'verified',ckp.verify(eid),
+          'reachable', ckp.materialize_edge(src, pred, tgt, v_proj));
       END IF;
     EXCEPTION WHEN OTHERS THEN res := jsonb_build_object('ok',false,'error',SQLERRM);
     END;

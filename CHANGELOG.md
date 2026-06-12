@@ -2,6 +2,25 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.6 - 2026-06-12
+
+**Tier 2 (3/3a) — `instance.reach` traverses participant-created links.** `edge.create` sealed an Edge
+*instance* (a row with source/predicate/target) but wrote no quad, so `instance.reach` — a property-path
+SPARQL over the RDF graphs — returned `[]` for any link a participant actually created (the existing test
+only passed by pre-seeding quads directly).
+
+- **`ckp.materialize_edge`** writes the traversable quad `<source> <predicate> <target>` into a per-project
+  edge graph (`urn:ckp:<project>/edges`) when `edge.create` seals. Injection-safe: source/predicate/target are
+  IRI-gated before the Turtle is built; a non-IRI endpoint seals the Edge instance **without** a quad and the
+  reply reports `reachable:false` (the link is recorded but honestly flagged not-traversable — never a silent
+  drop). A short predicate is namespaced to its v3.7 IRI; a full-IRI predicate is used as-is.
+- **`edge.create`** reply gains `reachable`.
+- **Exit test `s40`** — through the dispatch door as a real `ck_participant`: `edge.create` A→B and B→C (both
+  `reachable:true`), then `reach(from=A)` returns `{B, C}` transitively; a bare-id edge is `reachable:false`.
+
+The governed `concept.match` form (author a QueryAffordance → seal via governance → compile → bind) is the
+remaining Tier 2 item, tracked separately.
+
 ## v0.4.5 - 2026-06-12
 
 **Tier 2 (2/3) — governance `apply` now mutates the kernel shape (`_graph_apply`).** The single biggest
