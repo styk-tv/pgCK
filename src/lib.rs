@@ -247,6 +247,16 @@ extension_sql_file!(
     requires = ["pgck_v048_query_shape"]
 );
 
+// v0.4.10: v0.5 roadmap T3 — per-kernel sealed transition map. ckp._op_to_ttl translates
+// set_transition_map into ckp:allowsTransition triples; ckp.apply_shape_ttl's fence admits the
+// governance transition vocab; ckp.transition reads the type's sealed map (global config fallback).
+// Gate: s44.
+extension_sql_file!(
+    "../sql/pgck--0.4.9--0.4.10.sql",
+    name = "pgck_v0410_transition_map",
+    requires = ["pgck_v049_declared_predicates"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -255,7 +265,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v049_declared_predicates"]
+    requires = ["pgck_v0410_transition_map"]
 );
 
 /// Registered at load time (shared_preload_libraries = 'pgck').

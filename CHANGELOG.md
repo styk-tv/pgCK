@@ -2,6 +2,25 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.10 - 2026-06-12
+
+**v0.5 roadmap T3 — per-kernel sealed transition map.** `instance.transition` moves from one global
+`ckp.config` map to the instance type's own **sealed** map, set through the governance plane.
+
+- **`set_transition_map`** governance op (`ckp._op_to_ttl`): `{targetClass, map:{from:[to…]}}` →
+  `<targetClass> ckp:allowsTransition [ ckp:fromState "x" ; ckp:toState "y" ]` triples in the kernel graph
+  (state names validated; injection-safe). Applied via the existing `_graph_apply` machinery.
+- **`ckp.apply_shape_ttl`** meta-fence now admits the three governance transition predicates
+  (`allowsTransition`/`fromState`/`toState`) alongside rdf/rdfs/owl/sh — the op TTL is pgCK-built +
+  field-validated; every other predicate stays fence-rejected.
+- **`ckp.transition`**: when the instance's type carries a sealed map, **it** governs (per-kernel, no
+  global bleed); a type with no sealed map falls back to the global config map (back-compat). Reply gains
+  `source` (`kernel`|`config`).
+- **Exit test `s44`** — govern-set a Ship map (`planned→[crewed]`, `crewed→[deployed]`):
+  `planned→crewed` succeeds (source=kernel), `planned→deployed` is rejected, and a Task (no sealed map)
+  uses the global config — `Task→crewed` is rejected (the Ship map does not bleed). Warm suite (s4…s44) +
+  s34 fresh-install green.
+
 ## v0.4.9 - 2026-06-12
 
 **v0.5 roadmap T2 — `instance.link` / `instance.reach` declared predicate set.** The predicate gate moves
