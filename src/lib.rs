@@ -208,6 +208,16 @@ extension_sql_file!(
     requires = ["pgck_v044_generic_create"]
 );
 
+// v0.4.6: Tier 2 (3/3a) — reach edge-materialization. edge.create now also writes the
+// traversable quad <src> <pred> <tgt> into urn:ckp:<proj>/edges (ckp.materialize_edge),
+// so instance.reach traverses participant-created links (not only pre-seeded quads).
+// Gate: s40.
+extension_sql_file!(
+    "../sql/pgck--0.4.5--0.4.6.sql",
+    name = "pgck_v046_reach_edges",
+    requires = ["pgck_v045_graph_apply"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -216,7 +226,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v045_graph_apply"]
+    requires = ["pgck_v046_reach_edges"]
 );
 
 /// Registered at load time (shared_preload_libraries = 'pgck').
