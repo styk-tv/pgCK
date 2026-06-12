@@ -229,6 +229,15 @@ extension_sql_file!(
     requires = ["pgck_v046_reach_edges"]
 );
 
+// v0.4.8: v0.5 roadmap T1 — instance.query derived QueryShape. ckp.query validates filter
+// keys against the type's DECLARED sh:property set (read from the kernel graph), resolving a
+// short key to its property IRI; unshaped types keep the regex fallback. Gate: s42.
+extension_sql_file!(
+    "../sql/pgck--0.4.7--0.4.8.sql",
+    name = "pgck_v048_query_shape",
+    requires = ["pgck_v047_query_affordance"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -237,7 +246,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v047_query_affordance"]
+    requires = ["pgck_v048_query_shape"]
 );
 
 /// Registered at load time (shared_preload_libraries = 'pgck').

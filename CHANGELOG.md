@@ -2,6 +2,25 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.8 - 2026-06-12
+
+**v0.5 roadmap T1 — `instance.query` derived QueryShape.** The first track toward v0.5 (the last green
+`0.4.n` is re-tagged `v0.5.0`). `ckp.query` now validates filter keys against the type's **declared**
+properties instead of a generic regex.
+
+- For a **shaped** type, a filter key MUST be a declared `sh:property`/`sh:path` (read from the kernel
+  graph, the same read `ckp.create_typed`/`ckp.seal` do); a short key is resolved to its property IRI — so
+  a typed instance whose body stores full-IRI keys is now queryable by short name — and an **undeclared key
+  is rejected** (`undeclared_filter_key`).
+- An **unshaped** type keeps the prior regex key gate (back-compat; "unshaped = permissive", mirroring
+  `validate_instance`). The closed operator enum + bounded `limit`/`offset` + parameter-safe WHERE over
+  `ckp.instances` are unchanged; the reply gains `shaped`.
+- `instance.query` reads the `ckp.instances` jsonb store (not pgRDF graphs); the only pgRDF call is the
+  single-pattern shape read. (The pgRDF join-pin advisory applies to T7's compiled graph reads / reach.)
+- **Exit test `s42`** — a Ship with declared `crew_size`/`name`: `crew_size>=10` returns the matches (short
+  key resolved to its IRI), an undeclared key is rejected, and an unshaped fixture still queries by short
+  key. Warm suite (s4…s42) + s34 fresh-install green.
+
 ## v0.4.7 - 2026-06-12
 
 **Tier 2 (3/3b) — governed query affordances (the §6.3 `concept.match` form).** A kernel can now
