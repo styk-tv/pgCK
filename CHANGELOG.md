@@ -2,6 +2,28 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.14 - 2026-06-16
+
+**Stabilization — the authorized CK-loop writer + uniform instance id-form.** Two fixes that make the
+existing typed surface (`v0.4.8`–`v0.4.13`) actually enforce and traverse on the real client flow. No new
+verbs, no behavioural surface added.
+
+- **`ckp.adopt_kernel_ttl(ttl, project)` — a supported, file-mount-free way to seal a kernel/type shape into
+  `urn:ckp:<project>/kernel/ck`.** The typed ops and the seal gate read shapes from `…/kernel/ck`; a bootstrap
+  that loaded a type's shapes into a *different* graph left `/ck` unauthored, so the declared-shape gates
+  silently no-opped (a body missing a required property still sealed). `adopt_kernel_ttl` writes the gate
+  graph directly, additively and idempotently — restoring real enforcement without a file mount or any
+  internal call. Operator/bootstrap-level (not a `ckp.dispatch` verb): `ck_participant` still cannot write the
+  kernel shape.
+- **Uniform instance id-form across `reach`/`link` (`ckp._resolve_ref`).** `create` returns a bare instance
+  id; `get`/`link` accepted it, but `reach`/`edge.create` treated a bare id as a relative IRI (SPARQL parse
+  error / no traversable quad → `reachable:false`), so a link→reach round-trip on the ids a client actually
+  holds was dead. `reach` now resolves `from`, and `materialize_edge` resolves source+target, to the
+  instance's stamped `@id` — so the round-trip works whether the caller passes a bare id or the full `@id`.
+- **Exit tests** — `s49` (the sanctioned writer makes the gate non-vacuous *through the dispatch door*: a
+  create missing a required property is rejected, a complete one seals) and `s50` (a bare-id `link`→`reach`
+  reaches the target's `@id`). Warm suite (s4…s50) + s34 fresh-install green.
+
 ## v0.4.13 - 2026-06-12
 
 **v0.5 roadmap T6 — governed `concept.match`.** The built-in label search is converted to the §6.3

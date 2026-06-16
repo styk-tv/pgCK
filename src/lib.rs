@@ -286,6 +286,17 @@ extension_sql_file!(
     requires = ["pgck_v0412_validation_report"]
 );
 
+// v0.4.14: STABILIZATION (not a feature) — the two real, third-party-confirmed bugs the T1–T6
+// "attested" markers hid. ckp.adopt_kernel_ttl is the authorized, file-mount-free CK-loop writer
+// (#18: shapes were sealed into /board, leaving the gate graph /ck unauthored → enforcement
+// vacuous). ckp._resolve_ref + redefined reach/materialize_edge make id-form uniform (a bare id
+// resolves to its @id, so the bare-id link→reach round-trip the client uses works). Gates: s49, s50.
+extension_sql_file!(
+    "../sql/pgck--0.4.13--0.4.14.sql",
+    name = "pgck_v0414_stabilization",
+    requires = ["pgck_v0413_governed_match"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -294,7 +305,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v0413_governed_match"]
+    requires = ["pgck_v0414_stabilization"]
 );
 
 /// Registered at load time (shared_preload_libraries = 'pgck').
