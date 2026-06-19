@@ -359,16 +359,23 @@ pub extern "C-unwind" fn pgck_bridge_main(_arg: pg_sys::Datum) {
 
 /// Extension version. The minimal real thing a PG client can call:
 /// `SELECT pgck_version();`
+///
+/// Derived from `CARGO_PKG_VERSION` (== Cargo.toml `version` == `pgck.control`
+/// `default_version` == the release tag) so the native self-report can never
+/// again drift from the installed extension version. Was a hardcoded
+/// `"pgck 0.4.3 (rc3)"` literal that stayed frozen while the extension marched
+/// 0.4.3 → 0.4.14 — see the oci-germination pgck_version()-stale NOTIFY.
 #[pg_extern]
 fn pgck_version() -> &'static str {
-    "pgck 0.4.3 (rc3)"
+    concat!("pgck ", env!("CARGO_PKG_VERSION"))
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
     fn version_present() {
-        assert_eq!(crate::pgck_version(), "pgck 0.4.3 (rc3)");
+        // Asserts the contract: pgck_version() tracks the crate version exactly.
+        assert_eq!(crate::pgck_version(), concat!("pgck ", env!("CARGO_PKG_VERSION")));
     }
 }
 
