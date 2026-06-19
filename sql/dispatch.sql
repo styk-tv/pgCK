@@ -169,7 +169,9 @@ BEGIN
       FROM ckp.instances WHERE body->>'type' = N||'Goal' AND id LIKE 'backlog:%'), '[]'::jsonb));
 
   WHEN 'provenance' THEN
-    DECLARE tid text := p_payload->>'id';
+    -- v0.4.15: id-form symmetry — resolve a bare-or-@id ref to the bare id the id-keyed
+    -- tables use, so provenance(@id) is no longer a hollow envelope (matches reach/link/get).
+    DECLARE tid text := ckp._resolve_id(p_payload->>'id');
     BEGIN
       res := jsonb_build_object('ok', true, 'id', tid, 'verified', ckp.verify(tid),
         'body', (SELECT body FROM ckp.instances WHERE id=tid),

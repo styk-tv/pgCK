@@ -2,6 +2,23 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.15 - 2026-06-19
+
+**Stabilization — provenance id-form symmetry.** `v0.4.14` made `reach`/`link` accept either a bare
+instance id or its stamped `@id`, but `instance.provenance` still keyed `body`/`proof`/`ledger`/`verify`
+by the raw id against the bare-id columns — so a client passing the `@id` got a hollow `ok:true` with a
+null body and proof.
+
+- **`ckp._resolve_id`** — the inverse of `v0.4.14`'s `ckp._resolve_ref`: resolves a bare-or-IRI reference
+  to the bare instance id the id-keyed tables use (a bare id that exists resolves to itself; a stamped
+  `@id` resolves to its instance; an unresolvable ref returns as-is, so provenance stays honestly empty
+  rather than a false positive). The `instance.provenance` branch routes its `id` through it, so
+  `provenance(bare)` and `provenance(@id)` return the **same** envelope — symmetric with `reach`/`link`/`get`.
+- **`pgck_version()`** now derives from `CARGO_PKG_VERSION` (was frozen at the `0.4.3-rc3` literal while the
+  extension marched forward), so the native self-report can never again drift from the installed version.
+- **Exit test `s51`** — `provenance(bare) ≡ provenance(@id)` (same body, same proof digest, both verified).
+  Warm suite (s4…s51) + s34 fresh-install green.
+
 ## v0.4.14 - 2026-06-16
 
 **Stabilization — the authorized CK-loop writer + uniform instance id-form.** Two fixes that make the

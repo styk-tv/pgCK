@@ -297,6 +297,16 @@ extension_sql_file!(
     requires = ["pgck_v0413_governed_match"]
 );
 
+// v0.4.15: STABILIZATION — provenance id-form symmetry. ckp._resolve_id (inverse of v0.4.14's
+// _resolve_ref) resolves a bare-or-@id reference to the bare id the id-keyed tables use; the
+// instance.provenance branch (dispatch.sql) routes its tid through it, so provenance(@id) is no
+// longer a hollow envelope (matches reach/link/get). Third-party-confirmed (CSVC D1). Gate: s51.
+extension_sql_file!(
+    "../sql/pgck--0.4.14--0.4.15.sql",
+    name = "pgck_v0415_provenance_idform",
+    requires = ["pgck_v0414_stabilization"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -305,7 +315,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v0414_stabilization"]
+    requires = ["pgck_v0415_provenance_idform"]
 );
 
 /// Registered at load time (shared_preload_libraries = 'pgck').
