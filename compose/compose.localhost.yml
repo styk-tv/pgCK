@@ -1,0 +1,54 @@
+# compose/compose.localhost.yml — the pgck.localhost dev drop-in (all-in-one).
+#
+# This is NOT the smoke/test harness (that's compose.yml: a bare postgres with
+# the dev .so files bind-mounted). This is the published, attested all-in-one
+# that backs the Envoy-fronted https://pgck.localhost route — its own bundled
+# PG17 + pgRDF + pgCK + NATS, isolated from every other local project.
+#
+# Image: ghcr.io/sporaxis-com/ociger-ck-allinone:v0.7.19 — first published
+#   all-in-one carrying pgck 0.4.13 + pgrdf 0.6.3 (symmetric with the dev tip:
+#   has create_typed + snapshot.bodies). Verify before trusting:
+#     gh attestation verify oci://ghcr.io/sporaxis-com/ociger-ck-allinone:v0.7.19 \
+#        --repo sporaxis-com/oci-germination          # exit 0 = good
+#   Override with: CK_ALLINONE_IMAGE=<ref> docker compose -f compose/compose.localhost.yml up -d
+#
+# Legacy host ports (predate the 572xx sibling convention; the shared host Envoy
+# at :443 already routes pgck.localhost → 8001 web / 19222 wss):
+#   8001  web/api  → container 8000   (Envoy pgck_web_upstream)
+#   19222 NATS WSS → container 9222   (Envoy pgck_nats_wss_upstream, /wss)
+#   14222 NATS TCP → container 4222   (host-side dispatcher / outbox drain)
+#   15432 Postgres → container 5432   (the kernel's own isolated DB)
+#
+# Fresh named volume (pgck-allinone-pgdata): a clean 0.4.13 install. The old
+# v0.7.2 (pgck 0.2.2) anon volume 5f510f02… is left intact on disk — migrate its
+# concepts forward via snapshot.bodies → replay, never an in-place ext upgrade.
+#
+# After up: run scripts/pgck-root-redirect.sh so GET / → /assets/web2/, then a
+# one-time ckp.bootstrap_kernel + ontology load (README.md §First boot).
+
+name: pgck-localhost
+
+services:
+  pgck-allinone:
+    image: ${CK_ALLINONE_IMAGE:-ghcr.io/sporaxis-com/ociger-ck-allinone:v0.7.19@sha256:17876a291ecc84aba6c93173f854d42a22e9f866cc4036c77485304e46837fda}
+    container_name: pgck-allinone
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pgcklocal}
+      OCIGER_CK_PARTICIPANT_PASSWORD: ${OCIGER_CK_PARTICIPANT_PASSWORD:-ckparticipant}
+    ports:
+      - "8001:8000"     # web (busybox httpd / web2)  ← Envoy pgck_web_upstream
+      - "19222:9222"    # NATS WSS                     ← Envoy pgck_nats_wss_upstream (/wss)
+      - "14222:4222"    # NATS TCP (host dispatcher / outbox drain)
+      - "15432:5432"    # PostgreSQL 17 (pgrdf + pgCK) — isolated kernel DB
+    volumes:
+      # serve the repo's live web2 UI + current ontology/examples (parity with
+      # the prior drop-in); the container never writes to these (:ro).
+      - ../web/static:/app/assets:ro
+      - ../ontology:/ontology:ro
+      - ../examples:/examples:ro
+      - pgck-allinone-pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgck-allinone-pgdata:
+    name: pgck-allinone-pgdata
