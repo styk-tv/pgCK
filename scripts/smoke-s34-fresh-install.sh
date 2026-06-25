@@ -17,8 +17,15 @@ DC="${DOCKER_CONTEXT:-colima}"
 NAME=pgck-s34-fresh
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 EXT="$ROOT/compose/extensions"
-PGCK_SQL="$(basename "$(ls "$EXT"/pgck/share/extension/pgck--*.sql | head -1)")"
-PGRDF_SQL="$(basename "$(ls "$EXT"/pgrdf/share/extension/pgrdf--*.sql | head -1)")"
+# Mount the exact base-install script for each extension's declared default_version
+# (NOT `ls pgrdf--*.sql | head -1` — that picks the alphabetically-first file, which
+# for pgRDF >=0.6 is the `pgrdf--0.5.1--0.6.14.sql` UPGRADE script, not the install
+# script; `CREATE EXTENSION ... CASCADE` on a virgin cluster needs the base install
+# script matching default_version). Deriving from the control file keeps this gate
+# correct across version bumps with zero edits here.
+ctl_default_version() { sed -n "s/^default_version = '\(.*\)'/\1/p" "$1"; }
+PGCK_SQL="pgck--$(ctl_default_version "$EXT"/pgck/share/extension/pgck.control).sql"
+PGRDF_SQL="pgrdf--$(ctl_default_version "$EXT"/pgrdf/share/extension/pgrdf.control).sql"
 
 fail() { echo "s34 FAIL: $*" >&2; exit 1; }
 cleanup() { docker --context "$DC" rm -f "$NAME" >/dev/null 2>&1 || true; }
