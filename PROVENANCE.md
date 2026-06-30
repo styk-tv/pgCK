@@ -26,6 +26,16 @@ Bootstrap exception is one-time. Once the gate has fired once, "previous tag mus
 
 ---
 
+## Public coordination surface — disclosure discipline
+
+Cross-repo coordination (formerly file-based NOTIFIES in each repo's `_WIP/`) now happens on the **public GitHub surface** — issues, pull requests, and per-repo **Project boards** — across pgRDF, pgCK, oci-germination, and CK.Lib.Js. All of it is world-readable. Treat every issue/PR/board card as a public statement.
+
+- **Disclose nothing sensitive.** Scrub before posting: internal operator/cluster and marketplace-operator repo names and paths, local home/filesystem paths, `_WIP/` contents, private `SPEC*` text, secrets/credentials, and unreleased security details. Keep bodies technical and minimal — the least a maintainer of the other repo needs to act, no internal context beyond that. (This bullet is deliberately generic: naming the very identifiers it warns about would itself be a disclosure.)
+- **Issues are for issues.** Concrete defects and discrete, actionable tasks → GitHub **issues**. Plans, roadmaps, and feature tracks → the repo's **Project board** — not a pile of speculative open issues. Each repo has its own board.
+- **Reference only consumable artifacts.** When pointing at an upstream build, pin a published **and attested** digest (cf. Rule 2 / the attestation gate); never cite an unreleased or unverifiable artifact.
+
+---
+
 Every artifact this repo publishes — the pgCK extension OCI artifacts and the pgck-web docker images — is built and pushed **exclusively** by GitHub Actions. Workstation pushes are not permitted at any tier.
 
 ## What's enforced
