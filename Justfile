@@ -1,5 +1,5 @@
 set shell := ["bash", "-uc"]
-pgrdf_ver := "0.6.14"
+pgrdf_ver := "0.6.17"
 pg := "17"
 arch := "arm64"
 docker_context := env_var_or_default("DOCKER_CONTEXT", "colima")
@@ -58,8 +58,12 @@ psql: colima-up
 
 smoke-s4: pgrdf-fetch build-ext compose-recreate
     until (cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec postgres pg_isready -U pgck); do sleep 2; done
+    # Reset the FULL semantic substrate each run, not just pgck: pgrdf's hexastore
+    # survives DROP EXTENSION pgck and has no (s,p,o,g) quad-uniqueness, so re-running
+    # the warm gate would re-materialize the same direct triples and double-count
+    # (e.g. s32 concept.match count=6). Dropping pgrdf too makes the gate idempotent.
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 \
-      -c "DROP EXTENSION IF EXISTS pgck CASCADE; CREATE EXTENSION pgck CASCADE; CALL ckp.boot(); CALL ckp.load_kernel('/examples/example.kernel.ttl','demo');"
+      -c "DROP EXTENSION IF EXISTS pgck CASCADE; DROP EXTENSION IF EXISTS pgrdf CASCADE; CREATE EXTENSION pgck CASCADE; CALL ckp.boot(); CALL ckp.load_kernel('/examples/example.kernel.ttl','demo');"
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s4_validate.sql
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s4_seal_ok.sql
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s4_seal_reject.sql
