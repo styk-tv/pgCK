@@ -24,3 +24,15 @@ BEGIN
   IF w2 <= w1 THEN RAISE EXCEPTION 's52 FAIL: watermark must advance on a new seal (% -> %)', w1, w2; END IF;
   RAISE NOTICE 's52 PASS: generic source watermark advances (% -> %)', w1, w2;
 END $$;
+
+-- T2 — generic host-side materialize: evaluate the SEALED formula per in-scope item,
+-- storing signed :contrib + absolute :contrib_abs. The formula is a plain SQL expression over
+-- the item row alias i — NO consumer semantics; the substrate substitutes it, never contains it.
+DO $$
+DECLARE scope jsonb := '{"type":"urn:t:Item","about_prop":"urn:t:topic","about":"urn:t:t1"}'::jsonb; g text; net numeric;
+BEGIN
+  g := ckp._epsilon_materialize('urn:t:t1', scope, '(i.body->>''urn:t:value'')::numeric', 1);
+  net := (pgrdf.sparql('PREFIX m:<urn:ckp:mat/> SELECT (SUM(?c) AS ?v) WHERE { GRAPH <'||g||'> { ?s m:contrib ?c } }')->>'v')::numeric;
+  IF round(net,4) <> 1.2 THEN RAISE EXCEPTION 's52 FAIL: net expected 1.2 (1.0-0.8+1.0), got %', net; END IF;
+  RAISE NOTICE 's52 PASS: generic materialize evaluates a sealed formula → net %', net;
+END $$;
