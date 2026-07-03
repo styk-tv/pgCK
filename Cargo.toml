@@ -1,6 +1,6 @@
 [package]
 name = "pgck"
-version = "0.4.16"
+version = "0.4.17"
 edition = "2021"
 description = "PostgreSQL Concept Kernel extension — NATS bridge + SHACL validator + materializer, in-database"
 license = "MIT"

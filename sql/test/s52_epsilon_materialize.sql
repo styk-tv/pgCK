@@ -63,3 +63,40 @@ BEGIN
   IF round((res->>'value')::numeric,4) <> 2.2 THEN RAISE EXCEPTION 's52 FAIL: value expected 2.2, got %', res->>'value'; END IF;
   RAISE NOTICE 's52 PASS: derived_sum (generic net) = %', res->>'value';
 END $$;
+
+-- T6 — over-budget enqueue returns recompute_in_progress + a durable job carrying scope+formula
+-- (the bgworker completes it; the drain itself is exercised by the running worker, not asserted here).
+DO $$
+DECLARE res jsonb; n int;
+BEGIN
+  res := ckp.enqueue_materialize('urn:t:t1','{"type":"urn:t:Item","about_prop":"urn:t:topic","about":"urn:t:t1"}'::jsonb,'(i.body->>''urn:t:value'')::numeric',1);
+  IF (res->>'recompute_in_progress')::boolean IS NOT TRUE THEN RAISE EXCEPTION 's52 FAIL: enqueue must return recompute_in_progress'; END IF;
+  SELECT count(*) INTO n FROM ckp.materialize_job WHERE concept='urn:t:t1';
+  IF n<>1 THEN RAISE EXCEPTION 's52 FAIL: durable job not enqueued (%).', n; END IF;
+  RAISE NOTICE 's52 PASS: over-budget enqueue → recompute_in_progress + durable job (scope+formula)';
+END $$;
+
+-- T7 — within-ε recompute: a new seal advances the watermark, so the NEXT derived_sum re-materializes
+-- and the value moves by the new evidence (closes the "stale on the newest, most decisive fact" hole).
+DO $$
+DECLARE scope jsonb := '{"type":"urn:t:Item","about_prop":"urn:t:topic","about":"urn:t:t1"}'::jsonb;
+        f text := '(i.body->>''urn:t:value'')::numeric'; a numeric; b numeric;
+BEGIN
+  a := (ckp.derived_sum('urn:t:t1',scope,f,1)->>'value')::numeric;
+  PERFORM ckp.seal('item-9','{"type":"urn:t:Item","urn:t:topic":"urn:t:t1","urn:t:value":1.0}'::jsonb);
+  b := (ckp.derived_sum('urn:t:t1',scope,f,1)->>'value')::numeric;
+  IF round(b-a,4) <> 1.0 THEN RAISE EXCEPTION 's52 FAIL: within-ε new evidence did not move the value (% -> %)', a, b; END IF;
+  RAISE NOTICE 's52 PASS: within-ε new evidence moves the derived value (% -> %)', a, b;
+END $$;
+
+-- T7 — non-intrusiveness: an unrelated dispatch (instance.get) NEVER touches the materialize path
+-- (the phenotype pointer's built_at is unchanged). "Won't hinder regular operations" is a guarantee.
+DO $$
+DECLARE t0 timestamptz; t1 timestamptz;
+BEGIN
+  SELECT built_at INTO t0 FROM ckp.phenotype_ptr WHERE concept='urn:t:t1';
+  PERFORM ckp.dispatch('instance.get','{"id":"item-1"}'::jsonb);
+  SELECT built_at INTO t1 FROM ckp.phenotype_ptr WHERE concept='urn:t:t1';
+  IF t0 IS DISTINCT FROM t1 THEN RAISE EXCEPTION 's52 FAIL: unrelated dispatch rebuilt the phenotype'; END IF;
+  RAISE NOTICE 's52 PASS: unrelated dispatch never on the materialize path';
+END $$;

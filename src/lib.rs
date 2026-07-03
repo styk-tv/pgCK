@@ -50,6 +50,8 @@ mod nats;
 mod nats_client;
 #[cfg(feature = "nats-client")]
 mod publish_drain;
+// ε-materialize over-budget drain (T6). SPI-only, no NATS dependency — always compiled.
+mod materialize_drain;
 
 // GUCs for the `nats-client` profile. Registered once in _PG_init and
 // read on bgworker boot (S4 step 5). Defaults make the canonical
@@ -317,6 +319,14 @@ extension_sql_file!(
     requires = ["pgck_v0415_provenance_idform"]
 );
 
+// v0.4.17 — ε-materialize completeness + hardening: dispersion read (net+volume), over-budget
+// bgworker handoff (ckp.enqueue_materialize / ckp.materialize_drain_once) + phenotype GC.
+extension_sql_file!(
+    "../sql/pgck--0.4.16--0.4.17.sql",
+    name = "pgck_v0417_hardening",
+    requires = ["pgck_v0416_epsilon"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -325,7 +335,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v0416_epsilon"]
+    requires = ["pgck_v0417_hardening"]
 );
 
 /// Registered at load time (shared_preload_libraries = 'pgck').

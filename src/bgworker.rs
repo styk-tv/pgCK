@@ -67,6 +67,11 @@ pub fn tick() {
         });
         let _ = crate::publish_drain::drain_once();
     }
+
+    // ε-materialize over-budget drain (T6): SPI-only, independent of NATS, so it runs every
+    // tick regardless of feature set. Normally a cheap no-op (Model A is lazy — the job queue
+    // is empty unless a read handed a build off over budget).
+    let _ = crate::materialize_drain::drain_once();
 }
 
 #[cfg(all(test, feature = "embedded-nats"))]
