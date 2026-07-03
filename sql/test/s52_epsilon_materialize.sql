@@ -36,3 +36,18 @@ BEGIN
   IF round(net,4) <> 1.2 THEN RAISE EXCEPTION 's52 FAIL: net expected 1.2 (1.0-0.8+1.0), got %', net; END IF;
   RAISE NOTICE 's52 PASS: generic materialize evaluates a sealed formula → net %', net;
 END $$;
+
+-- T3 — three-clause freshness + atomic committed-complete pointer. A just-published pointer at
+-- the current watermark is fresh; a new seal within the same ε advances the watermark and makes
+-- it stale (the watermark clause — the newest, most decisive fact must not read a stale phenotype).
+DO $$
+DECLARE scope jsonb := '{"type":"urn:t:Item","about_prop":"urn:t:topic","about":"urn:t:t1"}'::jsonb; wm bigint; fresh boolean;
+BEGIN
+  wm := ckp._source_watermark(scope);
+  PERFORM ckp._phenotype_publish('urn:t:t1','urn:ckp:phenotype/urn-t-t1/1/'||wm,1,wm,now()+interval '1 hour');
+  IF NOT ckp._phenotype_fresh('urn:t:t1',1,wm) THEN RAISE EXCEPTION 's52 FAIL: just-published must be fresh'; END IF;
+  PERFORM ckp.seal('item-4','{"type":"urn:t:Item","urn:t:topic":"urn:t:t1","urn:t:value":1.0}'::jsonb);
+  wm := ckp._source_watermark(scope);
+  IF ckp._phenotype_fresh('urn:t:t1',1,wm) THEN RAISE EXCEPTION 's52 FAIL: new in-ε evidence must be STALE (watermark clause)'; END IF;
+  RAISE NOTICE 's52 PASS: freshness detects within-ε new evidence';
+END $$;

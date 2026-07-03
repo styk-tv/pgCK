@@ -72,3 +72,26 @@ BEGIN
   PERFORM pgrdf.parse_turtle(ttl, pgrdf.add_graph(giri), MP);
   RETURN giri;
 END $$;
+
+-- T3 — three-clause freshness. A phenotype is fresh iff a pointer exists at the SAME
+-- (concept, epoch, watermark) and has not passed valid_until. A new seal over the scope
+-- advances MAX(ckp.ledger.seq), so the caller's fresh-check at the new watermark misses the
+-- pointer stamped at the old one — the within-ε staleness clause.
+CREATE OR REPLACE FUNCTION ckp._phenotype_fresh(p_concept text, p_epoch bigint, p_watermark bigint)
+RETURNS boolean LANGUAGE sql STABLE AS $$
+  SELECT EXISTS (SELECT 1 FROM ckp.phenotype_ptr
+    WHERE concept=p_concept AND epoch=p_epoch AND watermark=p_watermark
+      AND (valid_until IS NULL OR now() <= valid_until))
+$$;
+
+-- T3 — atomic committed-complete pointer publish. The single-row upsert on the concept PK IS
+-- the swap: a reader resolving via the pointer sees the previous complete graph until this row
+-- flips to the new one, never a half-built graph (the graph is fully written before publish).
+CREATE OR REPLACE FUNCTION ckp._phenotype_publish(
+  p_concept text, p_graph_iri text, p_epoch bigint, p_watermark bigint, p_valid_until timestamptz)
+RETURNS void LANGUAGE sql AS $$
+  INSERT INTO ckp.phenotype_ptr(concept,graph_iri,epoch,watermark,valid_until,built_at)
+  VALUES (p_concept,p_graph_iri,p_epoch,p_watermark,p_valid_until,now())
+  ON CONFLICT (concept) DO UPDATE SET graph_iri=EXCLUDED.graph_iri, epoch=EXCLUDED.epoch,
+    watermark=EXCLUDED.watermark, valid_until=EXCLUDED.valid_until, built_at=now()
+$$;
