@@ -307,6 +307,16 @@ extension_sql_file!(
     requires = ["pgck_v0414_stabilization"]
 );
 
+// v0.4.16 — governed ε-materialize substrate (Motion A.5, Model A). Generic phenotype
+// materialize so a sealed read can SUM a value pgRDF can't derive in-plan; the formula is a
+// sealed opaque input the substrate substitutes but never contains. Chained AFTER all ckp.*
+// machinery, BEFORE the completeness floor so the floor pass covers its callables too.
+extension_sql_file!(
+    "../sql/pgck--0.4.15--0.4.16.sql",
+    name = "pgck_v0416_epsilon",
+    requires = ["pgck_v0415_provenance_idform"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -315,7 +325,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v0415_provenance_idform"]
+    requires = ["pgck_v0416_epsilon"]
 );
 
 /// Registered at load time (shared_preload_libraries = 'pgck').
