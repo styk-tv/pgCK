@@ -95,3 +95,23 @@ RETURNS void LANGUAGE sql AS $$
   ON CONFLICT (concept) DO UPDATE SET graph_iri=EXCLUDED.graph_iri, epoch=EXCLUDED.epoch,
     watermark=EXCLUDED.watermark, valid_until=EXCLUDED.valid_until, built_at=now()
 $$;
+
+-- T4 — ckp.derived_sum: the generic net read. (e1) synchronous default of the (e) hybrid —
+-- if the phenotype is stale, materialize the declared scope in-budget, atomically publish, then
+-- SUM(:contrib). ε defaults to the substrate kernel epoch (1); the consumer passes its policy
+-- epoch. No bands / thresholds — the consumer's affordance applies those.
+CREATE OR REPLACE FUNCTION ckp.derived_sum(p_concept text, p_scope jsonb, p_formula text, p_epoch bigint)
+RETURNS jsonb LANGUAGE plpgsql AS $$
+DECLARE MP text := 'urn:ckp:mat/'; wm bigint := ckp._source_watermark(p_scope); giri text; v numeric;
+BEGIN
+  IF NOT ckp._phenotype_fresh(p_concept, p_epoch, wm) THEN
+    giri := ckp._epsilon_materialize(p_concept, p_scope, p_formula, p_epoch);
+    PERFORM ckp._phenotype_publish(p_concept, giri, p_epoch, wm, now()+interval '1 hour');
+  END IF;
+  giri := (SELECT graph_iri FROM ckp.phenotype_ptr WHERE concept=p_concept);
+  -- pgrdf.sparql is SETOF jsonb; a SRF is not allowed directly in COALESCE, so read it in a
+  -- scalar subquery (SUM returns one row) and COALESCE the scalar (0 when the graph is empty).
+  v := COALESCE((SELECT (j->>'v')::numeric FROM pgrdf.sparql(
+        'SELECT (SUM(?c) AS ?v) WHERE { GRAPH <'||giri||'> { ?s <'||MP||'contrib> ?c } }') AS j), 0);
+  RETURN jsonb_build_object('ok',true,'value',v);
+END $$;

@@ -51,3 +51,15 @@ BEGIN
   IF ckp._phenotype_fresh('urn:t:t1',1,wm) THEN RAISE EXCEPTION 's52 FAIL: new in-ε evidence must be STALE (watermark clause)'; END IF;
   RAISE NOTICE 's52 PASS: freshness detects within-ε new evidence';
 END $$;
+
+-- T4 — ckp.derived_sum: the generic net read ((e1) synchronous, fresh-only). Stale (item-4 was
+-- sealed in T3) → re-materialize at the current watermark → atomic publish → SUM(:contrib).
+-- items 1..4: 1.0-0.8+1.0+1.0 = 2.2. No bands/thresholds — the consumer applies those.
+DO $$
+DECLARE res jsonb;
+BEGIN
+  res := ckp.derived_sum('urn:t:t1','{"type":"urn:t:Item","about_prop":"urn:t:topic","about":"urn:t:t1"}'::jsonb,'(i.body->>''urn:t:value'')::numeric',1);
+  IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's52 FAIL: derived_sum not ok: %', res; END IF;
+  IF round((res->>'value')::numeric,4) <> 2.2 THEN RAISE EXCEPTION 's52 FAIL: value expected 2.2, got %', res->>'value'; END IF;
+  RAISE NOTICE 's52 PASS: derived_sum (generic net) = %', res->>'value';
+END $$;
