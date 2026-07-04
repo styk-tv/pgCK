@@ -15,17 +15,17 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./extensions/pgrdf/lib/pgrdf.so:/usr/lib/postgresql/17/lib/pgrdf.so:ro,z
       - ./extensions/pgrdf/share/extension/pgrdf.control:/usr/share/postgresql/17/extension/pgrdf.control:ro,z
-      - ./extensions/pgrdf/share/extension/pgrdf--0.6.17.sql:/usr/share/postgresql/17/extension/pgrdf--0.6.17.sql:ro,z
+      - ./extensions/pgrdf/share/extension/pgrdf--0.6.19.sql:/usr/share/postgresql/17/extension/pgrdf--0.6.19.sql:ro,z
       # Complete SQL set per oci-germination packaging (ship the whole share/extension,
       # not just the base install). A stock postgres image is bind-mounted here, so the
       # whole-dir COPY the bundles use would shadow built-in pgcrypto/plpgsql — instead
       # mount every pgrdf--*.sql the 0.6.17 tarball ships. The upgrade script is inert for
       # the warm fresh-install path but keeps ALTER EXTENSION UPDATE resolvable and the
       # mount set == the published artifact's extension dir. Update both filenames on bump.
-      - ./extensions/pgrdf/share/extension/pgrdf--0.5.1--0.6.17.sql:/usr/share/postgresql/17/extension/pgrdf--0.5.1--0.6.17.sql:ro,z
+      - ./extensions/pgrdf/share/extension/pgrdf--0.5.1--0.6.19.sql:/usr/share/postgresql/17/extension/pgrdf--0.5.1--0.6.19.sql:ro,z
       - ./extensions/pgck/lib/pgck.so:/usr/lib/postgresql/17/lib/pgck.so:ro,z
       - ./extensions/pgck/share/extension/pgck.control:/usr/share/postgresql/17/extension/pgck.control:ro,z
-      - ./extensions/pgck/share/extension/pgck--0.4.17.sql:/usr/share/postgresql/17/extension/pgck--0.4.17.sql:ro,z
+      - ./extensions/pgck/share/extension/pgck--0.4.18.sql:/usr/share/postgresql/17/extension/pgck--0.4.18.sql:ro,z
       # NOTE: parent is NOT :ro — docker must create mountpoints for the
       # task.ttl/goal.ttl overlays below (they don't exist in fixtures, and a
       # read-only parent bind-mount rejects mknod of new mountpoint files).

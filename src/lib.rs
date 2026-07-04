@@ -327,6 +327,15 @@ extension_sql_file!(
     requires = ["pgck_v0416_epsilon"]
 );
 
+// v0.4.18 — pgCK#6: ckp.query filter-key resolution hardening. Resolve a filter key against the
+// actual instance-body keys (jsonb, project-independent) so a filtered read works even when the
+// type resolves unshaped; return a typed unresolved_shape instead of a silent [].
+extension_sql_file!(
+    "../sql/pgck--0.4.17--0.4.18.sql",
+    name = "pgck_v0418_query_keyfix",
+    requires = ["pgck_v0417_hardening"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -335,7 +344,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v0417_hardening"]
+    requires = ["pgck_v0418_query_keyfix"]
 );
 
 /// Registered at load time (shared_preload_libraries = 'pgck').
