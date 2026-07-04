@@ -336,6 +336,17 @@ extension_sql_file!(
     requires = ["pgck_v0417_hardening"]
 );
 
+// v0.4.19 — governed DERIVED-read dispatch plane. Generic plane='derived' affordance
+// (ckp.register_derived_affordance / ckp.run_derived_affordance) parallel to plane='query', so a
+// consumer-sealed {formula, scope} verb is dispatch-reachable under the role floor and returns the
+// band-less {ok, value, scored, freshness} envelope — the scoring client's read surface. Requires
+// the ε-materialize substrate (v0.4.16/17). The dispatch route itself lives in sql/dispatch.sql.
+extension_sql_file!(
+    "../sql/pgck--0.4.18--0.4.19.sql",
+    name = "pgck_v0419_derived_plane",
+    requires = ["pgck_v0418_query_keyfix"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -344,7 +355,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v0418_query_keyfix"]
+    requires = ["pgck_v0419_derived_plane"]
 );
 
 /// Registered at load time (shared_preload_libraries = 'pgck').

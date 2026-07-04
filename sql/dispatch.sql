@@ -110,6 +110,12 @@ BEGIN
   -- text is the kernel's OWN sealed fact, never caller input.
   ELSIF v_aff->>'plane' = 'query' THEN
     RETURN ckp.run_query_affordance(v_canon, p_payload) || jsonb_build_object('req', req);
+  -- Scoring-loop layer 3: a governed DERIVED-read affordance ({formula, scope} sealed via the
+  -- governance plane, compiled into ckp.plans at apply) routes here. The caller binds only the
+  -- concept; the formula is the kernel's OWN sealed fact. Returns the band-less {ok, value,
+  -- scored, freshness} envelope — the role-floor-reachable read surface the scoring client calls.
+  ELSIF v_aff->>'plane' = 'derived' THEN
+    RETURN ckp.run_derived_affordance(v_canon, p_payload) || jsonb_build_object('req', req);
   END IF;
   -- CI-E-5: instance.query is the typed derived-QueryShape read (the legacy instances.list alias
   -- keeps its list behavior below — routed by the ORIGINAL verb, not the shared canonical).
