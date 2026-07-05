@@ -347,6 +347,15 @@ extension_sql_file!(
     requires = ["pgck_v0418_query_keyfix"]
 );
 
+// v0.4.19 — governed DERIVED-read dispatch plane (see above). v0.4.20 follows:
+// pgCK#7 — resolve ckp.transition's sealed map project-independently (GRAPH ?g), so a governed
+// transition uses the type's map wherever it's sealed rather than the session ckp.project.
+extension_sql_file!(
+    "../sql/pgck--0.4.19--0.4.20.sql",
+    name = "pgck_v0420_transition_project_robust",
+    requires = ["pgck_v0419_derived_plane"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -355,7 +364,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v0419_derived_plane"]
+    requires = ["pgck_v0420_transition_project_robust"]
 );
 
 /// Registered at load time (shared_preload_libraries = 'pgck').
