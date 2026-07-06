@@ -356,6 +356,15 @@ extension_sql_file!(
     requires = ["pgck_v0419_derived_plane"]
 );
 
+// v0.4.21 — create_typed files v3.7 CORE lifecycle keys (lifecycle_state) under the core NS the
+// transition gate + task.create read, instead of the type NS — so instance.create {lifecycle_state}
+// lands where readers expect it (fixes the silent 'planned' treatment behind invalid_transition).
+extension_sql_file!(
+    "../sql/pgck--0.4.20--0.4.21.sql",
+    name = "pgck_v0421_create_core_keys",
+    requires = ["pgck_v0420_transition_project_robust"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -364,7 +373,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v0420_transition_project_robust"]
+    requires = ["pgck_v0421_create_core_keys"]
 );
 
 /// Registered at load time (shared_preload_libraries = 'pgck').

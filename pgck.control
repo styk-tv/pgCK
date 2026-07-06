@@ -1,6 +1,6 @@
 # pgCK — PostgreSQL Concept Kernel extension (rc3)
 comment = 'Concept Kernel Protocol runtime in-database: NATS bridge + SHACL validator + materializer'
-default_version = '0.4.20'
+default_version = '0.4.21'
 module_pathname = '$libdir/pgck'
 relocatable = false
 # pgRDF + pgcrypto must be available (pgRDF bind-mounted; pgcrypto is stock contrib).
