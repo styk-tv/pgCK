@@ -68,6 +68,19 @@ static PGCK_NATS_URL: pgrx::GucSetting<Option<std::ffi::CString>> =
 static PGCK_NATS_JS_STREAM: pgrx::GucSetting<Option<std::ffi::CString>> =
     pgrx::GucSetting::<Option<std::ffi::CString>>::new(None);
 
+// OIDC auth-callout config (F1 / SPEC.OAUTH2 §3.3). The realm public key + issuer + audience are
+// DELIVERED BY CONFIG, exactly like the other Keycloak params — no `.well-known` fetch, no egress
+// HTTP. Absent → tokens are not verified (anonymous), never a failure.
+#[cfg(feature = "nats-client")]
+static PGCK_OIDC_JWKS: pgrx::GucSetting<Option<std::ffi::CString>> =
+    pgrx::GucSetting::<Option<std::ffi::CString>>::new(None);
+#[cfg(feature = "nats-client")]
+static PGCK_OIDC_ISSUER: pgrx::GucSetting<Option<std::ffi::CString>> =
+    pgrx::GucSetting::<Option<std::ffi::CString>>::new(None);
+#[cfg(feature = "nats-client")]
+static PGCK_OIDC_AUDIENCE: pgrx::GucSetting<Option<std::ffi::CString>> =
+    pgrx::GucSetting::<Option<std::ffi::CString>>::new(None);
+
 /// Snapshot of the `pgck.nats_url` GUC. Read by bgworker boot to
 /// connect the async-nats client; default makes the in-container
 /// bundle layout (LOCAL-WSS-DEV.v0.2 §2) work without configuration.
@@ -90,6 +103,33 @@ pub(crate) fn nats_js_stream() -> Option<String> {
         .as_ref()
         .map(|s| s.to_string_lossy().into_owned())
         .filter(|s| !s.is_empty())
+}
+
+/// Load the OIDC auth config ONCE from the `pgck.oidc_*` GUCs (operator/env-delivered), parse the
+/// realm JWKS into memory, and cache it. Absent or unparseable config → `None` → the auth-callout
+/// admits anonymously (tokens NOT verified) — never a failure. The verified `sub` this later gates
+/// becomes the `ckp.requester` the seal path persists (F-A). Used by the callout responder (piece 3).
+#[cfg(feature = "nats-client")]
+pub(crate) fn oidc_auth_config() -> Option<&'static crate::jwt_verify::AuthConfig> {
+    static OIDC_CFG: std::sync::OnceLock<Option<crate::jwt_verify::AuthConfig>> =
+        std::sync::OnceLock::new();
+    OIDC_CFG
+        .get_or_init(|| {
+            let jwks = PGCK_OIDC_JWKS.get()?.to_string_lossy().into_owned();
+            let issuer = PGCK_OIDC_ISSUER.get()?.to_string_lossy().into_owned();
+            let audience = PGCK_OIDC_AUDIENCE.get()?.to_string_lossy().into_owned();
+            match crate::jwt_verify::AuthConfig::from_parts(&jwks, &issuer, &audience) {
+                Ok(cfg) => {
+                    log!("pgck: OIDC auth-config loaded — tokens verified in-memory against the configured realm JWK");
+                    Some(cfg)
+                }
+                Err(e) => {
+                    log!("pgck: OIDC auth-config present but unparseable ({e:?}); tokens NOT verified (anonymous)");
+                    None
+                }
+            }
+        })
+        .as_ref()
 }
 
 // Ship the working governed-write path as the extension's bootstrap SQL.
@@ -399,6 +439,30 @@ pub extern "C-unwind" fn _PG_init() {
             c"When set, pgCK also publishes event.kernel.* to this JS stream with a \
              Nats-Msg-Id header carrying ckp.ledger.seq for server-side dedup.",
             &PGCK_NATS_JS_STREAM,
+            pgrx::GucContext::Sighup,
+            pgrx::GucFlags::default(),
+        );
+        pgrx::GucRegistry::define_string_guc(
+            c"pgck.oidc_jwks",
+            c"Realm JWKS (public keys) delivered by config — no .well-known fetch, no egress HTTP",
+            c"JWKS JSON ({\"keys\":[…]}); only Ed25519 (OKP) keys are used. Empty = tokens not verified (anonymous).",
+            &PGCK_OIDC_JWKS,
+            pgrx::GucContext::Sighup,
+            pgrx::GucFlags::default(),
+        );
+        pgrx::GucRegistry::define_string_guc(
+            c"pgck.oidc_issuer",
+            c"Expected JWT issuer (the configured Keycloak realm issuer URL)",
+            c"The token `iss` MUST equal this. Empty = tokens not verified (anonymous).",
+            &PGCK_OIDC_ISSUER,
+            pgrx::GucContext::Sighup,
+            pgrx::GucFlags::default(),
+        );
+        pgrx::GucRegistry::define_string_guc(
+            c"pgck.oidc_audience",
+            c"Expected JWT audience (the configured client id)",
+            c"The token `aud` MUST include this. Empty = tokens not verified (anonymous).",
+            &PGCK_OIDC_AUDIENCE,
             pgrx::GucContext::Sighup,
             pgrx::GucFlags::default(),
         );

@@ -64,6 +64,10 @@ pub fn tick() {
             crate::nats_client::init_relay(url.clone());
             // Outbound publish thread + outbox drain (CKA-6).
             crate::nats_client::init(url, js_stream);
+            // F1: load the OIDC auth-config once from the pgck.oidc_* GUCs (in-memory verify, no
+            // network). Logs whether tokens will be verified or the broker stays anonymous. The
+            // callout responder (piece 3) uses this to verify each CONNECT token.
+            let _ = crate::oidc_auth_config();
         });
         let _ = crate::publish_drain::drain_once();
     }
