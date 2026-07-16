@@ -995,6 +995,12 @@ BEGIN
       'Ck-Seq',        NEW.seq::text,
       'Content-Type',  'application/json'
     )
+    -- F4 (msg.by): stamp the server-attributed sender `by` so peers (kernels, web bots, users) see
+    -- who-said-what WITHOUT the client asserting it. `created_by` derives from the VERIFIED
+    -- ckp.requester (F-A), never a client field — so `by` is un-forgeable.
+    || CASE WHEN v_body ? 'https://conceptkernel.org/ontology/v3.7/created_by'
+            THEN jsonb_build_object('by', v_body->>'https://conceptkernel.org/ontology/v3.7/created_by')
+            ELSE '{}'::jsonb END
   );
 
   RETURN NEW;
