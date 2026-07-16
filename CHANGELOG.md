@@ -2,6 +2,33 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.22 - 2026-07-16
+
+**Server-derived identity (F-group) + the pg18 substrate switch.** Identity is now
+verified server-side and persisted from a trusted source — never asserted by the
+client payload — and the substrate moves to PostgreSQL 18.
+
+- **F1 — auth-callout JWT verifier (`src/jwt_verify.rs`).** An EdDSA / Ed25519
+  verifier for the NATS auth-callout: the realm JWKS is delivered by env/GUC
+  (`pgck.oidc_jwks` / `_issuer` / `_audience`) and verified **in-memory — no egress
+  HTTP**. Signature + `iss`/`aud`/`exp`/`nbf` are checked; `kid`-selection loads the
+  matching Ed25519 key. The admission decision is **fail-open-to-anonymous,
+  never-to-admitted** — an unverifiable token yields an anonymous session, never an
+  admitted one. 16 unit tests + a production-correctness proof against a real
+  EdDSA token (`#[ignore]`, env-driven).
+- **F2 — dispatch/seal persist the *verified* requester (`s58`).** `task.create` and
+  `notify` set `created_by` from the trusted `ckp.requester` GUC, not the client
+  payload; a forged payload `sub` is ignored.
+- **F4 — server-attributed `by` on delivered events (`s60`).** Governed events drained
+  to the outbox carry a `by` header = the verified sender, derived server-side.
+- **pg18 substrate.** Adopt **pgRDF v0.6.20** (pg18-only). Base moves
+  `postgres:18-bookworm → postgres:18-trixie` (glibc 2.41): the pg18 pgRDF `.so`
+  requires `GLIBC_2.38`, which bookworm (glibc 2.36) cannot provide. pg18 images
+  mount the data volume at the parent `/var/lib/postgresql`. CI + release are now
+  **pg18-only**; all non-pg18 targets are blocked.
+- **Tests.** Warm suite (`s4…s60`, incl. `s58` + `s60`) and the `s34` fresh-install
+  gate both green on pg18 / trixie / pgRDF v0.6.20.
+
 ## v0.4.15 - 2026-06-19
 
 **Stabilization — provenance id-form symmetry.** `v0.4.14` made `reach`/`link` accept either a bare

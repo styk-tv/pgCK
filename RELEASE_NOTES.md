@@ -7,7 +7,9 @@ this file plus the repo runtime directories and README.
 
 ## Distribution
 
-Each `v*` tag publishes, for every `pg{14,15,16,17} × {amd64,arm64}`:
+pgCK is **pg18-only** (it tracks pgRDF v0.6.20, whose `.so` requires a
+glibc ≥ 2.38 base — trixie/noble). Each `v*` tag publishes, for
+`pg18 × {amd64,arm64}`:
 
 1. **GitHub Release tarball** — `pgck-<ver>-pg<PG>-glibc-<arch>.tar.gz`
    (`lib/pgck.so` + `share/extension/{pgck.control, pgck--<ver>.sql}` +
@@ -19,12 +21,12 @@ Each `v*` tag publishes, for every `pg{14,15,16,17} × {amd64,arm64}`:
    `application/vnd.styk.pgck.extension.v1`); pull with `oras`:
 
    ```sh
-   oras pull ghcr.io/styk-tv/pgck:0.4.1-pg17-arm64
+   oras pull ghcr.io/styk-tv/pgck:0.4.22-pg18-arm64
    ```
 
    This is a transport for the extension files, not a runnable image —
-   they are bind-mounted onto a stock `postgres:17` via the local runtime
-   workflow described in `README.md`.
+   they are bind-mounted onto a stock `postgres:18` (trixie/noble, glibc
+   ≥ 2.38) via the local runtime workflow described in `README.md`.
 
 ## Version history
 
