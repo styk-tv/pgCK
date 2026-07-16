@@ -17,6 +17,7 @@
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use std::collections::HashMap;
 
 /// A verified participant identity, derived from a JWT that passed BOTH signature and claim checks.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,6 +130,84 @@ fn aud_contains(aud: Option<&serde_json::Value>, want: &str) -> bool {
     }
 }
 
+/// The realm's signing keys, loaded once from the JWKS and held in memory, indexed by `kid`.
+/// Only Ed25519 (`kty:OKP, crv:Ed25519`) keys are kept — the auth-callout only accepts EdDSA.
+pub struct Jwks {
+    keys: HashMap<String, VerifyingKey>,
+}
+
+impl Jwks {
+    /// Parse a JWKS document (`{"keys":[…]}`) into the in-memory Ed25519 key set.
+    /// Non-Ed25519 entries (RSA/EC) and malformed keys are skipped, not fatal — a realm may
+    /// publish multiple key types. Errors only if no usable Ed25519 key is present.
+    pub fn parse(jwks_json: &str) -> Result<Jwks, VerifyError> {
+        let doc: serde_json::Value =
+            serde_json::from_str(jwks_json).map_err(|_| VerifyError::Malformed)?;
+        let arr = doc
+            .get("keys")
+            .and_then(|v| v.as_array())
+            .ok_or(VerifyError::Malformed)?;
+        let mut keys = HashMap::new();
+        for jwk in arr {
+            if jwk.get("kty").and_then(|v| v.as_str()) != Some("OKP") {
+                continue;
+            }
+            if jwk.get("crv").and_then(|v| v.as_str()) != Some("Ed25519") {
+                continue;
+            }
+            let (Some(kid), Some(x)) = (
+                jwk.get("kid").and_then(|v| v.as_str()),
+                jwk.get("x").and_then(|v| v.as_str()),
+            ) else {
+                continue;
+            };
+            let Ok(bytes) = b64(x) else { continue };
+            let Ok(arr32) = <[u8; 32]>::try_from(bytes) else {
+                continue;
+            };
+            if let Ok(vk) = VerifyingKey::from_bytes(&arr32) {
+                keys.insert(kid.to_string(), vk);
+            }
+        }
+        if keys.is_empty() {
+            return Err(VerifyError::Malformed);
+        }
+        Ok(Jwks { keys })
+    }
+
+    pub fn get(&self, kid: &str) -> Option<&VerifyingKey> {
+        self.keys.get(kid)
+    }
+
+    pub fn len(&self) -> usize {
+        self.keys.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.keys.is_empty()
+    }
+}
+
+/// Verify a JWT by selecting the signing key from the loaded JWKS via the token header's `kid`,
+/// then running the full [`verify_eddsa`] signature + claim checks. An unknown `kid` cannot be
+/// verified → rejected (a later increment refetches the JWKS once on a `kid` miss — SPEC.OAUTH2 §3.3).
+pub fn verify_jwt(
+    token: &str,
+    jwks: &Jwks,
+    expected: &Expected,
+) -> Result<VerifiedIdentity, VerifyError> {
+    let h_b64 = token.split('.').next().ok_or(VerifyError::Malformed)?;
+    let header: serde_json::Value =
+        serde_json::from_slice(&b64(h_b64)?).map_err(|_| VerifyError::Malformed)?;
+    let kid = header
+        .get("kid")
+        .and_then(|v| v.as_str())
+        .ok_or(VerifyError::Malformed)?;
+    // Unknown kid: no key to verify against → reject (a later increment refetches the JWKS once).
+    let key = jwks.get(kid).ok_or(VerifyError::BadSignature)?;
+    verify_eddsa(token, key, expected)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,6 +245,79 @@ mod tests {
             now_unix: now,
             leeway_secs: 30,
         }
+    }
+
+    /// A JWKS public JWK entry for the given signing key.
+    fn jwk(sk: &SigningKey, kid: &str) -> serde_json::Value {
+        let x = URL_SAFE_NO_PAD.encode(sk.verifying_key().to_bytes());
+        serde_json::json!({ "kty":"OKP","crv":"Ed25519","use":"sig","alg":"EdDSA","kid":kid,"x":x })
+    }
+
+    fn jwks_doc(keys: Vec<serde_json::Value>) -> String {
+        serde_json::json!({ "keys": keys }).to_string()
+    }
+
+    /// Mint a token whose header carries `kid` (the JWKS key-selection case).
+    fn mint_kid(sk: &SigningKey, kid: &str, claims: &serde_json::Value) -> String {
+        let header = serde_json::json!({ "alg":"EdDSA","typ":"JWT","kid":kid });
+        let h = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).unwrap());
+        let p = URL_SAFE_NO_PAD.encode(serde_json::to_vec(claims).unwrap());
+        let sig = sk.sign(format!("{h}.{p}").as_bytes());
+        let s = URL_SAFE_NO_PAD.encode(sig.to_bytes());
+        format!("{h}.{p}.{s}")
+    }
+
+    #[test]
+    fn parse_jwks_loads_ed25519_keys_by_kid() {
+        let sk = key(1);
+        let jwks = Jwks::parse(&jwks_doc(vec![jwk(&sk, "k1")])).unwrap();
+        assert_eq!(jwks.len(), 1);
+        assert!(jwks.get("k1").is_some());
+        assert!(jwks.get("nope").is_none());
+    }
+
+    #[test]
+    fn parse_jwks_skips_non_ed25519_keys() {
+        let sk = key(1);
+        let rsa = serde_json::json!({ "kty":"RSA","kid":"rsa1","n":"x","e":"AQAB" });
+        let jwks = Jwks::parse(&jwks_doc(vec![rsa, jwk(&sk, "ed1")])).unwrap();
+        assert_eq!(jwks.len(), 1);
+        assert!(jwks.get("ed1").is_some());
+        assert!(jwks.get("rsa1").is_none());
+    }
+
+    #[test]
+    fn verify_jwt_selects_the_key_by_kid() {
+        let k1 = key(1);
+        let k2 = key(2);
+        let jwks = Jwks::parse(&jwks_doc(vec![jwk(&k1, "k1"), jwk(&k2, "k2")])).unwrap();
+        let t = mint_kid(&k2, "k2", &claims(ISS, AUD, "alice", 10_000));
+        let id = verify_jwt(&t, &jwks, &expected(ISS, AUD, 9_000)).unwrap();
+        assert_eq!(id.sub, "alice");
+    }
+
+    #[test]
+    fn verify_jwt_rejects_a_kid_signed_by_the_wrong_key() {
+        // header claims kid=k2 but the token is signed by k1 — verify against k2's key → reject.
+        let k1 = key(1);
+        let k2 = key(2);
+        let jwks = Jwks::parse(&jwks_doc(vec![jwk(&k1, "k1"), jwk(&k2, "k2")])).unwrap();
+        let t = mint_kid(&k1, "k2", &claims(ISS, AUD, "mallory", 10_000));
+        assert_eq!(
+            verify_jwt(&t, &jwks, &expected(ISS, AUD, 9_000)),
+            Err(VerifyError::BadSignature)
+        );
+    }
+
+    #[test]
+    fn verify_jwt_rejects_an_unknown_kid() {
+        let k1 = key(1);
+        let jwks = Jwks::parse(&jwks_doc(vec![jwk(&k1, "k1")])).unwrap();
+        let t = mint_kid(&k1, "unknown", &claims(ISS, AUD, "alice", 10_000));
+        assert_eq!(
+            verify_jwt(&t, &jwks, &expected(ISS, AUD, 9_000)),
+            Err(VerifyError::BadSignature)
+        );
     }
 
     #[test]
