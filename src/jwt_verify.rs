@@ -249,6 +249,35 @@ impl AuthConfig {
     }
 }
 
+/// The auth-callout's admission decision for a CONNECT.
+///
+/// **Fail-open-to-anonymous, NEVER fail-open-to-admitted.** An absent/invalid/forged token — or
+/// verification not configured — yields `Anonymous` (the caller assigns a server-side nonce). It
+/// MUST NEVER admit the *claimed* identity of an unverified token. Only a cryptographically verified
+/// token yields `Verified{sub}`, and that `sub` becomes the `ckp.requester` the seal path persists.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Admission {
+    Verified { sub: String },
+    Anonymous,
+}
+
+/// Decide the admission identity for a CONNECT token — the security core of the auth-callout
+/// (F1 piece 3). The NATS wire (subscribe `$SYS.REQ.USER.AUTH`, mint the scoped user-JWT) is built
+/// AROUND this decision. `cfg == None` ⇒ OIDC verification is not configured ⇒ anonymous (the broker
+/// stays open exactly as today — no breakage when unconfigured).
+pub fn callout_identity(token: Option<&str>, cfg: Option<&AuthConfig>, now_unix: i64) -> Admission {
+    match (token, cfg) {
+        (Some(t), Some(c)) => match c.verify(t, now_unix) {
+            Ok(id) => Admission::Verified { sub: id.sub },
+            // A present-but-invalid/forged token drops to anonymous — it is NEVER admitted as the
+            // identity it claims. This is the un-forgeable property at the admission boundary.
+            Err(_) => Admission::Anonymous,
+        },
+        // No token, or verification not configured → anonymous (broker stays open, unchanged).
+        _ => Admission::Anonymous,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -372,6 +401,53 @@ mod tests {
         let foreign = key(9);
         let bad = mint_kid(&foreign, "k1", &claims(ISS, AUD, "mallory", 10_000));
         assert_eq!(cfg.verify(&bad, 9_000), Err(VerifyError::BadSignature));
+    }
+
+    #[test]
+    fn callout_admits_anonymous_when_no_token() {
+        let realm = key(1);
+        let cfg = AuthConfig::from_parts(&jwks_doc(vec![jwk(&realm, "k1")]), ISS, AUD).unwrap();
+        assert_eq!(
+            callout_identity(None, Some(&cfg), 9_000),
+            Admission::Anonymous
+        );
+    }
+
+    #[test]
+    fn callout_admits_anonymous_when_verification_not_configured() {
+        // even a real token → anonymous when no AuthConfig (verification off ⇒ broker unchanged).
+        let realm = key(1);
+        let t = mint_kid(&realm, "k1", &claims(ISS, AUD, "alice", 10_000));
+        assert_eq!(
+            callout_identity(Some(&t), None, 9_000),
+            Admission::Anonymous
+        );
+    }
+
+    #[test]
+    fn callout_verifies_a_valid_token_to_its_sub() {
+        let realm = key(1);
+        let cfg = AuthConfig::from_parts(&jwks_doc(vec![jwk(&realm, "k1")]), ISS, AUD).unwrap();
+        let t = mint_kid(&realm, "k1", &claims(ISS, AUD, "alice", 10_000));
+        assert_eq!(
+            callout_identity(Some(&t), Some(&cfg), 9_000),
+            Admission::Verified {
+                sub: "alice".into()
+            }
+        );
+    }
+
+    #[test]
+    fn callout_drops_a_forged_token_to_anonymous_never_admitting_the_claim() {
+        // the crux: a foreign-signed token claiming sub=mallory MUST be Anonymous, never Verified{mallory}.
+        let realm = key(1);
+        let foreign = key(9);
+        let cfg = AuthConfig::from_parts(&jwks_doc(vec![jwk(&realm, "k1")]), ISS, AUD).unwrap();
+        let forged = mint_kid(&foreign, "k1", &claims(ISS, AUD, "mallory", 10_000));
+        assert_eq!(
+            callout_identity(Some(&forged), Some(&cfg), 9_000),
+            Admission::Anonymous
+        );
     }
 
     #[test]
