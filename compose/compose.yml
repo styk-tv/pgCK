@@ -3,7 +3,13 @@ name: pgck
 services:
   postgres:
     container_name: pgck-postgres
-    image: docker.io/library/postgres:17.4-bookworm
+    # trixie (Debian 13, glibc 2.41), NOT bookworm. pgRDF v0.6.20 is pg18-only and
+    # its .so requires GLIBC_2.38 — bookworm ships 2.36, so the pg17-era bookworm
+    # pin can't load the pg18 pgrdf.so ("version `GLIBC_2.38' not found"). trixie is
+    # the natural pg18 base (plain postgres:18 == trixie) and clears the floor. The
+    # pg17-bookworm SONAME guardrail lifts for pg18: downstream ck-allinone pg18 must
+    # likewise be built on a glibc>=2.38 base (trixie/noble), never bookworm.
+    image: docker.io/library/postgres:18-trixie
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-pgck}
@@ -12,20 +18,26 @@ services:
     command: [postgres, -c, "shared_preload_libraries=pgrdf,pgck"]
     ports: ["${POSTGRES_PORT:-5432}:5432", "${NATS_PORT:-4222}:4222"]
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./extensions/pgrdf/lib/pgrdf.so:/usr/lib/postgresql/17/lib/pgrdf.so:ro,z
-      - ./extensions/pgrdf/share/extension/pgrdf.control:/usr/share/postgresql/17/extension/pgrdf.control:ro,z
-      - ./extensions/pgrdf/share/extension/pgrdf--0.6.19.sql:/usr/share/postgresql/17/extension/pgrdf--0.6.19.sql:ro,z
+      # postgres:18+ images store data in a major-version subdir and REFUSE a
+      # volume mounted directly at /var/lib/postgresql/data (they error to guard
+      # against a silent cross-major reuse — docker-library/postgres#1259). The
+      # supported 18+ layout mounts the PARENT; data then lands in
+      # /var/lib/postgresql/18/docker inside the volume. This is the pg17→pg18
+      # switch's one compose gotcha (the .so/ABI moved cleanly).
+      - pgdata:/var/lib/postgresql
+      - ./extensions/pgrdf/lib/pgrdf.so:/usr/lib/postgresql/18/lib/pgrdf.so:ro,z
+      - ./extensions/pgrdf/share/extension/pgrdf.control:/usr/share/postgresql/18/extension/pgrdf.control:ro,z
+      - ./extensions/pgrdf/share/extension/pgrdf--0.6.20.sql:/usr/share/postgresql/18/extension/pgrdf--0.6.20.sql:ro,z
       # Complete SQL set per oci-germination packaging (ship the whole share/extension,
       # not just the base install). A stock postgres image is bind-mounted here, so the
       # whole-dir COPY the bundles use would shadow built-in pgcrypto/plpgsql — instead
       # mount every pgrdf--*.sql the 0.6.17 tarball ships. The upgrade script is inert for
       # the warm fresh-install path but keeps ALTER EXTENSION UPDATE resolvable and the
       # mount set == the published artifact's extension dir. Update both filenames on bump.
-      - ./extensions/pgrdf/share/extension/pgrdf--0.5.1--0.6.19.sql:/usr/share/postgresql/17/extension/pgrdf--0.5.1--0.6.19.sql:ro,z
-      - ./extensions/pgck/lib/pgck.so:/usr/lib/postgresql/17/lib/pgck.so:ro,z
-      - ./extensions/pgck/share/extension/pgck.control:/usr/share/postgresql/17/extension/pgck.control:ro,z
-      - ./extensions/pgck/share/extension/pgck--0.4.22.sql:/usr/share/postgresql/17/extension/pgck--0.4.22.sql:ro,z
+      - ./extensions/pgrdf/share/extension/pgrdf--0.5.1--0.6.20.sql:/usr/share/postgresql/18/extension/pgrdf--0.5.1--0.6.20.sql:ro,z
+      - ./extensions/pgck/lib/pgck.so:/usr/lib/postgresql/18/lib/pgck.so:ro,z
+      - ./extensions/pgck/share/extension/pgck.control:/usr/share/postgresql/18/extension/pgck.control:ro,z
+      - ./extensions/pgck/share/extension/pgck--0.4.22.sql:/usr/share/postgresql/18/extension/pgck--0.4.22.sql:ro,z
       # NOTE: parent is NOT :ro — docker must create mountpoints for the
       # task.ttl/goal.ttl overlays below (they don't exist in fixtures, and a
       # read-only parent bind-mount rejects mknod of new mountpoint files).

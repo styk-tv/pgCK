@@ -5,11 +5,17 @@
 # that backs the Envoy-fronted https://pgck.localhost route — its own bundled
 # PG17 + pgRDF + pgCK + NATS, isolated from every other local project.
 #
-# Image: ghcr.io/sporaxis-com/ociger-ck-allinone:v0.7.19 — first published
-#   all-in-one carrying pgck 0.4.13 + pgrdf 0.6.3 (symmetric with the dev tip:
-#   has create_typed + snapshot.bodies). Verify before trusting:
-#     gh attestation verify oci://ghcr.io/sporaxis-com/ociger-ck-allinone:v0.7.19 \
-#        --repo sporaxis-com/oci-germination          # exit 0 = good
+# PG18 MIGRATION (gated on oci-germination): the smoke harness (compose.yml) has
+# moved to pg18 / pgRDF v0.6.20 / postgres:18-trixie. This drop-in stays on the
+# latest PUBLISHED all-in-one (v0.7.27, pg17) until oci-germination ships a pg18
+# ck-allinone built on a glibc>=2.38 base (trixie/noble) — the pg18 pgRDF .so
+# requires GLIBC_2.38, which the bookworm base cannot provide. Bump this pin to
+# the pg18 all-in-one once that rebuild is published + attested.
+#
+# Image: ghcr.io/sporaxis-com/ociger-ck-allinone:v0.7.27 — current published
+#   all-in-one (the tip everything local tracks). Verify before trusting:
+#     gh attestation verify oci://ghcr.io/sporaxis-com/ociger-ck-allinone:v0.7.27 \
+#        --repo sporaxis-com/oci-germination          # exit 0 = good (verified 2026-07-05)
 #   Override with: CK_ALLINONE_IMAGE=<ref> docker compose -f compose/compose.localhost.yml up -d
 #
 # Legacy host ports (predate the 572xx sibling convention; the shared host Envoy
@@ -19,9 +25,12 @@
 #   14222 NATS TCP → container 4222   (host-side dispatcher / outbox drain)
 #   15432 Postgres → container 5432   (the kernel's own isolated DB)
 #
-# Fresh named volume (pgck-allinone-pgdata): a clean 0.4.13 install. The old
-# v0.7.2 (pgck 0.2.2) anon volume 5f510f02… is left intact on disk — migrate its
-# concepts forward via snapshot.bodies → replay, never an in-place ext upgrade.
+# Fresh named volume (pgck-allinone-pgdata): a clean install of whatever the
+# pinned image ships (v0.7.27 → pgck 0.4.20 + pgrdf 0.6.19). NOTE: the image
+# ships NO in-place upgrade path, so bumping the pin requires `down -v` (fresh
+# volume) to actually run the newer kernel — a plain recreate keeps the old
+# installed extension. Migrate real concepts forward via snapshot.bodies →
+# replay before wiping, never an in-place ext upgrade.
 #
 # After up: run scripts/pgck-root-redirect.sh so GET / → /assets/web2/, then a
 # one-time ckp.bootstrap_kernel + ontology load (README.md §First boot).
@@ -30,7 +39,7 @@ name: pgck-localhost
 
 services:
   pgck-allinone:
-    image: ${CK_ALLINONE_IMAGE:-ghcr.io/sporaxis-com/ociger-ck-allinone:v0.7.19@sha256:17876a291ecc84aba6c93173f854d42a22e9f866cc4036c77485304e46837fda}
+    image: ${CK_ALLINONE_IMAGE:-ghcr.io/sporaxis-com/ociger-ck-allinone:v0.7.27@sha256:dbb538c9c7a3bd4d8b4ec66801d15643d5f738c27ff39f61c1f6b65535fa4557}
     container_name: pgck-allinone
     restart: unless-stopped
     environment:

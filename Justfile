@@ -1,6 +1,6 @@
 set shell := ["bash", "-uc"]
-pgrdf_ver := "0.6.19"
-pg := "17"
+pgrdf_ver := "0.6.20"
+pg := "18"
 arch := "arm64"
 docker_context := env_var_or_default("DOCKER_CONTEXT", "colima")
 compose_project := env_var_or_default("PGCK_COMPOSE_PROJECT", "pgck")
