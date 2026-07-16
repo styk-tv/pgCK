@@ -65,24 +65,24 @@ def fmt_ts(iso: str) -> str:
 
 def render_ext(owner: str, ext_ver: str) -> str:
     pkgs = gh_api(f"/users/{owner}/packages/container/pgck/versions")
-    amd_d, amd_t = find_version(pkgs, f"{ext_ver}-pg17-amd64")
-    arm_d, arm_t = find_version(pkgs, f"{ext_ver}-pg17-arm64")
-    return f"""## pgCK extension — `v{ext_ver}` (PostgreSQL 17)
+    amd_d, amd_t = find_version(pkgs, f"{ext_ver}-pg18-amd64")
+    arm_d, arm_t = find_version(pkgs, f"{ext_ver}-pg18-arm64")
+    return f"""## pgCK extension — `v{ext_ver}` (PostgreSQL 18)
 
-`oras pull ghcr.io/styk-tv/pgck:{ext_ver}-pg17-<arch>` → drop `lib/pgck.so` + `share/extension/{{pgck.control, pgck--{ext_ver}.sql}}` next to your `postgres:17` install.
+`oras pull ghcr.io/styk-tv/pgck:{ext_ver}-pg18-<arch>` → drop `lib/pgck.so` + `share/extension/{{pgck.control, pgck--{ext_ver}.sql}}` next to your `postgres:18` install (glibc ≥ 2.38 base — trixie/noble).
 
 | arch  | Pull URI                                  | Digest                                                                  | Created (UTC)       |
 |-------|-------------------------------------------|-------------------------------------------------------------------------|---------------------|
-| amd64 | `ghcr.io/styk-tv/pgck:{ext_ver}-pg17-amd64`   | `{amd_d}` | {fmt_ts(amd_t)} |
-| arm64 | `ghcr.io/styk-tv/pgck:{ext_ver}-pg17-arm64`   | `{arm_d}` | {fmt_ts(arm_t)} |
+| amd64 | `ghcr.io/styk-tv/pgck:{ext_ver}-pg18-amd64`   | `{amd_d}` | {fmt_ts(amd_t)} |
+| arm64 | `ghcr.io/styk-tv/pgck:{ext_ver}-pg18-arm64`   | `{arm_d}` | {fmt_ts(arm_t)} |
 
 |                       |                                                                          |
 |-----------------------|--------------------------------------------------------------------------|
 | Artifact type         | `application/vnd.styk.pgck.extension.v1`                                 |
 | Tarball mirror        | https://github.com/styk-tv/pgCK/releases/tag/v{ext_ver}                  |
 | Repo packages view    | https://github.com/styk-tv/pgCK/pkgs/container/pgck                      |
-| Older PG majors       | `{ext_ver}-pg{{14,15,16}}-{{amd64,arm64}}` published alongside           |
-| Provenance            | SLSA Build Provenance v1 — verify with `gh attestation verify oci://ghcr.io/styk-tv/pgck:{ext_ver}-pg17-amd64 --repo styk-tv/pgCK` |"""
+| PG major              | **pg18 only** — tracks pgRDF v0.6.20 (pg18); the pg18 `.so` needs glibc ≥ 2.38 (trixie/noble, not bookworm) |
+| Provenance            | SLSA Build Provenance v1 — verify with `gh attestation verify oci://ghcr.io/styk-tv/pgck:{ext_ver}-pg18-amd64 --repo styk-tv/pgCK` |"""
 
 
 def render_web(owner: str, web_ver: str) -> str:
@@ -145,7 +145,7 @@ def main() -> None:
 
 # pgCK — latest published artifacts
 
-Two publishable surfaces ship from this repo: the PostgreSQL **extension** (oras-pulled OCI artifact) and the **pgck-web** FastAPI runtime (docker image). This file tracks the head of each on **PostgreSQL 17**. Older PG majors (14, 15, 16) are still built per release — see [Repo packages view](https://github.com/styk-tv/pgCK/pkgs/container/pgck) for the full matrix.
+Two publishable surfaces ship from this repo: the PostgreSQL **extension** (oras-pulled OCI artifact) and the **pgck-web** FastAPI runtime (docker image). This file tracks the head of each on **PostgreSQL 18**. pgCK is **pg18-only** — it tracks pgRDF v0.6.20 (pg18), whose `.so` requires a glibc ≥ 2.38 base (trixie/noble). Non-pg18 targets are no longer built.
 
 {ext_section}
 
