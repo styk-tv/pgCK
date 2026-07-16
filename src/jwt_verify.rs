@@ -437,6 +437,46 @@ mod tests {
         );
     }
 
+    /// Integration proof against a **real Keycloak EdDSA token + JWKS**, delivered by env (no
+    /// secrets committed; ignored in CI). Proves the verifier is production-correct, not just
+    /// correct on synthetic vectors. Run:
+    ///   OIDC_TEST_JWKS="$(cat jwks.json)" OIDC_TEST_TOKEN="$(cat token.jwt)" \
+    ///   OIDC_TEST_ISS=… OIDC_TEST_AUD=account OIDC_TEST_NOW=$(date +%s) \
+    ///   cargo test --no-default-features --features pg17,embedded-nats real_keycloak -- --ignored --nocapture
+    #[test]
+    #[ignore = "needs a live realm JWKS + token via env (OIDC_TEST_*)"]
+    fn verifies_a_real_keycloak_token_from_env() {
+        let jwks = std::env::var("OIDC_TEST_JWKS").expect("OIDC_TEST_JWKS");
+        let token = std::env::var("OIDC_TEST_TOKEN").expect("OIDC_TEST_TOKEN");
+        let iss = std::env::var("OIDC_TEST_ISS").expect("OIDC_TEST_ISS");
+        let aud = std::env::var("OIDC_TEST_AUD").expect("OIDC_TEST_AUD");
+        let now: i64 = std::env::var("OIDC_TEST_NOW")
+            .expect("OIDC_TEST_NOW")
+            .parse()
+            .unwrap();
+
+        let cfg = AuthConfig::from_parts(&jwks, &iss, &aud).expect("parse real JWKS");
+        let id = cfg.verify(&token, now).expect("real token must verify");
+        eprintln!(
+            "REAL verify OK: sub={} preferred_username={:?}",
+            id.sub, id.preferred_username
+        );
+        assert!(!id.sub.is_empty());
+
+        // Tamper: flip a content byte in the payload segment → the real signature must reject it.
+        let parts: Vec<&str> = token.split('.').collect();
+        let mut p = parts[1].as_bytes().to_vec();
+        let i = p.len() / 2;
+        p[i] = if p[i] == b'a' { b'b' } else { b'a' };
+        let tampered = format!(
+            "{}.{}.{}",
+            parts[0],
+            String::from_utf8(p).unwrap(),
+            parts[2]
+        );
+        assert_eq!(cfg.verify(&tampered, now), Err(VerifyError::BadSignature));
+    }
+
     #[test]
     fn callout_drops_a_forged_token_to_anonymous_never_admitting_the_claim() {
         // the crux: a foreign-signed token claiming sub=mallory MUST be Anonymous, never Verified{mallory}.
