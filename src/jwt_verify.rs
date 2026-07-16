@@ -208,6 +208,47 @@ pub fn verify_jwt(
     verify_eddsa(token, key, expected)
 }
 
+/// The auth-callout's in-memory verifier state, built ONCE at startup from **env/GUC-delivered
+/// config** — the realm JWKS (public key JWK), the expected issuer, and the audience — exactly the
+/// way the other Keycloak parameters are configured. **No egress HTTP, no network in the live path.**
+/// Rotation is handled by re-delivering the config on the next cold start (SPEC.OAUTH2 §3.3).
+pub struct AuthConfig {
+    jwks: Jwks,
+    issuer: String,
+    audience: String,
+    leeway_secs: i64,
+}
+
+impl AuthConfig {
+    /// Build from the config strings the operator delivers (JWKS JSON + issuer + audience).
+    pub fn from_parts(
+        jwks_json: &str,
+        issuer: &str,
+        audience: &str,
+    ) -> Result<AuthConfig, VerifyError> {
+        Ok(AuthConfig {
+            jwks: Jwks::parse(jwks_json)?,
+            issuer: issuer.to_string(),
+            audience: audience.to_string(),
+            leeway_secs: 30,
+        })
+    }
+
+    /// Verify a token against the loaded JWKS + configured claims at time `now_unix`.
+    pub fn verify(&self, token: &str, now_unix: i64) -> Result<VerifiedIdentity, VerifyError> {
+        verify_jwt(
+            token,
+            &self.jwks,
+            &Expected {
+                issuer: &self.issuer,
+                audience: &self.audience,
+                now_unix,
+                leeway_secs: self.leeway_secs,
+            },
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,6 +359,19 @@ mod tests {
             verify_jwt(&t, &jwks, &expected(ISS, AUD, 9_000)),
             Err(VerifyError::BadSignature)
         );
+    }
+
+    #[test]
+    fn auth_config_verifies_from_env_delivered_jwks_without_network() {
+        let realm = key(1);
+        let cfg = AuthConfig::from_parts(&jwks_doc(vec![jwk(&realm, "k1")]), ISS, AUD).unwrap();
+        // a valid realm-signed token is admitted
+        let ok = mint_kid(&realm, "k1", &claims(ISS, AUD, "alice", 10_000));
+        assert_eq!(cfg.verify(&ok, 9_000).unwrap().sub, "alice");
+        // a token claiming the realm's kid but signed by a foreign key is rejected
+        let foreign = key(9);
+        let bad = mint_kid(&foreign, "k1", &claims(ISS, AUD, "mallory", 10_000));
+        assert_eq!(cfg.verify(&bad, 9_000), Err(VerifyError::BadSignature));
     }
 
     #[test]
