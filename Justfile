@@ -1,6 +1,6 @@
 set shell := ["bash", "-uc"]
-pgrdf_ver := "0.6.19"
-pg := "17"
+pgrdf_ver := "0.6.20"
+pg := "18"
 arch := "arm64"
 docker_context := env_var_or_default("DOCKER_CONTEXT", "colima")
 compose_project := env_var_or_default("PGCK_COMPOSE_PROJECT", "pgck")
@@ -112,6 +112,11 @@ smoke-s4: pgrdf-fetch build-ext compose-recreate
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s52_epsilon_materialize.sql
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s53_dispersion.sql
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s54_query_key_resolution.sql
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s55_governed_derived_read.sql
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s56_transition_project_robust.sql
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s57_create_typed_core_lifecycle.sql
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s58_identity_persistence.sql
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s60_msg_by.sql
 
 smoke-s3: smoke-s4
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 \

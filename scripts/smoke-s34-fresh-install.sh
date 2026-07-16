@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # s34 — install-from-zero gate (answers oci-germination's install-cascade NOTIFY, 2026-06-11).
 #
-# Contract: a VIRGIN postgres-17 cluster + `CREATE EXTENSION pgck CASCADE` MUST yield a
+# Contract: a VIRGIN postgres-18 cluster + `CREATE EXTENSION pgck CASCADE` MUST yield a
 # working governed 2-arg dispatch for a REAL `ck_participant` login session — with ZERO
 # manual steps (no CALL bootstrap_kernel, no ALTER OWNER, no extra grants). The full
 # board flow (boot + import_module from the shipped /ontology layout) must work, and the
@@ -35,14 +35,14 @@ cleanup
 echo "s34: virgin cluster (no volume) + $PGCK_SQL + $PGRDF_SQL"
 docker --context "$DC" run -d --name "$NAME" \
   -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=fresh -e POSTGRES_DB=fresh \
-  -v "$EXT/pgrdf/lib/pgrdf.so":/usr/lib/postgresql/17/lib/pgrdf.so:ro \
-  -v "$EXT/pgrdf/share/extension/pgrdf.control":/usr/share/postgresql/17/extension/pgrdf.control:ro \
-  -v "$EXT/pgrdf/share/extension/$PGRDF_SQL":"/usr/share/postgresql/17/extension/$PGRDF_SQL":ro \
-  -v "$EXT/pgck/lib/pgck.so":/usr/lib/postgresql/17/lib/pgck.so:ro \
-  -v "$EXT/pgck/share/extension/pgck.control":/usr/share/postgresql/17/extension/pgck.control:ro \
-  -v "$EXT/pgck/share/extension/$PGCK_SQL":"/usr/share/postgresql/17/extension/$PGCK_SQL":ro \
+  -v "$EXT/pgrdf/lib/pgrdf.so":/usr/lib/postgresql/18/lib/pgrdf.so:ro \
+  -v "$EXT/pgrdf/share/extension/pgrdf.control":/usr/share/postgresql/18/extension/pgrdf.control:ro \
+  -v "$EXT/pgrdf/share/extension/$PGRDF_SQL":"/usr/share/postgresql/18/extension/$PGRDF_SQL":ro \
+  -v "$EXT/pgck/lib/pgck.so":/usr/lib/postgresql/18/lib/pgck.so:ro \
+  -v "$EXT/pgck/share/extension/pgck.control":/usr/share/postgresql/18/extension/pgck.control:ro \
+  -v "$EXT/pgck/share/extension/$PGCK_SQL":"/usr/share/postgresql/18/extension/$PGCK_SQL":ro \
   -v "$ROOT/ontology":/ontology:ro \
-  docker.io/library/postgres:17.4-bookworm \
+  docker.io/library/postgres:18-trixie \
   postgres -c shared_preload_libraries=pgrdf,pgck >/dev/null
 
 # first boot initdb's then restarts; wait for STABLE readiness

@@ -24,15 +24,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: ./.github/actions/setup-pgrx
         with: { pg: "17" }
-      - run: cargo test --no-default-features --features pg17,embedded-nats nats::parser::tests
-      - run: cargo test --no-default-features --features pg17,embedded-nats nats::router::tests
+      - run: cargo test --no-default-features --features pg18,embedded-nats nats::parser::tests
+      - run: cargo test --no-default-features --features pg18,embedded-nats nats::router::tests
 
   clippy:
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
-        pg: ["14", "15", "16", "17"]
+        pg: ["18"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -46,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pg: ["14", "15", "16", "17"]
+        pg: ["18"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

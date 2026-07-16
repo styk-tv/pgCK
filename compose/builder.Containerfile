@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.4
 FROM docker.io/library/rust:1.91-bookworm AS builder
-ARG PG_MAJOR=17
+ARG PG_MAJOR=18
 ARG PGRX_VERSION=0.16
 # NATS profile: embedded-nats (compose dev — pgCK hosts its own NATS) or
 # nats-client (bundle/cluster — pgCK is a client of a separate nats-server,
