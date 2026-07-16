@@ -52,6 +52,9 @@ mod nats_client;
 mod publish_drain;
 // ε-materialize over-budget drain (T6). SPI-only, no NATS dependency — always compiled.
 mod materialize_drain;
+// Auth-callout JWT verifier (F-A / SPEC.OAUTH2 §3.3). Pure, offline EdDSA verification against an
+// in-memory realm JWK — no NATS, no network, no pg — so it compiles + unit-tests under any feature.
+mod jwt_verify;
 
 // GUCs for the `nats-client` profile. Registered once in _PG_init and
 // read on bgworker boot (S4 step 5). Defaults make the canonical
@@ -443,7 +446,10 @@ mod tests {
     #[test]
     fn version_present() {
         // Asserts the contract: pgck_version() tracks the crate version exactly.
-        assert_eq!(crate::pgck_version(), concat!("pgck ", env!("CARGO_PKG_VERSION")));
+        assert_eq!(
+            crate::pgck_version(),
+            concat!("pgck ", env!("CARGO_PKG_VERSION"))
+        );
     }
 }
 

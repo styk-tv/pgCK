@@ -207,7 +207,10 @@ BEGIN
 
   WHEN 'task.create' THEN
     DECLARE t jsonb := p_payload->'task'; k text := p_payload->'task'->>'target_kernel';
-            sub text := p_payload->>'sub'; tid text; qseq int; v_body jsonb;
+            -- F-A (pgCK#9/#10): identity is SERVER-DERIVED from the verified connection
+            -- (the ckp.requester GUC the trusted ingress sets from the NATS-verified bearer),
+            -- NEVER the client payload. A payload {sub} is ignored — it cannot forge created_by.
+            sub text := current_setting('ckp.requester', true); tid text; qseq int; v_body jsonb;
     BEGIN
       IF k IS NULL OR (p_payload->'task'->>'title') IS NULL THEN
         res := jsonb_build_object('ok',false,'error','kernel and title required');
@@ -319,7 +322,8 @@ BEGIN
   WHEN 'notify' THEN
     DECLARE frm text := p_payload->>'from'; tgt text := p_payload->>'to';
             pred text := COALESCE(p_payload->>'predicate','notifies');
-            bdy text := p_payload->>'body'; sub text := p_payload->>'sub'; mid text; topic text; v_body jsonb;
+            -- F-A: server-derived identity (verified connection), never the payload (see task.create).
+            bdy text := p_payload->>'body'; sub text := current_setting('ckp.requester', true); mid text; topic text; v_body jsonb;
     BEGIN
       IF frm IS NULL OR tgt IS NULL OR bdy IS NULL THEN
         res := jsonb_build_object('ok',false,'error','from, to, body required');
