@@ -419,10 +419,37 @@ extension_sql_file!(
     requires = ["pgck_v0421_create_core_keys"]
 );
 
+/// Database the pgCK bridge worker attaches to (`connect_worker_to_spi`). It MUST
+/// be the database where `CREATE EXTENSION pgck` ran — the worker drains
+/// `ckp.outbox` from there. Default `postgres`; override with `pgck.worker_database`.
+/// Always compiled (the worker runs in every build, independent of the NATS feature).
+static PGCK_WORKER_DATABASE: pgrx::GucSetting<Option<std::ffi::CString>> =
+    pgrx::GucSetting::<Option<std::ffi::CString>>::new(None);
+
+/// Snapshot of `pgck.worker_database` (default `postgres` when unset/empty).
+pub(crate) fn worker_database() -> String {
+    PGCK_WORKER_DATABASE
+        .get()
+        .as_ref()
+        .map(|s| s.to_string_lossy().into_owned())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "postgres".to_string())
+}
+
 /// Registered at load time (shared_preload_libraries = 'pgck').
 /// Spawns the pgCK background worker.
 #[pg_guard]
 pub extern "C-unwind" fn _PG_init() {
+    // Always-on GUC (the worker exists in every build). Postmaster context: read
+    // once when the worker attaches to SPI, so it must be set before startup.
+    pgrx::GucRegistry::define_string_guc(
+        c"pgck.worker_database",
+        c"Database the pgCK bridge worker attaches to (where CREATE EXTENSION pgck ran)",
+        c"The worker drains ckp.outbox from here. Default 'postgres'. Set to match your install DB.",
+        &PGCK_WORKER_DATABASE,
+        pgrx::GucContext::Postmaster,
+        pgrx::GucFlags::default(),
+    );
     #[cfg(feature = "nats-client")]
     {
         pgrx::GucRegistry::define_string_guc(
@@ -483,9 +510,10 @@ pub extern "C-unwind" fn _PG_init() {
 #[pg_guard]
 pub extern "C-unwind" fn pgck_bridge_main(_arg: pg_sys::Datum) {
     BackgroundWorker::attach_signal_handlers(SignalWakeFlags::SIGHUP | SignalWakeFlags::SIGTERM);
-    BackgroundWorker::connect_worker_to_spi(Some("postgres"), None);
+    let db = crate::worker_database();
+    BackgroundWorker::connect_worker_to_spi(Some(db.as_str()), None);
 
-    log!("pgck: bridge worker starting");
+    log!("pgck: bridge worker starting (database={db})");
     while BackgroundWorker::wait_latch(Some(TICK_INTERVAL)) {
         bgworker::tick();
     }

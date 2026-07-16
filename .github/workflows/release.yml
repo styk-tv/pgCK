@@ -27,6 +27,14 @@ jobs:
         # majors are intentionally not built.
         pg: ["18"]
         arch: [amd64, arm64]
+        # Two .so variants per (pg, arch):
+        #   plain  (suffix "")     — --features pg18            : minimal, bring-your-own transport
+        #   nats   (suffix "-nats")— --features pg18,nats-client: self-drain + inbound relay IN the .so
+        #     (the outbox→NATS drain + dispatch-bridge oci-germination consumes; it drops
+        #      ociger-pgck-relay and just sets pgck.nats_url). Same extension name (pgck.so).
+        variant:
+          - { suffix: "", features: "pg18" }
+          - { suffix: "-nats", features: "pg18,nats-client" }
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-22.04' }}
     steps:
       - uses: actions/checkout@v4
@@ -35,7 +43,7 @@ jobs:
         with: { pg: "${{ matrix.pg }}" }
 
       - name: Build extension package
-        run: cargo pgrx package --no-default-features --features pg${{ matrix.pg }} --pg-config /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
+        run: cargo pgrx package --no-default-features --features ${{ matrix.variant.features }} --pg-config /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
 
       # SPEC.PGCK.DEPLOY.v0.1 §2 layout (pgRDF INSTALL-spec parity):
       #   pgck-<ver>-pg<PG>-glibc-<arch>.tar.gz
@@ -51,7 +59,7 @@ jobs:
           set -euo pipefail
           VER="${GITHUB_REF_NAME#v}"
           PKG="target/release/pgck-pg${{ matrix.pg }}"
-          OUT="pgck-${VER}-pg${{ matrix.pg }}-glibc-${{ matrix.arch }}"
+          OUT="pgck-${VER}-pg${{ matrix.pg }}${{ matrix.variant.suffix }}-glibc-${{ matrix.arch }}"
           mkdir -p "${OUT}/lib" "${OUT}/share/extension" "${OUT}/ontology"
           cp "${PKG}/usr/lib/postgresql/${{ matrix.pg }}/lib/pgck.so"            "${OUT}/lib/"
           cp "${PKG}/usr/share/postgresql/${{ matrix.pg }}/extension/"*.control  "${OUT}/share/extension/"
@@ -88,17 +96,18 @@ jobs:
           VER="${GITHUB_REF_NAME#v}"
           DIR="${{ steps.pack.outputs.dir }}"
           REPO="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/pgck"
-          TAG="${VER}-pg${{ matrix.pg }}-${{ matrix.arch }}"
+          TAG="${VER}-pg${{ matrix.pg }}${{ matrix.variant.suffix }}-${{ matrix.arch }}"
           echo "${{ secrets.GITHUB_TOKEN }}" \
             | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
           cd "${DIR}"
           oras push "${REPO}:${TAG}" \
             --artifact-type application/vnd.styk.pgck.extension.v1 \
             --annotation "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
-            --annotation "org.opencontainers.image.description=pgCK PostgreSQL extension (pg${{ matrix.pg }}, ${{ matrix.arch }}, glibc)" \
+            --annotation "org.opencontainers.image.description=pgCK PostgreSQL extension (pg${{ matrix.pg }}${{ matrix.variant.suffix }}, ${{ matrix.arch }}, glibc)" \
             --annotation "org.opencontainers.image.licenses=MIT" \
             --annotation "tech.conceptkernel.pgck.version=${VER}" \
             --annotation "tech.conceptkernel.pgck.pg=${{ matrix.pg }}" \
+            --annotation "tech.conceptkernel.pgck.variant=${{ matrix.variant.suffix == '' && 'plain' || 'nats' }}" \
             --annotation "tech.conceptkernel.pgck.arch=${{ matrix.arch }}" \
             lib/pgck.so:application/vnd.styk.pgck.so \
             share/extension/pgck.control:application/vnd.styk.pgck.control \

@@ -2,6 +2,28 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.23 - 2026-07-16
+
+**pgCK owns the NATS drain — a self-contained `-nats` `.so` variant + a robust bridge worker.**
+The outbox→NATS drain (and inbound relay) now ship *inside* a pgCK extension variant, so downstream
+bundles stop reimplementing it (oci-germination drops its Go `ociger-pgck-relay`). Two robustness
+fixes make the in-kernel drain reliable from a cold start.
+
+- **New `-nats` release variant** — `pgck:<ver>-pg18-nats-<arch>`, built `--features pg18,nats-client`:
+  the outbox→NATS drain + inbound dispatch relay + auth-callout verifier live in the `.so`. Same
+  extension name (`pgck.so`); activate by setting `pgck.nats_url`. The plain minimal
+  `pgck:<ver>-pg18-<arch>` still ships alongside for bring-your-own-transport consumers.
+- **`pgck.worker_database` GUC** (default `postgres`) — the bridge worker attached to a hardcoded
+  `postgres` database; it is now configurable to match wherever `CREATE EXTENSION pgck` ran.
+- **The bridge worker waits for the extension instead of dying.** It starts at postmaster, possibly
+  before `CREATE EXTENSION`; a `relation "ckp.outbox" does not exist` ereport used to kill it (exit 1),
+  so it never returned after the extension was created. It now probes with `to_regclass` (NULL, never
+  an error, when absent) and no-ops until the extension appears, then latches ready and drains — **no
+  restart needed**.
+- **Verified** — the `-nats` build self-drains `msg.by` end-to-end (event `by:` header = the verified
+  requester) over NATS TCP **and** WebSocket, with the worker surviving a from-zero `CREATE EXTENSION`.
+  The verifier (`jwt_verify.rs`) and the OIDC GUCs are unchanged — compiled into the `-nats` build, never edited.
+
 ## v0.4.22 - 2026-07-16
 
 **Server-derived identity (F-group) + the pg18 substrate switch.** Identity is now

@@ -37,7 +37,7 @@ services:
       - ./extensions/pgrdf/share/extension/pgrdf--0.5.1--0.6.20.sql:/usr/share/postgresql/18/extension/pgrdf--0.5.1--0.6.20.sql:ro,z
       - ./extensions/pgck/lib/pgck.so:/usr/lib/postgresql/18/lib/pgck.so:ro,z
       - ./extensions/pgck/share/extension/pgck.control:/usr/share/postgresql/18/extension/pgck.control:ro,z
-      - ./extensions/pgck/share/extension/pgck--0.4.22.sql:/usr/share/postgresql/18/extension/pgck--0.4.22.sql:ro,z
+      - ./extensions/pgck/share/extension/pgck--0.4.23.sql:/usr/share/postgresql/18/extension/pgck--0.4.23.sql:ro,z
       # NOTE: parent is NOT :ro — docker must create mountpoints for the
       # task.ttl/goal.ttl overlays below (they don't exist in fixtures, and a
       # read-only parent bind-mount rejects mknod of new mountpoint files).

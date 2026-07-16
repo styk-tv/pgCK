@@ -20,11 +20,40 @@
 //!     wait_latch has something to call. Useful for minimal builds that
 //!     exercise only the governed SQL path.
 
-#[cfg(any(feature = "embedded-nats", feature = "nats-client"))]
+use pgrx::bgworkers::BackgroundWorker;
+use pgrx::spi::Spi;
 use std::sync::OnceLock;
 
 #[cfg(feature = "embedded-nats")]
 static EMBEDDED_SERVER_STARTED: OnceLock<()> = OnceLock::new();
+
+/// Latches true once `ckp.outbox` exists in the worker's database. The bridge
+/// worker starts at postmaster — possibly before `CREATE EXTENSION pgck` has run
+/// in its target database (`pgck.worker_database`), or attached to a database
+/// that never gets the extension. The SPI drains below reference `ckp.*`; a
+/// "relation does not exist" ereport aborts the tick's transaction and kills the
+/// worker (exit code 1), so it never returned after the extension was created.
+static PGCK_READY: OnceLock<()> = OnceLock::new();
+
+/// Cheap per-tick probe that WAITS for the extension instead of dying on it.
+/// `to_regclass` returns NULL (never an error) when the relation is absent, so
+/// this is safe to run before the extension exists. Latches on first success so
+/// steady-state ticks skip the probe.
+fn pgck_ready() -> bool {
+    if PGCK_READY.get().is_some() {
+        return true;
+    }
+    let present = BackgroundWorker::transaction(|| {
+        matches!(
+            Spi::get_one::<bool>("SELECT to_regclass('ckp.outbox') IS NOT NULL"),
+            Ok(Some(true))
+        )
+    });
+    if present {
+        let _ = PGCK_READY.set(());
+    }
+    present
+}
 
 #[cfg(feature = "nats-client")]
 static CLIENT_INITIALISED: OnceLock<()> = OnceLock::new();
@@ -69,8 +98,17 @@ pub fn tick() {
             // callout responder (piece 3) uses this to verify each CONNECT token.
             let _ = crate::oidc_auth_config();
         });
-        let _ = crate::publish_drain::drain_once();
     }
+
+    // Resilience gate: the NATS client (above) connects regardless, but every
+    // drain below touches ckp.* via SPI. Skip them until the extension exists in
+    // this worker's database — WAIT, don't die. Once ready, latch and stop probing.
+    if !pgck_ready() {
+        return;
+    }
+
+    #[cfg(feature = "nats-client")]
+    let _ = crate::publish_drain::drain_once();
 
     // ε-materialize over-budget drain (T6): SPI-only, independent of NATS, so it runs every
     // tick regardless of feature set. Normally a cheap no-op (Model A is lazy — the job queue
