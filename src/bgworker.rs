@@ -108,7 +108,13 @@ pub fn tick() {
     }
 
     #[cfg(feature = "nats-client")]
-    let _ = crate::publish_drain::drain_once();
+    {
+        // F1-inbound: run any WSS-published governed actions the relay queued,
+        // replying on result.kernel.pgCK.<verb>. SPI-bound, so it runs here (not
+        // the relay's async thread).
+        crate::inbound_dispatch::drain_and_dispatch();
+        let _ = crate::publish_drain::drain_once();
+    }
 
     // ε-materialize over-budget drain (T6): SPI-only, independent of NATS, so it runs every
     // tick regardless of feature set. Normally a cheap no-op (Model A is lazy — the job queue

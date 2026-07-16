@@ -56,6 +56,18 @@ mod materialize_drain;
 // in-memory realm JWK — no NATS, no network, no pg — so it compiles + unit-tests under any feature.
 mod jwt_verify;
 
+// Auth-callout responder (SPEC.OAUTH2 §3.2/§3.3) — pgCK-owned admittance. Consumes
+// jwt_verify to turn a verified CONNECT token into a signed NATS user-JWT. Gated
+// under nats-client (it needs the NATS account NKey + the transport to run).
+#[cfg(feature = "nats-client")]
+mod auth_callout;
+
+// F1-inbound (CKA-4) — the WSS governed-write bridge. The relay enqueues inbound
+// actions; the bgworker tick runs ckp.dispatch and replies on result.kernel.*.
+// In-kernel replacement for the external Go relay's inbound half.
+#[cfg(feature = "nats-client")]
+mod inbound_dispatch;
+
 // GUCs for the `nats-client` profile. Registered once in _PG_init and
 // read on bgworker boot (S4 step 5). Defaults make the canonical
 // in-container bundle layout work out of the box: pgCK talks to the

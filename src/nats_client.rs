@@ -139,11 +139,26 @@ pub fn init_relay(url: String) {
 
 /// Derive the fan-out event subject from an inbound action subject.
 /// `input.kernel.pgCK.action.session.join` -> `event.kernel.pgCK.session.join`.
-/// Returns `None` if the subject is not under the relay prefix.
+/// Returns `None` if the subject is not under the relay prefix. (Retained for the
+/// verb-parse contract test; the live path now dispatches via inbound_dispatch.)
+#[allow(dead_code)]
 fn relay_subject(inbound: &str) -> Option<String> {
     inbound
         .strip_prefix(RELAY_IN_PREFIX)
         .map(|verb| format!("{RELAY_OUT_PREFIX}{verb}"))
+}
+
+/// Extract the correlation headers to echo on a `result.*` reply. Only the
+/// client's `Trace-Id` (request/reply correlation, LLD §7) and `Ck-Seq` are
+/// carried — a stable subset that avoids depending on HeaderMap iteration order.
+fn trace_headers(h: &async_nats::HeaderMap) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for key in ["Trace-Id", "Ck-Seq"] {
+        if let Some(v) = h.get(key) {
+            out.push((key.to_string(), v.to_string()));
+        }
+    }
+    out
 }
 
 fn run_relay_thread(url: String) {
@@ -178,23 +193,28 @@ fn run_relay_thread(url: String) {
         eprintln!("pgck nats-relay: relaying {RELAY_IN_SUBJECT} -> {RELAY_OUT_PREFIX}<verb>");
 
         while let Some(msg) = sub.next().await {
-            let Some(out) = relay_subject(msg.subject.as_str()) else {
+            // F1-inbound (CKA-4): the SPI-bound governed dispatch can't run on this
+            // async thread — enqueue for the bgworker tick to run ckp.dispatch and
+            // reply on result.kernel.pgCK.<verb>. Replaces the old fan-out echo.
+            let Some(verb) = msg.subject.as_str().strip_prefix(RELAY_IN_PREFIX) else {
                 continue;
             };
-            // Preserve headers (Ck-Seq etc.) if present; pure fan-out otherwise.
-            let publish = match msg.headers {
-                Some(h) => {
-                    client
-                        .publish_with_headers(out.clone(), h, msg.payload)
-                        .await
-                }
-                None => client.publish(out.clone(), msg.payload).await,
-            };
-            if let Err(e) = publish {
-                eprintln!("pgck nats-relay: republish failed: subject={out} err={e}");
-            }
+            let headers = msg
+                .headers
+                .as_ref()
+                .map(trace_headers)
+                .unwrap_or_default();
+            crate::inbound_dispatch::enqueue(crate::inbound_dispatch::InboundAction {
+                verb: verb.to_string(),
+                payload: msg.payload.to_vec(),
+                result_subject: format!("result.kernel.pgCK.{verb}"),
+                headers,
+                // Anonymous until the auth-callout + subject-scoping bind a verified
+                // identity to the connection (the seal path mints anon:<nonce>).
+                identity: None,
+            });
         }
-        eprintln!("pgck nats-relay: subscription ended");
+        eprintln!("pgck nats-relay: inbound subscription ended");
     });
 }
 
