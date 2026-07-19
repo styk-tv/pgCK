@@ -2,6 +2,38 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.24 - 2026-07-19
+
+**pgCK-owned NATS admittance is live — the auth-callout responder + subject-scoped identity close the
+server-derived-identity chain over WSS (F1 pieces 3 & 4).** The `-nats` build now answers
+`$SYS.REQ.USER.AUTH`: it verifies the CONNECT token in-memory, mints a governance-scoped NATS user-JWT,
+and binds the verified `sub` to `ckp.requester` on the governed write path — so `created_by` / `msg.by`
+derive from the cryptographically verified connection, never a client claim, all the way over the wire.
+
+- **Auth-callout responder wired** (`src/auth_callout.rs` + `nats_client`). On each connect the responder
+  verifies the realm token (the unchanged `jwt_verify` core), then mints a signed user-JWT:
+  **verified** ⇒ publish only on its own identity-scoped subject `input.kernel.pgCK.id.<sub>.action.>`
+  plus read `event.*`/`result.*`/`_INBOX.*`; **anonymous** ⇒ subscribe-only on `event.*`, no publish.
+  Fail-open-to-anonymous, never-to-admitted — a forged/expired/foreign token is admitted anonymous,
+  never as the claimed identity, and never rejected at CONNECT.
+- **Subject-scoped identity → `ckp.requester` (F1-inbound, hop 4).** The verified `<sub>` is enforced by
+  the broker as a subject segment; the relay reads it from there (never a payload/header claim) and sets
+  `ckp.requester` before `ckp.dispatch`. The legacy `input.kernel.pgCK.action.<verb>` still routes as an
+  anonymous dispatch for back-compat.
+- **New GUC `pgck.nats_account_seed`** (superuser-only, `postgresql.conf`-delivered like the OIDC trio) —
+  the account seed the responder signs admittance with; its public key is the broker's `auth_callout`
+  issuer. Absent ⇒ the responder is not started (broker admission unchanged). Minted user-JWTs target
+  `aud:"$G"` and omit `issuer_account` (server-config mode, not operator mode).
+- **`pgck.nats_url` honours URL credentials** — `nats://user:pass@host:4222` authenticates the worker's
+  own connection (required so it bypasses the callout as an `auth_users` member). Connect now retries
+  with backoff instead of killing the thread on a broker-start race.
+- **Verified** — full local auth-callout e2e against a real `nats:2.12` broker with the `auth_callout`
+  stanza (`scripts/dev-callout-e2e.sh`): anon is subscribe-only; a forged token drops to anonymous; a
+  verified token dispatches on its id-scoped subject, seals, and the delivered
+  `event.kernel.pgCK.Task.sealed` carries `by: urn:ckp:participant:<sub>` with substrate `created_by`
+  matching; a publish on another id's segment is denied by the broker and never seals. 39 Rust unit
+  tests + `cargo fmt`/`clippy` clean.
+
 ## v0.4.23 - 2026-07-16
 
 **pgCK owns the NATS drain — a self-contained `-nats` `.so` variant + a robust bridge worker.**
@@ -582,7 +614,7 @@ Web release: **U1 — both HTML pages are now static** (no-FastAPI UI-increment 
 ### Notes
 
 - FastAPI still serves `/api/*` (board reads/writes) during the transition — retired at U5 when static-cklib (Go) serves everything and `app.py` is deleted.
-- Presence model (U2) reuses `CSVC.Participant` / `CSVC.Session` — `participant.join` is the request; no invented `VisitorRequest` type.
+- Presence model (U2) reuses the downstream consumer's `Participant` / `Session` kernels — `participant.join` is the request; no invented `VisitorRequest` type.
 
 ### Verification
 

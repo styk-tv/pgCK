@@ -5,9 +5,9 @@
 -- stamped @id, the IRI direction). But `instance.provenance` keys body/proof/ledger/
 -- verify by the RAW payload id against the BARE id columns (ckp.instances.id,
 -- ckp.proof.about, ckp.ledger.instance_id), and calls no resolver — so a client
--- passing the @id / full-IRI (the form reach/link now accept, and the form CSVC
+-- passing the @id / full-IRI (the form reach/link now accept, and the form a downstream consumer
 -- addresses by) matches nothing and gets a HOLLOW `ok:true` with null body/proof.
--- Third-party confirmed (oci-germination relay of the CSVC D1 repro on 0.4.14).
+-- Third-party confirmed (oci-germination relay of the downstream-consumer D1 repro on 0.4.14).
 --
 -- `ckp._resolve_id` is the INVERSE of `_resolve_ref` (bare-or-IRI -> bare id), and the
 -- provenance branch (sql/dispatch.sql) routes its `tid` through it — so a bare id AND

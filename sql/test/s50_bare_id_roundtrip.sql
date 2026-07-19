@@ -2,7 +2,7 @@
 --
 -- create returns a BARE id; the client links + reaches by that bare id. Before v0.4.14 reach
 -- SPARQL-parse-errored on the bare (relative) id and materialize_edge wrote no quad (reachable:false)
--- — so the round-trip the client actually uses was DEAD (CSVC routed around it via notify). Now reach
+-- — so the round-trip the client actually uses was DEAD (the downstream consumer routed around it via notify). Now reach
 -- + materialize_edge both resolve the bare id to its @id, so link(A_bare,pred,B_bare) materializes
 -- (reachable:true) and reach(from=A_bare,via=pred) reaches B's @id. This is the test s40 should have
 -- had — s40 only ever fed full IRIs and even codified the bare-id break as expected reachable:false.

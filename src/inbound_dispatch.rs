@@ -65,11 +65,8 @@ fn take_all() -> Vec<InboundAction> {
 pub fn drain_and_dispatch() {
     for action in take_all() {
         let result = dispatch_one(&action);
-        let _ = crate::nats_client::publish(
-            &action.result_subject,
-            result.as_bytes(),
-            &action.headers,
-        );
+        let _ =
+            crate::nats_client::publish(&action.result_subject, result.as_bytes(), &action.headers);
     }
 }
 

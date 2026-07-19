@@ -50,7 +50,7 @@ async function startCKClient() {
     kernel: config.display_kernel,
     wssEndpoint: config.nats_ws_url,
     subscribe: ["event"],
-    // also monitor the whole governed pgCK event flow (CSVC: extraSubjects -> 'broadcast')
+    // also monitor the whole governed pgCK event flow (downstream: extraSubjects -> 'broadcast')
     extraSubjects: ["event.kernel.pgCK.>"],
     dictVersion: 0,
     clientId: "ck-browser",

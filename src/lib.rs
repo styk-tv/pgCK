@@ -93,6 +93,15 @@ static PGCK_OIDC_ISSUER: pgrx::GucSetting<Option<std::ffi::CString>> =
 static PGCK_OIDC_AUDIENCE: pgrx::GucSetting<Option<std::ffi::CString>> =
     pgrx::GucSetting::<Option<std::ffi::CString>>::new(None);
 
+// The NATS account seed (`SA…`) the auth-callout responder signs AuthorizationResponses
+// with (SPEC.OAUTH2 §3.2). The matching public key (`A…`) is the `issuer` in the broker's
+// `auth_callout` stanza — the deployment generates the pair and delivers the seed here.
+// SECRET: superuser-only. Absent → the responder is not started (broker admittance
+// stays whatever the broker config says — dev compose unchanged).
+#[cfg(feature = "nats-client")]
+static PGCK_NATS_ACCOUNT_SEED: pgrx::GucSetting<Option<std::ffi::CString>> =
+    pgrx::GucSetting::<Option<std::ffi::CString>>::new(None);
+
 /// Snapshot of the `pgck.nats_url` GUC. Read by bgworker boot to
 /// connect the async-nats client; default makes the in-container
 /// bundle layout (LOCAL-WSS-DEV.v0.2 §2) work without configuration.
@@ -115,6 +124,18 @@ pub(crate) fn nats_js_stream() -> Option<String> {
         .as_ref()
         .map(|s| s.to_string_lossy().into_owned())
         .filter(|s| !s.is_empty())
+}
+
+/// Snapshot of the `pgck.nats_account_seed` GUC. Read once at bgworker boot like the
+/// OIDC trio — deliver in `postgresql.conf`; rotation = restart. `None`/empty ⇒ the
+/// callout responder does not start.
+#[cfg(feature = "nats-client")]
+pub(crate) fn nats_account_seed() -> Option<String> {
+    PGCK_NATS_ACCOUNT_SEED
+        .get()
+        .as_ref()
+        .map(|s| s.to_string_lossy().into_owned())
+        .filter(|s| !s.trim().is_empty())
 }
 
 /// Load the OIDC auth config ONCE from the `pgck.oidc_*` GUCs (operator/env-delivered), parse the
@@ -357,7 +378,7 @@ extension_sql_file!(
 // v0.4.15: STABILIZATION — provenance id-form symmetry. ckp._resolve_id (inverse of v0.4.14's
 // _resolve_ref) resolves a bare-or-@id reference to the bare id the id-keyed tables use; the
 // instance.provenance branch (dispatch.sql) routes its tid through it, so provenance(@id) is no
-// longer a hollow envelope (matches reach/link/get). Third-party-confirmed (CSVC D1). Gate: s51.
+// longer a hollow envelope (matches reach/link/get). Third-party-confirmed (downstream consumer, D1). Gate: s51.
 extension_sql_file!(
     "../sql/pgck--0.4.14--0.4.15.sql",
     name = "pgck_v0415_provenance_idform",
@@ -504,6 +525,15 @@ pub extern "C-unwind" fn _PG_init() {
             &PGCK_OIDC_AUDIENCE,
             pgrx::GucContext::Sighup,
             pgrx::GucFlags::default(),
+        );
+        pgrx::GucRegistry::define_string_guc(
+            c"pgck.nats_account_seed",
+            c"NATS account seed (SA…) the auth-callout responder signs admittance with",
+            c"The matching public key (A…) is the broker's auth_callout issuer. SECRET — \
+              superuser-only. Empty = the $SYS.REQ.USER.AUTH responder is not started.",
+            &PGCK_NATS_ACCOUNT_SEED,
+            pgrx::GucContext::Sighup,
+            pgrx::GucFlags::SUPERUSER_ONLY,
         );
     }
 

@@ -2,7 +2,7 @@
 --
 -- v0.4.14 made reach/link id-form-flexible, but instance.provenance kept keying body/proof/ledger/
 -- verify by the bare id, so a client passing the @id / full-IRI (the form create returns + reach/link
--- accept, and the form CSVC addresses by) got a HOLLOW ok:true (null body/proof). v0.4.15 routes the
+-- accept, and the form the downstream consumer addresses by) got a HOLLOW ok:true (null body/proof). v0.4.15 routes the
 -- provenance `tid` through ckp._resolve_id (inverse of _resolve_ref). This asserts: provenance by the
 -- BARE id is non-hollow (baseline), and provenance by the @id returns the SAME body + proof + verified.
 \set ON_ERROR_STOP 1

@@ -88,15 +88,30 @@ pub fn tick() {
         CLIENT_INITIALISED.get_or_init(|| {
             let url = crate::nats_url();
             let js_stream = crate::nats_js_stream();
-            // Inbound relay (G2): subscribe input.kernel.pgCK.action.> and
-            // fan out as event.kernel.pgCK.<verb> — basic Bob<->Alice + presence.
-            crate::nats_client::init_relay(url.clone());
+            // F1: load the OIDC auth-config once from the pgck.oidc_* GUCs (in-memory verify, no
+            // network) BEFORE the relay starts — the callout responder latches it. Logs whether
+            // tokens will be verified or admissions stay anonymous.
+            let auth = crate::oidc_auth_config();
+            // F1 piece 3: pgCK-owned admittance. Seed present + valid ACCOUNT key ⇒ the relay
+            // connection also answers $SYS.REQ.USER.AUTH. GUCs are read HERE (bgworker owns pg);
+            // the async side only receives the built context.
+            let callout = crate::nats_account_seed()
+                .and_then(|seed| {
+                    let kp = crate::auth_callout::parse_account_seed(&seed);
+                    if kp.is_none() {
+                        pgrx::log!(
+                            "pgck: pgck.nats_account_seed is set but not a valid ACCOUNT seed \
+                             (SA…) — auth-callout responder NOT started"
+                        );
+                    }
+                    kp
+                })
+                .map(|account| crate::nats_client::CalloutContext { auth, account });
+            // Inbound relay (F1-inbound): governed WSS writes via ckp.dispatch, identity from
+            // the broker-enforced subject scope.
+            crate::nats_client::init_relay(url.clone(), callout);
             // Outbound publish thread + outbox drain (CKA-6).
             crate::nats_client::init(url, js_stream);
-            // F1: load the OIDC auth-config once from the pgck.oidc_* GUCs (in-memory verify, no
-            // network). Logs whether tokens will be verified or the broker stays anonymous. The
-            // callout responder (piece 3) uses this to verify each CONNECT token.
-            let _ = crate::oidc_auth_config();
         });
     }
 

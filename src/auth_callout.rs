@@ -12,7 +12,6 @@
 //! The realm JWT verifier ([`crate::jwt_verify`], F1) is a dependency this module
 //! CALLS, never edits. The NATS-side signing key is a separate account NKey
 //! (`pgck.nats_account_seed`, env-delivered like the OIDC GUCs).
-#![allow(dead_code)] // wired under nats-client; the core stays unit-testable regardless.
 
 use crate::jwt_verify::{callout_identity, Admission, AuthConfig};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
@@ -20,10 +19,9 @@ use nkeys::KeyPair;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-/// The action subject a verified participant may publish dispatches to, and the
-/// event/result subjects any admitted connection may read. Governance-derived
+/// The event/result subjects any admitted connection may read. Governance-derived
 /// (the transport gate mirrors the kernel's own `event.kernel.pgCK.*` surface).
-const DISPATCH_SUBJECT: &str = "input.kernel.pgCK.action.>";
+/// The verified-tier PUBLISH grant is per-identity — see [`permissions_for`].
 const EVENT_SUBJECT: &str = "event.kernel.pgCK.>";
 const RESULT_SUBJECT: &str = "result.kernel.pgCK.>";
 const INBOX_SUBJECT: &str = "_INBOX.>";
@@ -37,16 +35,43 @@ pub struct UserPermissions {
     pub sub_allow: Vec<String>,
 }
 
-/// Governance-derived admittance permissions (SPEC.OAUTH2 §5 Tier 2):
-/// - **Verified** — may DISPATCH (publish `input.kernel.pgCK.action.>`) and read
+/// Sanitize a verified `sub` into a single NATS subject token: `[A-Za-z0-9_-]`
+/// kept, every other byte → `-`, empty → `-`. UUID subs (the realm's form) pass
+/// unchanged, so the token round-trips into `ckp.requester` losslessly there.
+fn subject_token(sub: &str) -> String {
+    let t: String = sub
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    if t.is_empty() {
+        "-".to_string()
+    } else {
+        t
+    }
+}
+
+/// Governance-derived admittance permissions (SPEC.OAUTH2 §5 Tier 2, subject-scoped
+/// per SPEC.SECURITY hop 4):
+/// - **Verified** — may DISPATCH, but ONLY on its own identity-scoped subject
+///   `input.kernel.pgCK.id.<sub-token>.action.>` — the broker thereby enforces the
+///   `<sub>` segment the F1-inbound bridge binds to `ckp.requester`. Plus read:
 ///   events + results + its own inbox.
 /// - **Anonymous** — subscribe-only on the public event stream; NO publish. The
 ///   kernel still refuses to trust any client-claimed identity, so an anonymous
 ///   connection can observe but not act.
 pub fn permissions_for(admission: &Admission) -> UserPermissions {
     match admission {
-        Admission::Verified { .. } => UserPermissions {
-            pub_allow: vec![DISPATCH_SUBJECT.to_string()],
+        Admission::Verified { sub } => UserPermissions {
+            pub_allow: vec![format!(
+                "input.kernel.pgCK.id.{}.action.>",
+                subject_token(sub)
+            )],
             sub_allow: vec![
                 EVENT_SUBJECT.to_string(),
                 RESULT_SUBJECT.to_string(),
@@ -58,6 +83,16 @@ pub fn permissions_for(admission: &Admission) -> UserPermissions {
             sub_allow: vec![EVENT_SUBJECT.to_string()],
         },
     }
+}
+
+/// Parse the env/GUC-delivered NATS account seed (`SA…`) into the callout's
+/// response-signing [`KeyPair`]. Trims whitespace (conf-file delivery). Returns
+/// `None` for anything that is not a valid ACCOUNT seed — a user/server/operator
+/// seed must not silently become the callout issuer.
+pub fn parse_account_seed(seed: &str) -> Option<KeyPair> {
+    let kp = KeyPair::from_seed(seed.trim()).ok()?;
+    // An account public key is `A…` — refuse user/server/operator keys as issuer.
+    kp.public_key().starts_with('A').then_some(kp)
 }
 
 /// Fields the responder needs out of a `$SYS.REQ.USER.AUTH` request.
@@ -155,9 +190,15 @@ pub fn build_user_jwt(
         "iat": iat,
         "iss": account.public_key(),
         "sub": user_nkey,
+        // `aud` = the account the admitted user is placed in. Server-config mode
+        // REQUIRES it ("account missing" otherwise); with no named accounts the
+        // target is the global account `$G` (nats:2.12, callout e2e).
+        "aud": "$G",
         "name": name,
+        // No `issuer_account`: that claim is operator-mode delegation only — in
+        // server-config mode nats:2.x REJECTS it ("attempted to use issuer_account");
+        // the account binding is this JWT's signature by the configured issuer.
         "nats": {
-            "issuer_account": account.public_key(),
             "pub": pub_perm,
             "sub": { "allow": perms.sub_allow },
             "subs": -1,
@@ -222,20 +263,56 @@ pub fn handle_request(
         Admission::Anonymous => "urn:ckp:participant:anon".to_string(),
     };
     let user_jwt = build_user_jwt(&req.user_nkey, &name, &perms, account, now_unix);
-    build_response(&req.user_nkey, &req.server_id, account, user_jwt, now_unix)
-        .unwrap_or_default()
+    build_response(&req.user_nkey, &req.server_id, account, user_jwt, now_unix).unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // A verified admission → dispatch (publish) + read (subscribe) perms.
+    // A verified admission → dispatch (publish) + read (subscribe) perms, with the
+    // publish grant scoped to the connection's OWN identity segment (hop 4:
+    // subject-scoping is what makes the F1-inbound `<sub>` broker-enforced).
     #[test]
-    fn verified_may_dispatch_and_read() {
-        let p = permissions_for(&Admission::Verified { sub: "test26".into() });
-        assert!(p.pub_allow.iter().any(|s| s == DISPATCH_SUBJECT));
+    fn verified_pub_grant_is_scoped_to_the_connections_own_identity() {
+        let sub = "some-verified-sub"; // synthetic — never a captured identity
+        let p = permissions_for(&Admission::Verified { sub: sub.into() });
+        assert_eq!(
+            p.pub_allow,
+            vec![format!("input.kernel.pgCK.id.{sub}.action.>")]
+        );
         assert!(p.sub_allow.iter().any(|s| s == EVENT_SUBJECT));
+        assert!(p.sub_allow.iter().any(|s| s == RESULT_SUBJECT));
+    }
+
+    // The GUC-delivered account seed round-trips to the same signing identity;
+    // conf-file whitespace is tolerated.
+    #[test]
+    fn parse_account_seed_accepts_an_account_seed() {
+        let kp = KeyPair::new_account();
+        let seed = kp.seed().expect("seed");
+        let parsed = parse_account_seed(&format!("  {seed}\n")).expect("parses trimmed");
+        assert_eq!(parsed.public_key(), kp.public_key());
+    }
+
+    // Only an ACCOUNT key may issue: a user seed or garbage never becomes the issuer.
+    #[test]
+    fn parse_account_seed_rejects_user_seeds_and_garbage() {
+        let user_seed = KeyPair::new_user().seed().expect("seed");
+        assert!(parse_account_seed(&user_seed).is_none());
+        assert!(parse_account_seed("not-a-seed").is_none());
+        assert!(parse_account_seed("").is_none());
+    }
+
+    // The sub is embedded as ONE subject token: NATS-reserved bytes sanitize to '-'
+    // so a hostile sub can't widen its own grant (`.`/`*`/`>` injection).
+    #[test]
+    fn subject_token_neutralises_nats_reserved_bytes() {
+        assert_eq!(subject_token("a.b c*d>e/f"), "a-b-c-d-e-f");
+        assert_eq!(subject_token(""), "-");
+        // the allowed charset ([A-Za-z0-9_-], the shape of a realm uuid sub)
+        // passes through unchanged
+        assert_eq!(subject_token("abc-123_XYZ"), "abc-123_XYZ");
     }
 
     // An anonymous admission → subscribe-only; NO publish.
@@ -293,20 +370,31 @@ mod tests {
     #[test]
     fn user_jwt_is_signed_by_account_and_well_formed() {
         let account = KeyPair::new_account();
-        let perms = permissions_for(&Admission::Verified { sub: "test26".into() });
-        let jwt = build_user_jwt("UXYZ", "urn:ckp:participant:test26", &perms, &account, 1_700_000_000)
-            .expect("mint");
+        let sub = "some-verified-sub"; // synthetic — never a real account name
+        let perms = permissions_for(&Admission::Verified { sub: sub.into() });
+        let jwt = build_user_jwt(
+            "UXYZ",
+            &format!("urn:ckp:participant:{sub}"),
+            &perms,
+            &account,
+            1_700_000_000,
+        )
+        .expect("mint");
         let parts: Vec<&str> = jwt.split('.').collect();
         assert_eq!(parts.len(), 3, "compact JWT has 3 segments");
         // signature verifies with the account public key
         let signing_input = format!("{}.{}", parts[0], parts[1]);
         let sig = URL_SAFE_NO_PAD.decode(parts[2]).unwrap();
         assert!(account.verify(signing_input.as_bytes(), &sig).is_ok());
-        // claims: subject = user_nkey, type = user, dispatch allowed
+        // claims: subject = user_nkey, type = user, dispatch allowed on the
+        // connection's own identity-scoped subject only (hop-4 subject-scoping)
         let claims = decode_claims(&jwt).unwrap();
         assert_eq!(claims["sub"], "UXYZ");
         assert_eq!(claims["nats"]["type"], "user");
-        assert_eq!(claims["nats"]["pub"]["allow"][0], DISPATCH_SUBJECT);
+        assert_eq!(
+            claims["nats"]["pub"]["allow"][0],
+            format!("input.kernel.pgCK.id.{sub}.action.>")
+        );
     }
 
     // Anonymous user-JWT denies all publish.
@@ -314,7 +402,8 @@ mod tests {
     fn anonymous_user_jwt_denies_publish() {
         let account = KeyPair::new_account();
         let perms = permissions_for(&Admission::Anonymous);
-        let jwt = build_user_jwt("UXYZ", "urn:ckp:participant:anon", &perms, &account, 1).expect("mint");
+        let jwt =
+            build_user_jwt("UXYZ", "urn:ckp:participant:anon", &perms, &account, 1).expect("mint");
         let claims = decode_claims(&jwt).unwrap();
         assert_eq!(claims["nats"]["pub"]["deny"][0], ">");
     }
@@ -337,6 +426,37 @@ mod tests {
         assert_eq!(uclaims["nats"]["pub"]["deny"][0], ">");
     }
 
+    // Server-config mode places the admitted user by the user JWT's `aud` — an
+    // empty audience is rejected (`No valid account "" for auth callout response
+    // on account "$G": account missing`, observed on nats:2.12, callout e2e).
+    // Without named accounts the target is the global account `$G`.
+    #[test]
+    fn user_jwt_audience_is_the_global_account() {
+        let account = KeyPair::new_account();
+        let perms = permissions_for(&Admission::Anonymous);
+        let jwt =
+            build_user_jwt("UXYZ", "urn:ckp:participant:anon", &perms, &account, 1).expect("mint");
+        let claims = decode_claims(&jwt).unwrap();
+        assert_eq!(claims["aud"], "$G");
+    }
+
+    // Server-config (non-operator) callout: NATS rejects a user JWT carrying
+    // `issuer_account` with `non operator mode account "$G": attempted to use
+    // issuer_account` (observed on nats:2.12, callout e2e). The account binding
+    // is the issuer SIGNATURE itself — the claim must be absent.
+    #[test]
+    fn user_jwt_carries_no_issuer_account_in_config_mode() {
+        let account = KeyPair::new_account();
+        let perms = permissions_for(&Admission::Anonymous);
+        let jwt =
+            build_user_jwt("UXYZ", "urn:ckp:participant:anon", &perms, &account, 1).expect("mint");
+        let claims = decode_claims(&jwt).unwrap();
+        assert!(
+            claims["nats"].get("issuer_account").is_none(),
+            "issuer_account is operator-mode-only; config mode must omit it"
+        );
+    }
+
     // The response is signed by the account (broker-verifiable).
     #[test]
     fn response_is_signed_by_account() {
@@ -347,5 +467,89 @@ mod tests {
         let signing_input = format!("{}.{}", parts[0], parts[1]);
         let sig = URL_SAFE_NO_PAD.decode(parts[2]).unwrap();
         assert!(account.verify(signing_input.as_bytes(), &sig).is_ok());
+    }
+
+    // ── e2e fixture emitter (cycle-6 wire proof; scripts/dev-callout-e2e.sh) ──
+    // Env-driven and #[ignore]d like the real-token verifier test: runs only when
+    // the e2e script sets PGCK_E2E_DIR. It plays the realm locally — a fresh
+    // Ed25519 signing key becomes the JWKS, a fresh account nkey the callout
+    // issuer. Everything is generated per run and synthetic; nothing captured,
+    // nothing reusable outside the scratch dir.
+
+    /// A fresh Ed25519 signing key without a rand dependency: nkeys (Ed25519 too)
+    /// mints the entropy; its seed payload bytes seed the dalek key.
+    fn fresh_ed25519() -> ed25519_dalek::SigningKey {
+        let seed_b32 = KeyPair::new_user().seed().expect("seed");
+        let raw = data_encoding::BASE32_NOPAD
+            .decode(seed_b32.as_bytes())
+            .expect("nkey seed is unpadded base32");
+        let mut sk = [0u8; 32];
+        sk.copy_from_slice(&raw[2..34]); // [2-byte prefix][32-byte seed][2-byte crc]
+        ed25519_dalek::SigningKey::from_bytes(&sk)
+    }
+
+    /// Compact EdDSA JWT signed by `key` — the shape the configured realm issues.
+    fn sign_realm_jwt(claims: &Value, kid: &str, key: &ed25519_dalek::SigningKey) -> String {
+        use ed25519_dalek::Signer;
+        let header =
+            URL_SAFE_NO_PAD.encode(format!(r#"{{"alg":"EdDSA","typ":"JWT","kid":"{kid}"}}"#));
+        let payload = URL_SAFE_NO_PAD.encode(serde_json::to_vec(claims).expect("claims"));
+        let input = format!("{header}.{payload}");
+        let sig = key.sign(input.as_bytes());
+        format!("{input}.{}", URL_SAFE_NO_PAD.encode(sig.to_bytes()))
+    }
+
+    #[test]
+    #[ignore] // e2e-only: needs PGCK_E2E_DIR; driven by scripts/dev-callout-e2e.sh
+    fn e2e_emit_callout_fixtures() {
+        let dir = std::env::var("PGCK_E2E_DIR").expect("set PGCK_E2E_DIR to a scratch dir");
+        let dir = std::path::Path::new(&dir);
+
+        let sub = "e2e-verified-sub"; // synthetic
+        let issuer = "https://pgck-e2e.invalid/realms/e2e"; // .invalid — never routable
+        let audience = "account"; // the resource aud shape (SPEC.SECURITY §3)
+        let kid = "e2e";
+
+        let realm = fresh_ed25519();
+        let stranger = fresh_ed25519(); // forges with a key the realm never published
+        let account = KeyPair::new_account();
+
+        let x = URL_SAFE_NO_PAD.encode(realm.verifying_key().to_bytes());
+        let jwks = json!({"keys":[{"kty":"OKP","crv":"Ed25519","kid":kid,"x":x}]}).to_string();
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_secs() as i64;
+        let claims = json!({"iss":issuer,"aud":audience,"sub":sub,"iat":now,"exp":now+3600});
+        let valid = sign_realm_jwt(&claims, kid, &realm);
+        let forged = sign_realm_jwt(&claims, kid, &stranger);
+
+        // Sanity: the emitted fixtures round-trip through the SHIPPED verifier —
+        // if this fails, the e2e would fail for fixture reasons, not wire reasons.
+        let cfg = AuthConfig::from_parts(&jwks, issuer, audience).expect("jwks parses");
+        assert!(matches!(
+            callout_identity(Some(&valid), Some(&cfg), now),
+            Admission::Verified { .. }
+        ));
+        assert!(matches!(
+            callout_identity(Some(&forged), Some(&cfg), now),
+            Admission::Anonymous
+        ));
+
+        std::fs::write(dir.join("token.valid"), &valid).expect("write token.valid");
+        std::fs::write(dir.join("token.forged"), &forged).expect("write token.forged");
+        let env = format!(
+            "PGCK_E2E_SUB='{sub}'\n\
+             PGCK_E2E_ISSUER='{issuer}'\n\
+             PGCK_E2E_AUDIENCE='{audience}'\n\
+             PGCK_CALLOUT_ISSUER='{}'\n\
+             PGCK_E2E_ACCOUNT_SEED='{}'\n\
+             PGCK_E2E_JWKS='{jwks}'\n",
+            account.public_key(),
+            account.seed().expect("account seed"),
+        );
+        std::fs::write(dir.join("e2e.env"), env).expect("write e2e.env");
+        eprintln!("pgck e2e: fixtures emitted to {}", dir.display());
     }
 }

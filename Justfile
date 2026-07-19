@@ -36,6 +36,24 @@ build-ext: colima-up
       ver=$(grep -oE "default_version = '[^']+'" pgck.control | cut -d"'" -f2) && \
       find . -name 'pgck--*.sql' ! -name "pgck--$ver.sql" -delete
 
+# The -nats variant of the dev .so (features pg18,nats-client) — same content as
+# the released pgck:<ver>-pg18-nats artifact. Needed by the auth-callout e2e
+# (scripts/dev-callout-e2e.sh): the default build-ext ships embedded-nats, which
+# has no relay/callout/publish threads at all.
+build-ext-nats: colima-up
+    DOCKER_CONTEXT={{docker_context}} DOCKER_BUILDKIT=1 docker build --target export \
+      -t pgck-builder:pg{{pg}}-nats --build-arg PG_MAJOR={{pg}} \
+      --build-arg NATS_FEATURE=nats-client \
+      -f compose/builder.Containerfile .
+    rm -rf compose/extensions/pgck/lib compose/extensions/pgck/share
+    mkdir -p compose/extensions/pgck/lib compose/extensions/pgck/share/extension
+    DOCKER_CONTEXT={{docker_context}} docker run --rm --entrypoint sh \
+      -v "$PWD/compose/extensions/pgck:/export" pgck-builder:pg{{pg}}-nats \
+      -lc 'cp -r /out/* /export/ && ls -laR /export'
+    cd compose/extensions/pgck/share/extension && \
+      ver=$(grep -oE "default_version = '[^']+'" pgck.control | cut -d"'" -f2) && \
+      find . -name 'pgck--*.sql' ! -name "pgck--$ver.sql" -delete
+
 # Recreate the pod (down+up) — picks up compose.yml mount changes.
 compose-recreate: colima-up
     # `docker compose restart` does NOT re-read volume/mount changes;
@@ -105,7 +123,7 @@ smoke-s4: pgrdf-fetch build-ext compose-recreate
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s45_update_patch.sql
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s46_validation_report.sql
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s47_governed_concept_match.sql
-    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s48_csvc_domain_shape.sql
+    cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s48_domain_kernel_shape.sql
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s49_adopt_kernel_ttl.sql
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s50_bare_id_roundtrip.sql
     cd compose && DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -v ON_ERROR_STOP=1 < ../sql/test/s51_provenance_id_form.sql

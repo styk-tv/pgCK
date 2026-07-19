@@ -11,7 +11,7 @@ INSERT INTO ckp.config(k,v) VALUES ('identity_key','demo-secret') ON CONFLICT (k
 
 -- The trusted ingress (relay) sets the verified requester once, from the verified bearer.
 -- A participant client cannot set this GUC (it is set inside the trusted relay, not from payload).
-SELECT set_config('ckp.requester','test26', false);
+SELECT set_config('ckp.requester','verified-requester', false);
 
 -- (1) task.create — a FORGED payload {sub:'attacker'} must be ignored; created_by = verified requester.
 DO $$
@@ -25,8 +25,8 @@ BEGIN
   IF cby = 'urn:ckp:participant:attacker' THEN
     RAISE EXCEPTION 's58 FAIL (SECURITY): forged payload sub became created_by (%) — identity MUST derive from the verified connection', cby;
   END IF;
-  IF cby IS DISTINCT FROM 'urn:ckp:participant:test26' THEN
-    RAISE EXCEPTION 's58 FAIL: task.create created_by must be the verified requester urn:ckp:participant:test26, got % (body=%)',
+  IF cby IS DISTINCT FROM 'urn:ckp:participant:verified-requester' THEN
+    RAISE EXCEPTION 's58 FAIL: task.create created_by must be the verified requester urn:ckp:participant:verified-requester, got % (body=%)',
       cby, (SELECT body FROM ckp.instances WHERE id=v_id);
   END IF;
   RAISE NOTICE 's58 PASS: task.create created_by derives from the verified requester; forged payload sub ignored (%)', cby;
@@ -44,7 +44,7 @@ BEGIN
   IF cby = 'urn:ckp:participant:attacker' THEN
     RAISE EXCEPTION 's58 FAIL (SECURITY): forged payload sub became message created_by (%)', cby;
   END IF;
-  IF cby IS DISTINCT FROM 'urn:ckp:participant:test26' THEN
+  IF cby IS DISTINCT FROM 'urn:ckp:participant:verified-requester' THEN
     RAISE EXCEPTION 's58 FAIL: notify created_by must be the verified requester, got %', cby;
   END IF;
   RAISE NOTICE 's58 PASS: notify created_by derives from the verified requester; forged payload sub ignored (%)', cby;

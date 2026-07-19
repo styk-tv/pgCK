@@ -1,0 +1,46 @@
+# Auth-callout e2e overlay — USE WITH the base file and its own project name:
+#   docker compose -f compose.yml -f compose.callout-e2e.yml -p pgck-callout-e2e …
+# (driven by scripts/dev-callout-e2e.sh; all PGCK_E2E_* / PGCK_CALLOUT_* env
+# values come from the per-run fixture emitter — nothing is committed).
+#
+# Adds a REAL nats-server 2.x with the auth_callout stanza (the embedded pgck
+# NATS listener can't do admittance) and points the pgck bgworker at it as the
+# `pgck_worker` auth_user, with the callout seed + local-realm OIDC GUCs.
+services:
+  nats:
+    image: docker.io/library/nats:2.12-alpine
+    environment:
+      PGCK_CALLOUT_ISSUER: ${PGCK_CALLOUT_ISSUER:?run via scripts/dev-callout-e2e.sh}
+      PGCK_WORKER_PASSWORD: ${PGCK_WORKER_PASSWORD:?run via scripts/dev-callout-e2e.sh}
+    command: ["--config", "/etc/nats/nats-server.conf"]
+    ports:
+      - "${PGCK_E2E_NATS_PORT:-4224}:4222"
+    volumes:
+      - ./nats/nats-server.callout.conf:/etc/nats/nats-server.conf:ro,z
+
+  postgres:
+    container_name: pgck-callout-e2e-postgres
+    depends_on: [nats]
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pgrdf,pgck
+      - -c
+      # The e2e creates the extension in the pgck DB (not the worker's postgres
+      # default) — point the bridge worker's SPI there or dispatch would land in
+      # a database without ckp.*.
+      - pgck.worker_database=pgck
+      - -c
+      - pgck.nats_url=nats://pgck_worker:${PGCK_WORKER_PASSWORD}@nats:4222
+      - -c
+      - pgck.nats_account_seed=${PGCK_E2E_ACCOUNT_SEED}
+      - -c
+      - pgck.oidc_jwks=${PGCK_E2E_JWKS}
+      - -c
+      - pgck.oidc_issuer=${PGCK_E2E_ISSUER}
+      - -c
+      - pgck.oidc_audience=${PGCK_E2E_AUDIENCE}
+    # Replace (not merge) the base ports: the dev pod may be running, and this
+    # pod's postgres must not fight for host 5432/4222.
+    ports: !override
+      - "${PGCK_E2E_PG_PORT:-5433}:5432"

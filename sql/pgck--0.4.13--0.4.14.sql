@@ -1,7 +1,7 @@
 -- ============================================================================
 -- pgck 0.4.13 -> 0.4.14 — STABILIZATION: authorized CK-loop writer + uniform id-form
 -- ============================================================================
--- Two real, third-party-confirmed (CK.Lib.Js verify-v160 + CSVC SPIKE, live wire)
+-- Two real, third-party-confirmed (CK.Lib.Js verify-v160 + a downstream-consumer SPIKE, live wire)
 -- bugs that the "✅ attested" T1–T6 markers hid. Neither is a new feature; both make
 -- the EXISTING typed surface actually do what was claimed. No federation, no new verbs.
 --
