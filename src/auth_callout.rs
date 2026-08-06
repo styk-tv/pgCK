@@ -266,9 +266,9 @@ pub fn handle_request(
     // The token itself is NEVER logged; only the outcome and whether one was presented.
     let presented = req.auth_token.is_some();
     match &admission {
-        Admission::Verified { sub } => eprintln!(
-            "pgck auth-callout: ADMIT verified sub={sub} (token presented: {presented})"
-        ),
+        Admission::Verified { sub } => {
+            eprintln!("pgck auth-callout: ADMIT verified sub={sub} (token presented: {presented})")
+        }
         Admission::Anonymous if !admit_anonymous => eprintln!(
             "pgck auth-callout: REFUSE unverified (token presented: {presented}); \
              pgck.admit_anonymous=false"
@@ -328,7 +328,10 @@ mod tests {
             strict, lenient,
             "refusal must differ from admission — if these match, the flag does nothing"
         );
-        assert!(!strict.is_empty(), "a refusal must still be a signed response");
+        assert!(
+            !strict.is_empty(),
+            "a refusal must still be a signed response"
+        );
     }
 
     // A verified admission → dispatch (publish) + read (subscribe) perms, with the
