@@ -377,3 +377,42 @@ ALTER FUNCTION ckp._report_summary(jsonb)             OWNER TO ck_substrate;
 ALTER FUNCTION ckp.validation_report_ttl(jsonb, text) OWNER TO ck_substrate;
 ALTER FUNCTION ckp._body_to_ttl(jsonb, text, int)     OWNER TO ck_substrate;
 ALTER FUNCTION ckp.seal(text, jsonb)                  OWNER TO ck_substrate;
+
+-- ─────────────────────────────────────────────────────────────────────
+-- P0 (pgCK#35): ckp.validate passes mode 'pgrdf' to pgrdf.validate.
+--
+-- It previously passed no mode, so every seal validated in 'native', and
+-- native SILENTLY SKIPS sh:sparql — conforms=true, zero results, no error.
+-- That is the fake-green family this wave exists to remove, sitting in the
+-- seal itself.
+--
+-- Measured on the bench, same candidate + same composed graph, 5 runs, median:
+--   native 5.12 ms   sparql 7.78 ms   pgrdf 3.72 ms
+-- Mode 'pgrdf' is the FASTEST of the three, so this is not a hot-path trade.
+-- Neither the v3.11 root nor the shipped v3.8 core declares sh:sparql today
+-- (0 occurrences each), so it changes no current behaviour either — it removes
+-- a trap that fires the first time anyone adds one.
+--
+-- Regression after the change: valid body ACCEPTED, bad bodySha REFUSED,
+-- short sig REFUSED.
+
+CREATE OR REPLACE FUNCTION ckp.validate(ttl text, shapes_graph_id integer)
+ RETURNS boolean
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  scratch_id INT := 1000000000 + pg_backend_pid();
+  report jsonb;
+BEGIN
+  PERFORM pgrdf.add_graph(scratch_id, 'urn:ckp:scratch:'||scratch_id);
+  PERFORM pgrdf.clear_graph(scratch_id);
+  PERFORM pgrdf.parse_turtle(ttl, scratch_id, 'urn:ckp:scratch#');
+  PERFORM pgrdf.materialize(scratch_id);
+  report := pgrdf.validate(scratch_id, shapes_graph_id, 'pgrdf');
+  PERFORM pgrdf.clear_graph(scratch_id);
+  RETURN COALESCE((report->>'conforms')::boolean, false);
+END;
+$function$
+;
+
+ALTER FUNCTION ckp.validate(text, int) OWNER TO ck_substrate;
