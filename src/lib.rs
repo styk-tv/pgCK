@@ -166,306 +166,32 @@ pub(crate) fn oidc_auth_config() -> Option<&'static crate::jwt_verify::AuthConfi
 }
 
 // Ship the working governed-write path as the extension's bootstrap SQL.
-extension_sql_file!("../sql/pgck--0.2.2.sql", name = "pgck_bootstrap");
-
-// CI-A-4 (CKP v3.9 §7, SPEC.ROADMAP.v3.9.CHECKLIST index 24): the Ring-0
-// role-isolation floor. Runs after the bootstrap so its REVOKE/GRANT apply to
-// the ckp + pgrdf objects the bootstrap defines. Fresh CREATE EXTENSION includes
-// this; existing installs reach it via the sql/pgck--0.2.2--0.2.3.sql upgrade.
-extension_sql_file!(
-    "../sql/pgck--0.2.2--0.2.3.sql",
-    name = "pgck_ci_a4_role_floor",
-    requires = ["pgck_bootstrap"]
-);
-
-// CI-A-3 (CKP v3.9 §3, SPEC.ROADMAP.v3.9.CHECKLIST index 23): the frozen Ring-1
-// primitive set — SECURITY DEFINER wrappers owned by ck_substrate, the only code
-// paths permitted to invoke pgrdf.*. Requires the role floor (CI-A-4).
-extension_sql_file!(
-    "../sql/pgck--0.2.3--0.2.4.sql",
-    name = "pgck_ci_a3_ring1",
-    requires = ["pgck_ci_a4_role_floor"]
-);
-
-// CI-A-2 (CKP v3.9 §7/§2, SPEC.ROADMAP.v3.9.CHECKLIST index 22): the locked
-// four-tuple ckp.dispatch door — SECURITY DEFINER owned by ck_substrate, granted
-// to ck_participant and nothing else. Requires the role floor (CI-A-4).
-extension_sql_file!(
-    "../sql/pgck--0.2.4--0.2.5.sql",
-    name = "pgck_ci_a2_dispatch_door",
-    requires = ["pgck_ci_a4_role_floor"]
-);
-
-// CI-A-1 (CKP v3.9 §7, SPEC.ROADMAP.v3.9.CHECKLIST index 21): Track A ship-it —
-// ck_participant LOGIN so the sidecar harness demonstrates the §7 exit over a real
-// connection (the F-H "agent with DB creds" shape).
-extension_sql_file!(
-    "../sql/pgck--0.2.5--0.2.6.sql",
-    name = "pgck_ci_a1_participant_login",
-    requires = ["pgck_ci_a2_dispatch_door"]
-);
-
-// Critical Isolation Alpha (v0.3.0): bring the existing web2 verb surface
-// (sql/dispatch.sql — task.create/update, snapshot.*, edge.create, notify, instances.*,
-// …) INTO the extension so it can be governed, then floor it. Without this the web2
-// verbs are an orphan that was never loaded; with it, web2 keeps working under the floor.
-extension_sql_file!(
-    "../sql/dispatch.sql",
-    name = "pgck_web2_dispatch",
-    requires = ["pgck_ci_a4_role_floor"]
-);
-
-// Floor the web2 dispatch: SECURITY DEFINER owned by ck_substrate, granted to
-// ck_participant; PUBLIC denied. Requires the verbs to be loaded first.
-extension_sql_file!(
-    "../sql/pgck--0.2.6--0.3.0.sql",
-    name = "pgck_alpha_web2_floor",
-    requires = ["pgck_web2_dispatch"]
-);
-
-// CKP v3.9 Track B (sealed registry + typed dispatch). CI-B-4 adds the exact-match
-// affordance registry index + lookup; CI-B-3/CI-B-2 accrete here. Requires the floor
-// (ck_substrate owns pgrdf + the ckp internals).
-extension_sql_file!(
-    "../sql/pgck--0.3.0--0.3.1.sql",
-    name = "pgck_trackb_registry",
-    requires = ["pgck_alpha_web2_floor"]
-);
-
-// CKP v3.9 Track C (apply-time plan compiler + epoch invalidation). CI-C-4 adds the
-// ckp.plans table; CI-C-3/CI-C-2 accrete here. Requires the registry — plans are keyed by
-// the same (kernel, verb, epoch).
-extension_sql_file!(
-    "../sql/pgck--0.3.2--0.3.3.sql",
-    name = "pgck_trackc_plans",
-    requires = ["pgck_trackb_registry"]
-);
-
-// CKP v3.9 Track D (the governance type plane). CI-D-5 adds kernel.propose_change;
-// CI-D-4/D-3/D-2 accrete here. Requires the plan compiler (apply recompiles via Track C).
-extension_sql_file!(
-    "../sql/pgck--0.3.3--0.3.4.sql",
-    name = "pgck_trackd_governance",
-    requires = ["pgck_trackc_plans"]
-);
-
-// CKP v3.9 Track E (the enumerable typed read surface). CI-E-5 adds instance.query;
-// CI-E-4/E-3/E-2 accrete here. Requires the governance plane (concept.match is sealed
-// via proposal/apply at CI-E-2).
-extension_sql_file!(
-    "../sql/pgck--0.3.4--0.3.5.sql",
-    name = "pgck_tracke_reads",
-    requires = ["pgck_trackd_governance"]
-);
-
-// v0.4.3: instance.retire (the spec's last unbuilt verb) + validate_report scratch
-// graph by-IRI. Chained BEFORE the completeness floor pass below.
-extension_sql_file!(
-    "../sql/pgck--0.4.2--0.4.3.sql",
-    name = "pgck_v043_retire",
-    requires = ["pgck_tracke_reads"]
-);
-
-// v0.4.4: Tier 2 (1/3) — generic typed instance.create (ckp.create_typed). Routes a
-// uniform {type,…fields} body by type against the kernel's declared shape; ckp.seal's
-// required-props gate makes the type real. Routing added in sql/dispatch.sql.
-// Gate: sql/test/s38_generic_typed_create.sql.
-extension_sql_file!(
-    "../sql/pgck--0.4.3--0.4.4.sql",
-    name = "pgck_v044_generic_create",
-    requires = ["pgck_v043_retire"]
-);
-
-// v0.4.5: Tier 2 (2/3) — governance _graph_apply. ckp.apply now translates a passed
-// Proposal's op into the kernel graph (ckp._op_to_ttl -> ckp.apply_shape_ttl: stage ->
-// meta-fence -> copy_graph into urn:ckp:<proj>/kernel/ck) BEFORE the epoch bump, so a
-// quorum-approved add_property actually constrains the next seal. Gate: s39.
-extension_sql_file!(
-    "../sql/pgck--0.4.4--0.4.5.sql",
-    name = "pgck_v045_graph_apply",
-    requires = ["pgck_v044_generic_create"]
-);
-
-// v0.4.6: Tier 2 (3/3a) — reach edge-materialization. edge.create now also writes the
-// traversable quad <src> <pred> <tgt> into urn:ckp:<proj>/edges (ckp.materialize_edge),
-// so instance.reach traverses participant-created links (not only pre-seeded quads).
-// Gate: s40.
-extension_sql_file!(
-    "../sql/pgck--0.4.5--0.4.6.sql",
-    name = "pgck_v046_reach_edges",
-    requires = ["pgck_v045_graph_apply"]
-);
-
-// v0.4.7: Tier 2 (3/3b) — governed query affordances (§6.3 concept.match form). A query is
-// declared via the governance plane (propose add_affordance{verb,query,params} -> vote ->
-// apply), compiled into ckp.plans + a plane='query' registry row, and dispatched by binding
-// typed caller params into the sealed query text. Makes the plan compiler load-bearing.
-// Gate: s41.
-extension_sql_file!(
-    "../sql/pgck--0.4.6--0.4.7.sql",
-    name = "pgck_v047_query_affordance",
-    requires = ["pgck_v046_reach_edges"]
-);
-
-// v0.4.8: v0.5 roadmap T1 — instance.query derived QueryShape. ckp.query validates filter
-// keys against the type's DECLARED sh:property set (read from the kernel graph), resolving a
-// short key to its property IRI; unshaped types keep the regex fallback. Gate: s42.
-extension_sql_file!(
-    "../sql/pgck--0.4.7--0.4.8.sql",
-    name = "pgck_v048_query_shape",
-    requires = ["pgck_v047_query_affordance"]
-);
-
-// v0.4.9: v0.5 roadmap T2 — link/reach declared predicate set. ckp.declared_predicates reads the
-// kernel graph's sh:path set; ckp.reach + edge.create gate the predicate on it (namespace-allowlist
-// fallback when the kernel declares none). Gate: s43.
-extension_sql_file!(
-    "../sql/pgck--0.4.8--0.4.9.sql",
-    name = "pgck_v049_declared_predicates",
-    requires = ["pgck_v048_query_shape"]
-);
-
-// v0.4.10: v0.5 roadmap T3 — per-kernel sealed transition map. ckp._op_to_ttl translates
-// set_transition_map into ckp:allowsTransition triples; ckp.apply_shape_ttl's fence admits the
-// governance transition vocab; ckp.transition reads the type's sealed map (global config fallback).
-// Gate: s44.
-extension_sql_file!(
-    "../sql/pgck--0.4.9--0.4.10.sql",
-    name = "pgck_v0410_transition_map",
-    requires = ["pgck_v049_declared_predicates"]
-);
-
-// v0.4.11: v0.5 roadmap T4 — generic per-declared-shape update patch (ckp.update_typed): the
-// write-side mirror of create_typed. instance.update {id, patch:{…}} patches by the type's declared
-// properties, re-sealed; legacy flat {id,…fields} still routes to task.update. Gate: s45.
-extension_sql_file!(
-    "../sql/pgck--0.4.10--0.4.11.sql",
-    name = "pgck_v0411_update_patch",
-    requires = ["pgck_v0410_transition_map"]
-);
-
-// v0.4.12: v0.5 roadmap T5 — full SHACL ValidationReport. ckp.validate_instance projects the
-// candidate body to RDF (ckp._body_to_ttl) + runs pgrdf.validate(…, mode=>'native') for the typed
-// W3C report; the stricter superset of the seal gate (validate-conforms => seal-accepts). Gate: s46.
-extension_sql_file!(
-    "../sql/pgck--0.4.11--0.4.12.sql",
-    name = "pgck_v0412_validation_report",
-    requires = ["pgck_v0411_update_patch"]
-);
-
-// v0.4.13: v0.5 roadmap T6 — governed concept.match. A label-projection trigger feeds the per-project
-// instance graph; the concept.match SPARQL query is seeded as a governed plan in ckp.plans; ckp.concept_match
-// runs the sealed query (escaped term bind, exact>prefix>contains rank) with a legacy in-table fallback.
-// The trigger itself is created in the install-completeness file below (which (re)creates ckp.instances).
-// Gate: s47.
-extension_sql_file!(
-    "../sql/pgck--0.4.12--0.4.13.sql",
-    name = "pgck_v0413_governed_match",
-    requires = ["pgck_v0412_validation_report"]
-);
-
-// v0.4.14: STABILIZATION (not a feature) — the two real, third-party-confirmed bugs the T1–T6
-// "attested" markers hid. ckp.adopt_kernel_ttl is the authorized, file-mount-free CK-loop writer
-// (#18: shapes were sealed into /board, leaving the gate graph /ck unauthored → enforcement
-// vacuous). ckp._resolve_ref + redefined reach/materialize_edge make id-form uniform (a bare id
-// resolves to its @id, so the bare-id link→reach round-trip the client uses works). Gates: s49, s50.
-extension_sql_file!(
-    "../sql/pgck--0.4.13--0.4.14.sql",
-    name = "pgck_v0414_stabilization",
-    requires = ["pgck_v0413_governed_match"]
-);
-
-// v0.4.15: STABILIZATION — provenance id-form symmetry. ckp._resolve_id (inverse of v0.4.14's
-// _resolve_ref) resolves a bare-or-@id reference to the bare id the id-keyed tables use; the
-// instance.provenance branch (dispatch.sql) routes its tid through it, so provenance(@id) is no
-// longer a hollow envelope (matches reach/link/get). Third-party-confirmed (downstream consumer, D1). Gate: s51.
-extension_sql_file!(
-    "../sql/pgck--0.4.14--0.4.15.sql",
-    name = "pgck_v0415_provenance_idform",
-    requires = ["pgck_v0414_stabilization"]
-);
-
-// v0.4.16 — governed ε-materialize substrate (Motion A.5, Model A). Generic phenotype
-// materialize so a sealed read can SUM a value pgRDF can't derive in-plan; the formula is a
-// sealed opaque input the substrate substitutes but never contains. Chained AFTER all ckp.*
-// machinery, BEFORE the completeness floor so the floor pass covers its callables too.
-extension_sql_file!(
-    "../sql/pgck--0.4.15--0.4.16.sql",
-    name = "pgck_v0416_epsilon",
-    requires = ["pgck_v0415_provenance_idform"]
-);
-
-// v0.4.17 — ε-materialize completeness + hardening: dispersion read (net+volume), over-budget
-// bgworker handoff (ckp.enqueue_materialize / ckp.materialize_drain_once) + phenotype GC.
-extension_sql_file!(
-    "../sql/pgck--0.4.16--0.4.17.sql",
-    name = "pgck_v0417_hardening",
-    requires = ["pgck_v0416_epsilon"]
-);
-
-// v0.4.18 — pgCK#6: ckp.query filter-key resolution hardening. Resolve a filter key against the
-// actual instance-body keys (jsonb, project-independent) so a filtered read works even when the
-// type resolves unshaped; return a typed unresolved_shape instead of a silent [].
-extension_sql_file!(
-    "../sql/pgck--0.4.17--0.4.18.sql",
-    name = "pgck_v0418_query_keyfix",
-    requires = ["pgck_v0417_hardening"]
-);
-
-// v0.4.19 — governed DERIVED-read dispatch plane. Generic plane='derived' affordance
-// (ckp.register_derived_affordance / ckp.run_derived_affordance) parallel to plane='query', so a
-// consumer-sealed {formula, scope} verb is dispatch-reachable under the role floor and returns the
-// band-less {ok, value, scored, freshness} envelope — the scoring client's read surface. Requires
-// the ε-materialize substrate (v0.4.16/17). The dispatch route itself lives in sql/dispatch.sql.
-extension_sql_file!(
-    "../sql/pgck--0.4.18--0.4.19.sql",
-    name = "pgck_v0419_derived_plane",
-    requires = ["pgck_v0418_query_keyfix"]
-);
-
-// v0.4.19 — governed DERIVED-read dispatch plane (see above). v0.4.20 follows:
-// pgCK#7 — resolve ckp.transition's sealed map project-independently (GRAPH ?g), so a governed
-// transition uses the type's map wherever it's sealed rather than the session ckp.project.
-extension_sql_file!(
-    "../sql/pgck--0.4.19--0.4.20.sql",
-    name = "pgck_v0420_transition_project_robust",
-    requires = ["pgck_v0419_derived_plane"]
-);
-
-// v0.4.21 — create_typed files v3.7 CORE lifecycle keys (lifecycle_state) under the core NS the
-// transition gate + task.create read, instead of the type NS — so instance.create {lifecycle_state}
-// lands where readers expect it (fixes the silent 'planned' treatment behind invalid_transition).
-extension_sql_file!(
-    "../sql/pgck--0.4.20--0.4.21.sql",
-    name = "pgck_v0421_create_core_keys",
-    requires = ["pgck_v0420_transition_project_robust"]
-);
-
-// v0.4.25 — the enforcement chain (pgCK#23/#24/#25). ckp.boot() resolves the core
-// graph BY IRI so it can run at all (it previously raised on every invocation, leaving
-// urn:ckp:core empty and the seal's own ledger gate unreachable); ckp._composed_shapes()
-// unions core + kernel so a core shape can apply; ckp._parent_closure_ttl() stamps the
-// declared type's ancestors, because pgrdf.validate does not entail and entailment is
-// per-graph; ckp.seal validates against that composed graph instead of a hand-rolled
-// sh:minCount scan; ckp.validation_report_ttl() gives ckp:ValidationReport a producer.
+// BASELINE INSTALL (pgCK#31, flatten half). The 31-chunk migration chain is retired
+// from the build and replaced by one install, generated by CK-org from this repo's
+// own chain-built reference and proven against the obligation pgCK set in PASS-13:
+// a fresh install produces an IDENTICAL routine set — 80 routines, identical
+// signatures, none gained, none lost.
 //
-// Wired in PASS-13. It was back-ported in-session and never referenced here, so three
-// delivered tickets were live on the bench and ABSENT FROM EVERY FRESH INSTALL.
-extension_sql_file!(
-    "../sql/pgck--0.4.24--0.4.25.sql",
-    name = "pgck_v0425_enforcement_chain",
-    requires = ["pgck_v0421_create_core_keys"]
-);
+// NAMESPACE-NEUTRAL BY CONSTRUCTION. CK-org generated the baseline on the v3.11
+// namespace, which fused two independent changes: collapsing 31 files into 1, and
+// migrating v3.8 -> v3.11. Landed together they cannot be reviewed or reverted
+// separately, and landing the v3.11 form against the v3.8 ontology is a measured
+// silent fake green (PASS-17). So this file is generated at the CURRENT namespace:
+// the flatten becomes a provable no-op, and the namespace migration is #41's,
+// atomic with root adoption.
+//
+// The chain was never an upgrade path. pgck--0.3.1--0.3.2.sql and
+// pgck--0.4.0--0.4.1.sql are ABSENT FROM THE REPO, so it could not replay from any
+// earlier version and nothing reported that. Retained on disk as history.
+extension_sql_file!("../sql/pgck-baseline.sql", name = "pgck_baseline");
 
-// Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
-// NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
-// floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
-// exactly the dispatch door(s). MUST remain the LAST sql include — its closing floor
-// pass covers everything earlier files created. Gate: scripts/smoke-s34-fresh-install.sh.
+// Install-from-zero completeness. MUST remain the LAST sql include — its closing
+// floor pass re-asserts the pgrdf floor and re-pins ck_participant to exactly the
+// dispatch door, covering everything earlier statements created.
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v0425_enforcement_chain"]
+    requires = ["pgck_baseline"]
 );
 
 /// Database the pgCK bridge worker attaches to (`connect_worker_to_spi`). It MUST
