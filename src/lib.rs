@@ -441,6 +441,22 @@ extension_sql_file!(
     requires = ["pgck_v0420_transition_project_robust"]
 );
 
+// v0.4.25 — the enforcement chain (pgCK#23/#24/#25). ckp.boot() resolves the core
+// graph BY IRI so it can run at all (it previously raised on every invocation, leaving
+// urn:ckp:core empty and the seal's own ledger gate unreachable); ckp._composed_shapes()
+// unions core + kernel so a core shape can apply; ckp._parent_closure_ttl() stamps the
+// declared type's ancestors, because pgrdf.validate does not entail and entailment is
+// per-graph; ckp.seal validates against that composed graph instead of a hand-rolled
+// sh:minCount scan; ckp.validation_report_ttl() gives ckp:ValidationReport a producer.
+//
+// It was back-ported in-session and never referenced here, so three delivered tickets
+// were live on the bench and ABSENT FROM EVERY FRESH INSTALL.
+extension_sql_file!(
+    "../sql/pgck--0.4.24--0.4.25.sql",
+    name = "pgck_v0425_enforcement_chain",
+    requires = ["pgck_v0421_create_core_keys"]
+);
+
 // Install-from-zero completeness (v0.4.2, answers oci-germination's install-cascade
 // NOTIFY): seal-path tables exist AT CREATE EXTENSION owned by ck_substrate, pgrdf
 // floor re-asserted, every ckp callable uniformly floored, participant re-pinned to
@@ -449,7 +465,7 @@ extension_sql_file!(
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_v0421_create_core_keys"]
+    requires = ["pgck_v0425_enforcement_chain"]
 );
 
 /// Database the pgCK bridge worker attaches to (`connect_worker_to_spi`). It MUST
