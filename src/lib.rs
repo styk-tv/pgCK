@@ -449,8 +449,8 @@ extension_sql_file!(
 // per-graph; ckp.seal validates against that composed graph instead of a hand-rolled
 // sh:minCount scan; ckp.validation_report_ttl() gives ckp:ValidationReport a producer.
 //
-// It was back-ported in-session and never referenced here, so three delivered tickets
-// were live on the bench and ABSENT FROM EVERY FRESH INSTALL.
+// Wired in PASS-13. It was back-ported in-session and never referenced here, so three
+// delivered tickets were live on the bench and ABSENT FROM EVERY FRESH INSTALL.
 extension_sql_file!(
     "../sql/pgck--0.4.24--0.4.25.sql",
     name = "pgck_v0425_enforcement_chain",
@@ -474,6 +474,23 @@ extension_sql_file!(
 /// Always compiled (the worker runs in every build, independent of the NATS feature).
 static PGCK_WORKER_DATABASE: pgrx::GucSetting<Option<std::ffi::CString>> =
     pgrx::GucSetting::<Option<std::ffi::CString>>::new(None);
+
+/// Whether the auth-callout admits an UNVERIFIED connection to the anonymous tier
+/// (subscribe-only on the public event stream, no publish) or refuses it outright.
+///
+/// Default `true`, which preserves the documented fail-open-to-anonymous behaviour —
+/// flipping it silently would disconnect every current consumer. Set `false` to make
+/// admittance fail-closed: an absent, forged, malformed or expired token is REFUSED
+/// rather than downgraded. The identity floor is unaffected either way — a forged
+/// token is never admitted as its claimed identity in either mode.
+#[cfg(feature = "nats-client")]
+static PGCK_ADMIT_ANONYMOUS: pgrx::GucSetting<bool> = pgrx::GucSetting::<bool>::new(true);
+
+/// Snapshot of `pgck.admit_anonymous` (default `true`).
+#[cfg(feature = "nats-client")]
+pub(crate) fn admit_anonymous() -> bool {
+    PGCK_ADMIT_ANONYMOUS.get()
+}
 
 /// Snapshot of `pgck.worker_database` (default `postgres` when unset/empty).
 pub(crate) fn worker_database() -> String {
@@ -501,6 +518,17 @@ pub extern "C-unwind" fn _PG_init() {
     );
     #[cfg(feature = "nats-client")]
     {
+        // Admittance policy. Default true preserves the documented fail-open-to-anonymous
+        // tier; false makes the auth-callout REFUSE an unverified connection outright
+        // instead of downgrading it. Sighup so an operator can tighten without a restart.
+        pgrx::GucRegistry::define_bool_guc(
+            c"pgck.admit_anonymous",
+            c"Admit an unverified connection to the anonymous tier instead of refusing it",
+            c"Default on: an absent/forged/malformed token is downgraded to anonymous (subscribe-only, no publish). Off: it is refused. The identity floor is unaffected either way — a forged token is never admitted as its claimed identity.",
+            &PGCK_ADMIT_ANONYMOUS,
+            pgrx::GucContext::Sighup,
+            pgrx::GucFlags::default(),
+        );
         pgrx::GucRegistry::define_string_guc(
             c"pgck.nats_url",
             c"URL of the bundled or cluster nats-server pgCK publishes to",

@@ -361,7 +361,13 @@ async fn run_callout(client: async_nats::Client, ctx: CalloutContext) {
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
         let response =
-            crate::auth_callout::handle_request(request_jwt, ctx.auth, &ctx.account, now);
+            crate::auth_callout::handle_request(
+                request_jwt,
+                ctx.auth,
+                &ctx.account,
+                now,
+                crate::admit_anonymous(),
+            );
         if let Err(e) = client.publish(reply, response.into_bytes().into()).await {
             eprintln!("pgck auth-callout: response publish failed: {e}");
         }
