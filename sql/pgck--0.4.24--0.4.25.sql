@@ -379,27 +379,33 @@ ALTER FUNCTION ckp._body_to_ttl(jsonb, text, int)     OWNER TO ck_substrate;
 ALTER FUNCTION ckp.seal(text, jsonb)                  OWNER TO ck_substrate;
 
 -- ─────────────────────────────────────────────────────────────────────
--- P0 (pgCK#35): ckp.validate passes mode 'pgrdf' to pgrdf.validate.
+-- REVERT of pgCK#35/#37: ckp.validate returns to the default mode.
 --
--- It previously passed no mode, so every seal validated in 'native', and
--- native SILENTLY SKIPS sh:sparql — conforms=true, zero results, no error.
--- That is the fake-green family this wave exists to remove, sitting in the
--- seal itself.
+-- #37 passed mode 'pgrdf' to stop native silently skipping sh:sparql. That part
+-- was true. What I did NOT verify is that the modes are EQUIVALENT on everything
+-- else, and they are not. Measured, same shapes graph, same violating data:
 --
--- Measured on the bench, same candidate + same composed graph, 5 runs, median:
---   native 5.12 ms   sparql 7.78 ms   pgrdf 3.72 ms
--- Mode 'pgrdf' is the FASTEST of the three, so this is not a hot-path trade.
--- Neither the v3.11 root nor the shipped v3.8 core declares sh:sparql today
--- (0 occurrences each), so it changes no current behaviour either — it removes
--- a trap that fires the first time anyone adds one.
+--   native : conforms=false  4 results   enforces Core
+--   sparql : conforms=true   0 results
+--   pgrdf  : conforms=true   0 results   does NOT enforce Core
 --
--- Regression after the change: valid body ACCEPTED, bad bodySha REFUSED,
--- short sig REFUSED.
-
-CREATE OR REPLACE FUNCTION ckp.validate(ttl text, shapes_graph_id integer)
- RETURNS boolean
- LANGUAGE plpgsql
-AS $function$
+-- Isolated to a single component — a bare sh:minCount violation:
+--   native -> conforms=false     pgrdf -> conforms=true
+--
+-- ckp.seal gates its ledger and proof with ckp.validate(ttl, core_graph_id), so
+-- #37 re-opened exactly what #23 closed: a garbage ledger entry went back to
+-- conforms=true. The gate reported success and enforced nothing.
+--
+-- The speed result in #37 is explained by the same fact: mode 'pgrdf' measured
+-- ~27% faster because it was doing LESS WORK, not because it was cheaper. I
+-- benchmarked two evaluators without first proving they evaluate the same thing.
+--
+-- Correct position for #35: NEITHER MODE IS COMPLETE. native enforces Core and
+-- skips sh:sparql; pgrdf evaluates sh:sparql and skips Core. The seal enforces
+-- Core, so native is right for the seal, and the sh:sparql gap is real but must
+-- be closed by the engine rather than by swapping one blindness for another.
+CREATE OR REPLACE FUNCTION ckp.validate(ttl TEXT, shapes_graph_id INT)
+RETURNS BOOLEAN LANGUAGE plpgsql AS $f$
 DECLARE
   scratch_id INT := 1000000000 + pg_backend_pid();
   report jsonb;
@@ -408,11 +414,9 @@ BEGIN
   PERFORM pgrdf.clear_graph(scratch_id);
   PERFORM pgrdf.parse_turtle(ttl, scratch_id, 'urn:ckp:scratch#');
   PERFORM pgrdf.materialize(scratch_id);
-  report := pgrdf.validate(scratch_id, shapes_graph_id, 'pgrdf');
+  report := pgrdf.validate(scratch_id, shapes_graph_id);
   PERFORM pgrdf.clear_graph(scratch_id);
   RETURN COALESCE((report->>'conforms')::boolean, false);
 END;
-$function$
-;
-
+$f$;
 ALTER FUNCTION ckp.validate(text, int) OWNER TO ck_substrate;
