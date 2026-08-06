@@ -246,6 +246,7 @@ pub fn handle_request(
     cfg: Option<&AuthConfig>,
     account: &KeyPair,
     now_unix: i64,
+    admit_anonymous: bool,
 ) -> String {
     let req = match parse_auth_request(request_jwt) {
         Some(r) => r,
@@ -257,6 +258,42 @@ pub fn handle_request(
         }
     };
     let admission = callout_identity(req.auth_token.as_deref(), cfg, now_unix);
+
+    // Every authorization decision is logged. Before this, the responder logged once
+    // at startup and never again, so an operator could not distinguish "verified and
+    // admitted" from "forged, dropped to anonymous, admitted" — the two look identical
+    // from outside, and that ambiguity is what made this defect expensive to trace.
+    // The token itself is NEVER logged; only the outcome and whether one was presented.
+    let presented = req.auth_token.is_some();
+    match &admission {
+        Admission::Verified { sub } => eprintln!(
+            "pgck auth-callout: ADMIT verified sub={sub} (token presented: {presented})"
+        ),
+        Admission::Anonymous if !admit_anonymous => eprintln!(
+            "pgck auth-callout: REFUSE unverified (token presented: {presented}); \
+             pgck.admit_anonymous=false"
+        ),
+        Admission::Anonymous => eprintln!(
+            "pgck auth-callout: ADMIT anonymous (token presented: {presented}); \
+             subscribe-only, no publish"
+        ),
+    }
+
+    // Fail-closed option. The default preserves the documented fail-open-to-anonymous
+    // tier, because flipping it silently would disconnect every current consumer. An
+    // operator who wants unverified connections refused outright sets
+    // pgck.admit_anonymous=false and gets a refusal instead of a downgrade.
+    if !admit_anonymous && matches!(admission, Admission::Anonymous) {
+        return build_response(
+            &req.user_nkey,
+            &req.server_id,
+            account,
+            Err("unverified connection refused (pgck.admit_anonymous=false)".into()),
+            now_unix,
+        )
+        .unwrap_or_default();
+    }
+
     let perms = permissions_for(&admission);
     let name = match &admission {
         Admission::Verified { sub } => format!("urn:ckp:participant:{sub}"),
@@ -269,6 +306,30 @@ pub fn handle_request(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Fail-closed admittance: with admit_anonymous=false an unverified connection is
+    // REFUSED, not downgraded. Guards the highest-severity finding of the v3.11 wave —
+    // "not-a-jwt-at-all gets in" — and pins that the default still admits.
+    #[test]
+    fn unverified_is_refused_when_admit_anonymous_is_false() {
+        let account = KeyPair::new_account();
+        let req = fake_request_jwt("UCONN", "NSERVER", Some("not-a-jwt-at-all"));
+        let strict = handle_request(&req, None, &account, 1_800_000_000, false);
+        let lenient = handle_request(&req, None, &account, 1_800_000_000, true);
+        // the lenient path mints a user-JWT; the strict path must not
+        let lclaims = decode_claims(&lenient).unwrap();
+        assert!(lclaims["nats"]["jwt"].is_string(), "lenient admits");
+        let sclaims = decode_claims(&strict).unwrap();
+        assert!(
+            sclaims["nats"]["jwt"].as_str().unwrap_or("").is_empty(),
+            "strict must NOT mint a user-JWT for an unverified connection"
+        );
+        assert_ne!(
+            strict, lenient,
+            "refusal must differ from admission — if these match, the flag does nothing"
+        );
+        assert!(!strict.is_empty(), "a refusal must still be a signed response");
+    }
 
     // A verified admission → dispatch (publish) + read (subscribe) perms, with the
     // publish grant scoped to the connection's OWN identity segment (hop 4:
@@ -414,7 +475,7 @@ mod tests {
     fn handle_request_without_config_admits_anonymous() {
         let account = KeyPair::new_account();
         let req = fake_request_jwt("UCONN", "NSERVER", Some("unverifiable.token"));
-        let resp = handle_request(&req, None, &account, 1_700_000_000);
+        let resp = handle_request(&req, None, &account, 1_700_000_000, true);
         let parts: Vec<&str> = resp.split('.').collect();
         assert_eq!(parts.len(), 3);
         let claims = decode_claims(&resp).unwrap();
@@ -462,7 +523,7 @@ mod tests {
     fn response_is_signed_by_account() {
         let account = KeyPair::new_account();
         let req = fake_request_jwt("UCONN", "NSERVER", None);
-        let resp = handle_request(&req, None, &account, 1);
+        let resp = handle_request(&req, None, &account, 1, true);
         let parts: Vec<&str> = resp.split('.').collect();
         let signing_input = format!("{}.{}", parts[0], parts[1]);
         let sig = URL_SAFE_NO_PAD.decode(parts[2]).unwrap();
