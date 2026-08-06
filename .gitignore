@@ -43,3 +43,13 @@ compose/extensions/pgck-natsclient/
 
 # local env
 .env
+
+# VS Code tasks — local dev convenience, not shared (untracked 2026-07-28)
+/.vscode/tasks.json
+
+# CKP/SPEC statements and bench docs — never public (2026-08-05)
+CK*.md
+SPEC*.md
+
+# bench scratch mount (nx5 REQ-3) — never tracked
+.bench-scratch/
