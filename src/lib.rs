@@ -188,6 +188,11 @@ extension_sql_file!("../sql/pgck-baseline.sql", name = "pgck_baseline");
 // Install-from-zero completeness. MUST remain the LAST sql include — its closing
 // floor pass re-asserts the pgrdf floor and re-pins ck_participant to exactly the
 // dispatch door, covering everything earlier statements created.
+//
+// Build identity (ckp.version / ckp.build_id) is emitted into the generated
+// install by pgrx from the `ckp` module below; an EXISTING database only runs
+// upgrade scripts, so the pair must also ship in the matching sql/pgck--A--B.sql.
+// Nothing is included here for it: the install path already has it.
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
@@ -345,8 +350,41 @@ fn pgck_version() -> &'static str {
     concat!("pgck ", env!("CARGO_PKG_VERSION"))
 }
 
+/// The build this library was compiled from — tag, commits-since, short commit,
+/// and a `-dirty` marker when the tree was not clean.
+///
+/// **The one identifier that survives a wrong drop.** Version, control file and
+/// install SQL all agree the moment the *control* file is replaced; the library
+/// is loaded separately and by the postmaster. So `pgck.version()` can report a
+/// version the loaded `.so` is not, and every other plane will agree with it.
+/// This does not — it is compiled in.
+///
+/// **Deliberately narrow.** Any connected role can call it, so it carries only
+/// tag, commits-since, short commit and the dirty marker: no filesystem paths,
+/// host names, or build users. `build_id_carries_no_paths` enforces that rather
+/// than leaving it to review. Mirrors `pgrdf.build_id()`.
+#[pg_extern]
+fn build_id() -> &'static str {
+    option_env!("PGCK_BUILD_ID").unwrap_or("unknown")
+}
+
 #[cfg(test)]
 mod tests {
+
+    /// `build_id()` is readable by any connected role, so the disclosure
+    /// surface is enforced here rather than left to review. It carries build
+    /// IDENTITY, never build ENVIRONMENT.
+    #[test]
+    fn build_id_carries_no_paths() {
+        let id = crate::build_id();
+        assert!(!id.is_empty(), "build_id must never be empty");
+        for bad in ["/Users", "/home", "/root", "/tmp", "\\", "@"] {
+            assert!(
+                !id.contains(bad),
+                "build_id must not carry filesystem paths or hosts, found {bad:?} in {id:?}"
+            );
+        }
+    }
     #[test]
     fn version_present() {
         // Asserts the contract: pgck_version() tracks the crate version exactly.
