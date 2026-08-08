@@ -1221,6 +1221,37 @@ END;
 $procedure$
 ;
 
+-- ckp._enforce_internal_floor — now also grants schema USAGE to ck_substrate
+-- and ck_drainer (fresh-install ring repair; a no-op where already granted).
+CREATE OR REPLACE PROCEDURE ckp._enforce_internal_floor()
+ LANGUAGE plpgsql
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $procedure$
+BEGIN
+  -- Single idempotent statement set: applies to EVERY table/sequence currently in
+  -- schema ckp (config + dictionary now; instances/ledger/proof/outbox after
+  -- bootstrap; plans after CI-C-4). No PUBLIC; ck_substrate is the operating role.
+  REVOKE ALL ON ALL TABLES    IN SCHEMA ckp FROM PUBLIC;
+  REVOKE ALL ON ALL SEQUENCES IN SCHEMA ckp FROM PUBLIC;
+  GRANT  ALL ON ALL TABLES    IN SCHEMA ckp TO ck_substrate;
+  GRANT  ALL ON ALL SEQUENCES IN SCHEMA ckp TO ck_substrate;
+  -- Schema USAGE for the operating roles (measured missing from zero,
+  -- 2026-08-08): the ring-1 definer set runs as ck_substrate and resolves
+  -- ckp.* by name, and the outbox drain connects as ck_drainer — without
+  -- USAGE both die on a FRESH install ('permission denied for schema ckp')
+  -- while every long-lived bench works, because its grants predate the
+  -- completeness file. The completeness pass grants ckp USAGE to
+  -- ck_participant only; these two were only ever granted by hand.
+  GRANT  USAGE ON SCHEMA ckp TO ck_substrate;
+  GRANT  USAGE ON SCHEMA ckp TO ck_drainer;
+END;
+$procedure$
+;
+
+-- Run it: an upgraded database gets the corrected floor immediately, not at
+-- its next bootstrap.
+CALL ckp._enforce_internal_floor();
+
 -- Floor the new helper exactly as the install-completeness pass would: the
 -- completeness file only runs on CREATE EXTENSION, so an upgrade must carry
 -- its own floor or the function stays PUBLIC-executable (the pre-flatten

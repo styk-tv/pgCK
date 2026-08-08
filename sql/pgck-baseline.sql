@@ -235,6 +235,15 @@ BEGIN
   REVOKE ALL ON ALL SEQUENCES IN SCHEMA ckp FROM PUBLIC;
   GRANT  ALL ON ALL TABLES    IN SCHEMA ckp TO ck_substrate;
   GRANT  ALL ON ALL SEQUENCES IN SCHEMA ckp TO ck_substrate;
+  -- Schema USAGE for the operating roles (measured missing from zero,
+  -- 2026-08-08): the ring-1 definer set runs as ck_substrate and resolves
+  -- ckp.* by name, and the outbox drain connects as ck_drainer — without
+  -- USAGE both die on a FRESH install ('permission denied for schema ckp')
+  -- while every long-lived bench works, because its grants predate the
+  -- completeness file. The completeness pass grants ckp USAGE to
+  -- ck_participant only; these two were only ever granted by hand.
+  GRANT  USAGE ON SCHEMA ckp TO ck_substrate;
+  GRANT  USAGE ON SCHEMA ckp TO ck_drainer;
 END;
 $procedure$
 ;
