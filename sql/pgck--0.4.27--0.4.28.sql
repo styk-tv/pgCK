@@ -932,8 +932,15 @@ BEGIN
     @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
     <urn:ckp:led:%s> a ckp:LedgerEntry ;
       ckp:about <%s> ; ckp:bodySha "%s" ; ckp:sig "%s" ;
+      ckp:prev %s ;
       ckp:ts "%s"^^xsd:dateTime .$t$,
-    p_instance_id, p_instance_id, v_sha, v_sig, to_char(v_now,'YYYY-MM-DD"T"HH24:MI:SS"Z"'));
+    p_instance_id, p_instance_id, v_sha, v_sig,
+    -- v3.11 LedgerEntryShape demands ckp:prev (minCount 1, xsd:integer) — the
+    -- chain position, which v3.8 left implicit in the relational prev_seq.
+    -- Genesis encodes as 0: the column stays NULL (no referent), the protocol
+    -- statement is "nothing precedes me", and a bare Turtle integer is
+    -- xsd:integer, matching the declared datatype.
+    COALESCE(v_prev, 0)::text, to_char(v_now,'YYYY-MM-DD"T"HH24:MI:SS"Z"'));
   IF NOT ckp.validate(v_led_ttl, v_core) THEN
     RAISE EXCEPTION 'ckp.seal: ledger entry fails ckp:LedgerEntryShape (core governance)';
   END IF;
