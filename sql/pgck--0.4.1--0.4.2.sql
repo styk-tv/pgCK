@@ -119,7 +119,7 @@ BEGIN
     ) AS expected(shape, target)
   LOOP
     v_q := format(
-      'PREFIX ckp: <https://conceptkernel.org/ontology/v3.8/core#>
+      'PREFIX ckp: <https://conceptkernel.org/ontology/v3.11/core#>
        PREFIX sh:  <http://www.w3.org/ns/shacl#>
        PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
        ASK FROM <%s>
