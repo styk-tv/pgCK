@@ -1173,6 +1173,54 @@ END;
 $function$
 ;
 
+-- ckp.boot — carries the fresh-install ring repair (see the body): boot's
+-- dynamically created pgrdf graph tables must be readable by the ck_substrate
+-- definer ring, and the completeness floor ran before they existed.
+CREATE OR REPLACE PROCEDURE ckp.boot(IN p_core_ttl_path text DEFAULT '/ontology/core.ttl'::text)
+ LANGUAGE plpgsql
+AS $procedure$
+DECLARE v_core INT; v_ttl TEXT; v_shapes INT;
+BEGIN
+  PERFORM pgrdf.shmem_reset();
+  -- P0-A0 (pgCK#23): resolve the core graph BY IRI and record the id it got.
+  -- Never assume an id from config. Two paths bound graphs — one by explicit
+  -- id from ckp.config, one by IRI with an auto-assigned id — and whichever ran
+  -- first won the id. That left core_graph_id pointing at the kernel graph and
+  -- boot raising 'graph_id 1 is bound to a different IRI' on every run, so the
+  -- core ontology was never loaded and every ckp.validate(_, core) conformed
+  -- trivially against an empty shapes graph.
+  v_core := pgrdf.add_graph('urn:ckp:core');
+  INSERT INTO ckp.config(k,v) VALUES ('core_graph_id', v_core::text)
+    ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v;
+  PERFORM pgrdf.clear_graph(v_core);
+  v_ttl := pg_read_file(p_core_ttl_path);
+  PERFORM pgrdf.parse_turtle(v_ttl, v_core, 'urn:ckp:core#');
+  PERFORM pgrdf.materialize(v_core);
+  -- Fail loudly. An empty core graph is not a runnable state: it makes the
+  -- seal's own ledger/proof gate unreachable and every core constraint inert.
+  SELECT count(*) INTO v_shapes FROM pgrdf.sparql(
+    'PREFIX sh:<http://www.w3.org/ns/shacl#> SELECT ?s WHERE { GRAPH <urn:ckp:core> { ?s a sh:NodeShape } }');
+  IF v_shapes = 0 THEN
+    RAISE EXCEPTION 'ckp.boot: core ontology at % loaded 0 sh:NodeShape — refusing to run with an unenforced core', p_core_ttl_path;
+  END IF;
+  -- Ring repair (fresh install, measured 2026-08-08): the per-graph tables
+  -- this boot just created belong to the CALLING superuser — boot cannot be a
+  -- ck_substrate definer because pg_read_file is superuser-gated — while every
+  -- internal that reads them (ckp._composed_shapes and the rest of the ring-1
+  -- definer set) runs as ck_substrate. On a fresh install the completeness
+  -- floor ran at CREATE EXTENSION, before these tables existed, so the first
+  -- seal died inside pgrdf.copy_graph with `permission denied for table
+  -- _pgrdf_quads_g1`. Re-assert the substrate floor over pgrdf exactly as the
+  -- completeness pass states it, now covering the dynamically created tables.
+  -- (The lasting fix is a grant at creation inside pgrdf.add_graph — filed
+  -- against pgRDF; this covers every graph boot itself creates.)
+  GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+  GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
+  RAISE NOTICE 'ckp.boot: core graph % loaded from %, % NodeShapes', v_core, p_core_ttl_path, v_shapes;
+END;
+$procedure$
+;
+
 -- Floor the new helper exactly as the install-completeness pass would: the
 -- completeness file only runs on CREATE EXTENSION, so an upgrade must carry
 -- its own floor or the function stays PUBLIC-executable (the pre-flatten

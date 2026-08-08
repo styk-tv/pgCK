@@ -266,6 +266,19 @@ BEGIN
   IF v_shapes = 0 THEN
     RAISE EXCEPTION 'ckp.boot: core ontology at % loaded 0 sh:NodeShape — refusing to run with an unenforced core', p_core_ttl_path;
   END IF;
+  -- Ring repair (fresh install, measured 2026-08-08): the per-graph tables
+  -- this boot just created belong to the CALLING superuser — boot cannot be a
+  -- ck_substrate definer because pg_read_file is superuser-gated — while every
+  -- internal that reads them (ckp._composed_shapes and the rest of the ring-1
+  -- definer set) runs as ck_substrate. On a fresh install the completeness
+  -- floor ran at CREATE EXTENSION, before these tables existed, so the first
+  -- seal died inside pgrdf.copy_graph with `permission denied for table
+  -- _pgrdf_quads_g1`. Re-assert the substrate floor over pgrdf exactly as the
+  -- completeness pass states it, now covering the dynamically created tables.
+  -- (The lasting fix is a grant at creation inside pgrdf.add_graph — filed
+  -- against pgRDF; this covers every graph boot itself creates.)
+  GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+  GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
   RAISE NOTICE 'ckp.boot: core graph % loaded from %, % NodeShapes', v_core, p_core_ttl_path, v_shapes;
 END;
 $procedure$
