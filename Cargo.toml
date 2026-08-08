@@ -1,6 +1,6 @@
 [package]
 name = "pgck"
-version = "0.4.26"
+version = "0.4.27"
 edition = "2021"
 description = "PostgreSQL Concept Kernel extension — NATS bridge + SHACL validator + materializer, in-database"
 license = "MIT"
@@ -49,10 +49,16 @@ embedded-nats = ["dep:tokio"]
 nats-client = ["dep:tokio", "dep:async-nats", "dep:futures-util", "dep:nkeys", "dep:data-encoding"]
 
 [dependencies]
-pgrx = "0.16"               # caret range, exactly as pgRDF — must match
-                            # the cargo-pgrx CLI (setup-pgrx installs
-                            # ^0.16 → 0.16.1; an `=0.16.0` pin makes
-                            # `cargo pgrx test` reject the mismatch).
+pgrx = "0.19"               # caret range, exactly as pgRDF — must match the
+                            # cargo-pgrx CLI. Under SPEC.RUST-BUILDER.CK.v3.11
+                            # §3 the builder no longer takes a CLI version from
+                            # the caller: it reads the resolved pgrx from
+                            # Cargo.lock and installs `=<that>`. So the caret
+                            # here and the lock must agree, and Cargo.lock is
+                            # now TRACKED (see .gitignore) — /src is mounted
+                            # read-only and cargo cannot reconcile a drifted
+                            # lock inside the container; the entrypoint refuses.
+                            # 0.16 → 0.19 aligns pgCK with pgrdf's 0.19.2.
 # NATS client library — used in the `nats-client` profile when pgCK
 # acts as a client of the bundled / cluster nats-server. Optional +
 # gated by `nats-client`. Default features include `jetstream`,
@@ -77,7 +83,7 @@ nkeys = { version = "0.4", optional = true }
 data-encoding = { version = "2", optional = true }
 
 [dev-dependencies]
-pgrx-tests = "0.16"          # caret range, must match pgrx + cargo-pgrx
+pgrx-tests = "0.19"          # caret range, must match pgrx + cargo-pgrx
 
 [profile.dev]
 panic = "unwind"

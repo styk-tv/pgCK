@@ -1,5 +1,10 @@
 /target
-Cargo.lock
+# Cargo.lock IS TRACKED (2026-08-07, SPEC.RUST-BUILDER.CK.v3.11 §3).
+# The shared builder reads the resolved pgrx version out of the crate's
+# Cargo.lock and installs the exactly-matching cargo-pgrx. Untracked, a clean
+# CI clone (§11) carries no lock to resolve from, and locally the lock is
+# whatever that one machine last generated — which is how Cargo.toml drifted to
+# ^0.16 while the on-disk lock held 0.19.2 without anything noticing.
 *.so
 *.dylib
 .DS_Store

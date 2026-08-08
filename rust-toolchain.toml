@@ -1,3 +1,6 @@
 [toolchain]
-channel = "stable"
+# PINNED, not "stable". A floating channel resolves per machine, so one commit
+# builds under three compilers and a build id names a compiler nobody can
+# reproduce. Matches the builder image and pgRDF's pin.
+channel = "1.97.1"
 components = ["rustfmt", "clippy"]

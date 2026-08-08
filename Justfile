@@ -54,6 +54,48 @@ build-ext-nats: colima-up
       ver=$(grep -oE "default_version = '[^']+'" pgck.control | cut -d"'" -f2) && \
       find . -name 'pgck--*.sql' ! -name "pgck--$ver.sql" -delete
 
+# ---- SPEC.RUST-BUILDER.CK.v3.11 — the shared builder ----------------------
+# One image builds pgrdf and pgck; one directory delivers both. Nothing below
+# is pgCK-specific except /src and the per-crate /target: the entrypoint reads
+# the extension name, version, the pgrx pin, PGCK_BUILD_ID (derived from the
+# crate name) and the sql/pgck--A--B.sql upgrade scripts out of /src itself.
+#
+# Distinct from build-ext above, which is the OLDER compose/builder.Containerfile
+# path feeding compose/extensions/pgck for the s4/s34 compose stack. This one
+# feeds the pgck-localhost bench at {{ck_out}}, where pgrdf delivers too.
+ck_builder := env_var_or_default("CK_RUST_BUILDER", "ck-rust-builder:trixie-pg18")
+# §4: /out MUST resolve under $HOME — Colima shares only the home directory.
+ck_out     := env_var_or_default("CK_EXT_DIR", env_var("HOME") + "/.colima/localhost.pgck/ext")
+# §4: one named volume per crate, never shared between crates. The cargo and
+# pgrx caches ARE shared — that is what makes the second build cheap.
+ck_target  := "pgck-target-pg" + pg
+
+# `just ck-build test` runs the pgrx suite instead and delivers nothing (§5).
+# Both modes MUST go through the entrypoint: overriding it drops the
+# version-scoped cargo-pgrx from PATH and the suite reports that as ~300
+# failing tests rather than as a missing PATH.
+#
+# Build pgck through the shared builder; deliver to the bench ext dir.
+ck-build mode="package": colima-up
+    mkdir -p "{{ck_out}}"
+    DOCKER_CONTEXT={{docker_context}} docker run --rm \
+      -v "$PWD":/src:ro \
+      -v "{{ck_out}}":/out \
+      -v {{ck_target}}:/target \
+      -v ck-build-cargo-registry:/usr/local/cargo/registry \
+      -v ck-build-cargo-git:/usr/local/cargo/git \
+      -v ck-build-pgrx:/pgrx \
+      {{ck_builder}} {{mode}}
+
+# The DB half (SELECT pgck.version(), pgck.build_id()) needs the bench
+# restarted first — §9 step 2 is not optional, the postmaster loads
+# shared_preload_libraries once at startup and cannot be swapped into.
+#
+# §10 artifact half: delivered bytes match the builder's hash, plus provenance.
+ck-artifacts:
+    cd "{{ck_out}}/lib" && shasum -a 256 -c pgck.so.sha256
+    cat "{{ck_out}}/pgck.build.json"
+
 # Recreate the pod (down+up) — picks up compose.yml mount changes.
 compose-recreate: colima-up
     # `docker compose restart` does NOT re-read volume/mount changes;
