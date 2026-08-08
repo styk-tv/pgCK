@@ -3081,6 +3081,8 @@ $function$
 CREATE OR REPLACE FUNCTION ckp.validate(ttl text, shapes_graph_id integer)
  RETURNS boolean
  LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
   scratch_id INT := 1000000000 + pg_backend_pid();

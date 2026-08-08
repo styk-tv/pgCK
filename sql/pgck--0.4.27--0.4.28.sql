@@ -1087,6 +1087,8 @@ $function$
 CREATE OR REPLACE FUNCTION ckp.validate(ttl text, shapes_graph_id integer)
  RETURNS boolean
  LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
   scratch_id INT := 1000000000 + pg_backend_pid();
@@ -1259,16 +1261,41 @@ $procedure$
 -- its next bootstrap.
 CALL ckp._enforce_internal_floor();
 
--- Floor the new helper exactly as the install-completeness pass would: the
--- completeness file only runs on CREATE EXTENSION, so an upgrade must carry
--- its own floor or the function stays PUBLIC-executable (the pre-flatten
--- drift-adopted helpers demonstrated exactly that hole).
--- Measured on the upgrade path: the REVOKEs alone left seal (running as the
--- ck_substrate definer) unable to call the new helper — the completeness
--- pass that grants and chowns runs only at CREATE EXTENSION. State the full
--- ring position explicitly, matching what a fresh install produces:
--- ck_substrate owns it and executes it, nobody else does.
-ALTER FUNCTION ckp._derived_stamp_ttl(text,text,text,text,integer) OWNER TO ck_substrate;
+-- ── Ring-1 re-assert ─────────────────────────────────────────────────────────
+-- Measured on the upgrade path: CREATE OR REPLACE resets SECURITY DEFINER and
+-- ownership to whatever the statement text says, and the completeness pass
+-- that hardens the whole schema runs only at CREATE EXTENSION. Without this,
+-- every function this script replaced (and the new stamp helper) executed
+-- with caller rights on upgraded databases while fresh installs were
+-- hardened — same extversion, different ring. Re-run the completeness pass's
+-- own loop, verbatim: functions SECURITY DEFINER + ck_substrate + pinned
+-- search_path; procedures owned + pinned, SECURITY INVOKER (boot/import use
+-- pg_read_file, which needs the caller's superuser rights).
+DO $floor_0428$
+DECLARE p record;
+BEGIN
+  FOR p IN
+    SELECT pr.oid, pr.prokind
+    FROM pg_proc pr JOIN pg_namespace n ON n.oid = pr.pronamespace
+    WHERE n.nspname = 'ckp' AND pr.prokind IN ('f','p')
+  LOOP
+    IF p.prokind = 'f' THEN
+      EXECUTE format('ALTER FUNCTION %s OWNER TO ck_substrate', p.oid::regprocedure);
+      EXECUTE format('ALTER FUNCTION %s SECURITY DEFINER SET search_path = ckp, public, pg_temp', p.oid::regprocedure);
+    ELSE
+      EXECUTE format('ALTER PROCEDURE %s OWNER TO ck_substrate', p.oid::regprocedure);
+      EXECUTE format('ALTER PROCEDURE %s SET search_path = ckp, public, pg_temp', p.oid::regprocedure);
+    END IF;
+  END LOOP;
+END
+$floor_0428$;
+
+-- The participant floor for the new helper (the loop above owns and hardens;
+-- it does not touch ACLs):
 REVOKE ALL ON FUNCTION ckp._derived_stamp_ttl(text,text,text,text,integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION ckp._derived_stamp_ttl(text,text,text,text,integer) FROM ck_participant;
 GRANT EXECUTE ON FUNCTION ckp._derived_stamp_ttl(text,text,text,text,integer) TO ck_substrate;
+
+-- And the table/sequence/schema floor, which also covers the schema-USAGE
+-- repair for ck_substrate and ck_drainer on upgraded databases:
+CALL ckp._enforce_internal_floor();
