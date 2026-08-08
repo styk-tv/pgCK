@@ -1263,5 +1263,12 @@ CALL ckp._enforce_internal_floor();
 -- completeness file only runs on CREATE EXTENSION, so an upgrade must carry
 -- its own floor or the function stays PUBLIC-executable (the pre-flatten
 -- drift-adopted helpers demonstrated exactly that hole).
+-- Measured on the upgrade path: the REVOKEs alone left seal (running as the
+-- ck_substrate definer) unable to call the new helper — the completeness
+-- pass that grants and chowns runs only at CREATE EXTENSION. State the full
+-- ring position explicitly, matching what a fresh install produces:
+-- ck_substrate owns it and executes it, nobody else does.
+ALTER FUNCTION ckp._derived_stamp_ttl(text,text,text,text,integer) OWNER TO ck_substrate;
 REVOKE ALL ON FUNCTION ckp._derived_stamp_ttl(text,text,text,text,integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION ckp._derived_stamp_ttl(text,text,text,text,integer) FROM ck_participant;
+GRANT EXECUTE ON FUNCTION ckp._derived_stamp_ttl(text,text,text,text,integer) TO ck_substrate;
