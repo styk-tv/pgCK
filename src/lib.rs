@@ -350,22 +350,58 @@ fn pgck_version() -> &'static str {
     concat!("pgck ", env!("CARGO_PKG_VERSION"))
 }
 
-/// The build this library was compiled from — tag, commits-since, short commit,
-/// and a `-dirty` marker when the tree was not clean.
+/// The §7 identity pair, in `ckp` — where pgCK's other 81 functions already
+/// live, and the only schema pgCK has. There is no schema named `pgck`: the
+/// EXTENSION is `pgck`, the SCHEMA is `ckp`. pgRDF's two names coincide, which
+/// is the only reason `pgrdf.version()` reads as it does; the pgCK spelling is
+/// `ckp.version()`.
 ///
-/// **The one identifier that survives a wrong drop.** Version, control file and
-/// install SQL all agree the moment the *control* file is replaced; the library
-/// is loaded separately and by the postmaster. So `pgck.version()` can report a
-/// version the loaded `.so` is not, and every other plane will agree with it.
-/// This does not — it is compiled in.
+/// `#[pg_schema]` emits `CREATE SCHEMA IF NOT EXISTS ckp`, and the bootstrap
+/// (`sql/pgck--0.2.2.sql`) emits the same idempotent statement, so the two
+/// cannot conflict whichever order the SQL generator lands them in.
 ///
-/// **Deliberately narrow.** Any connected role can call it, so it carries only
-/// tag, commits-since, short commit and the dirty marker: no filesystem paths,
-/// host names, or build users. `build_id_carries_no_paths` enforces that rather
-/// than leaving it to review. Mirrors `pgrdf.build_id()`.
-#[pg_extern]
-fn build_id() -> &'static str {
-    option_env!("PGCK_BUILD_ID").unwrap_or("unknown")
+/// Placement is load-bearing, not cosmetic: `pg_catalog` is searched before
+/// `public`, so a `version()` sitting in `public` answers a bare
+/// `SELECT version()` with PostgreSQL's own banner — measured on the bench as
+/// `PostgreSQL 18.4 (Debian 18.4-1.pgdg13+1)`. In `ckp` the name cannot be
+/// captured by core.
+#[pg_schema]
+pub mod ckp {
+    use pgrx::prelude::*;
+
+    /// Bare semver — the release line this library was cut from.
+    ///
+    /// Required by SPEC.RUST-BUILDER.CK.v3.11 §7, which fixes the pair every
+    /// extension on the shared builder exposes: `version()` names the RELEASE
+    /// LINE and is identical across every build of it; `build_id()` names the
+    /// BINARY. §10 reads them together.
+    ///
+    /// Distinct from [`super::pgck_version()`], which stays exactly where and
+    /// what it is: prefixed `"pgck <semver>"`, in `public`, because
+    /// oci-germination already reads that form. Both derive from
+    /// `CARGO_PKG_VERSION`, so they cannot disagree.
+    #[pg_extern]
+    pub fn version() -> &'static str {
+        env!("CARGO_PKG_VERSION")
+    }
+
+    /// The build this library was compiled from — tag, commits-since, short
+    /// commit, and a `-dirty` marker when the tree was not clean.
+    ///
+    /// **The one identifier that survives a wrong drop.** Version, control file
+    /// and install SQL all agree the moment the *control* file is replaced; the
+    /// library is loaded separately and by the postmaster. So `ckp.version()`
+    /// can report a version the loaded `.so` is not, and every other plane will
+    /// agree with it. This does not — it is compiled in.
+    ///
+    /// **Deliberately narrow.** Any connected role can call it, so it carries
+    /// only tag, commits-since, short commit and the dirty marker: no
+    /// filesystem paths, host names, or build users. `build_id_carries_no_paths`
+    /// enforces that rather than leaving it to review.
+    #[pg_extern]
+    pub fn build_id() -> &'static str {
+        option_env!("PGCK_BUILD_ID").unwrap_or("unknown")
+    }
 }
 
 #[cfg(test)]
@@ -376,7 +412,7 @@ mod tests {
     /// IDENTITY, never build ENVIRONMENT.
     #[test]
     fn build_id_carries_no_paths() {
-        let id = crate::build_id();
+        let id = crate::ckp::build_id();
         assert!(!id.is_empty(), "build_id must never be empty");
         for bad in ["/Users", "/home", "/root", "/tmp", "\\", "@"] {
             assert!(
@@ -391,6 +427,35 @@ mod tests {
         assert_eq!(
             crate::pgck_version(),
             concat!("pgck ", env!("CARGO_PKG_VERSION"))
+        );
+    }
+
+    /// SPEC.RUST-BUILDER.CK.v3.11 §7: `version()` is BARE semver from
+    /// Cargo.toml. §10 reads it next to `build_id()`, and a consumer parsing it
+    /// as a version must not have to strip a prefix first — that is what
+    /// `pgck_version()` is for.
+    #[test]
+    fn version_is_bare_semver() {
+        let v = crate::ckp::version();
+        assert_eq!(v, env!("CARGO_PKG_VERSION"));
+        let parts: Vec<&str> = v.split('.').collect();
+        assert_eq!(parts.len(), 3, "expected MAJOR.MINOR.PATCH, got {v:?}");
+        for p in parts {
+            assert!(
+                !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()),
+                "non-numeric semver component {p:?} in {v:?}"
+            );
+        }
+    }
+
+    /// The two self-reports read the same source, so they can never drift. This
+    /// is the assertion that keeps both spellings honest now that both ship.
+    #[test]
+    fn version_agrees_with_pgck_version() {
+        assert_eq!(
+            crate::pgck_version(),
+            format!("pgck {}", crate::ckp::version()),
+            "pgck_version() must stay version() with the historical prefix"
         );
     }
 }
