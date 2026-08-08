@@ -356,8 +356,8 @@ fn pgck_version() -> &'static str {
 /// is the only reason `pgrdf.version()` reads as it does; the pgCK spelling is
 /// `ckp.version()`.
 ///
-/// `#[pg_schema]` emits `CREATE SCHEMA IF NOT EXISTS ckp`, and the bootstrap
-/// (`sql/pgck--0.2.2.sql`) emits the same idempotent statement, so the two
+/// `#[pg_schema]` emits `CREATE SCHEMA IF NOT EXISTS ckp`, and the baseline
+/// (`sql/pgck-baseline.sql`) emits the same idempotent statement, so the two
 /// cannot conflict whichever order the SQL generator lands them in.
 ///
 /// Placement is load-bearing, not cosmetic: `pg_catalog` is searched before
