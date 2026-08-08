@@ -581,7 +581,7 @@ CREATE OR REPLACE FUNCTION ckp._op_to_ttl(p_prop jsonb)
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  C          text := 'https://conceptkernel.org/ontology/v3.8/core#';
+  C          text := 'https://conceptkernel.org/ontology/v3.11/core#';
   v_iri_re   text := '^[A-Za-z][A-Za-z0-9+.:#/_-]*$';
   v_state_re text := '^[A-Za-z][A-Za-z0-9_-]*$';            -- state names (no quote/space)
   v_op       text := p_prop->>(C||'proposalOp');
@@ -670,6 +670,58 @@ BEGIN
   LOOP
     v_ttl := v_ttl || '<'||p_subj||'> a <'||(j->>'parent')||'> .'||chr(10);
   END LOOP;
+  RETURN v_ttl;
+END;
+$function$
+;
+
+-- pgCK#41 — the substrate-derived instance stamp. Salvaged from the bench WIP
+-- (it lived only in the pgck.localhost database, in no git ref) and re-pointed
+-- v3.8 -> v3.11. Emits the four properties ckp:InstanceShape requires of every
+-- Instance: producedBy (the processing kernel), createdBy (the verified
+-- participant, resolved by seal step 0 — never from the payload),
+-- sealedAtEpoch (the kernel's epoch at seal), conformsToShape (the declared
+-- shape targeting the type, resolved from the SAME graph the gate validates
+-- against; absent => omitted rather than invented).
+CREATE OR REPLACE FUNCTION ckp._derived_stamp_ttl(p_subj text, p_type text, p_project text, p_participant text, p_shapes_graph integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  N     text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_ep  int;
+  v_shp text;
+  v_ttl text := '';
+  v_giri text;
+BEGIN
+  IF p_subj IS NULL OR p_type IS NULL THEN RETURN ''; END IF;
+
+  -- producedBy — the kernel that processed this instance. Server-derived.
+  v_ttl := v_ttl || '<'||p_subj||'> <'||N||'producedBy> <urn:ckp:'||p_project||'/kernel/ck> .'||chr(10);
+
+  -- createdBy — the verified participant, already resolved. Never from the payload.
+  IF p_participant IS NOT NULL THEN
+    v_ttl := v_ttl || '<'||p_subj||'> <'||N||'createdBy> <'||p_participant||'> .'||chr(10);
+  END IF;
+
+  -- sealedAtEpoch — the producing kernel's epoch at seal.
+  SELECT epoch INTO v_ep FROM ckp.kernel_epoch WHERE kernel = p_project;
+  v_ttl := v_ttl || '<'||p_subj||'> <'||N||'sealedAtEpoch> '||COALESCE(v_ep,0)::text||' .'||chr(10);
+
+  -- conformsToShape — the declared shape that targets this type, resolved from the
+  -- same graph the gate validates against. Absent => omitted rather than invented.
+  IF p_shapes_graph IS NOT NULL THEN
+    SELECT iri INTO v_giri FROM pgrdf._pgrdf_graphs WHERE graph_id = p_shapes_graph;
+    SELECT j->>'s' INTO v_shp FROM pgrdf.sparql(format($q$
+        PREFIX sh: <http://www.w3.org/ns/shacl#>
+        SELECT ?s WHERE { GRAPH <%s> { ?s sh:targetClass <%s> } } LIMIT 1
+      $q$, v_giri, p_type)) j;
+    IF v_shp IS NOT NULL THEN
+      v_ttl := v_ttl || '<'||p_subj||'> <'||N||'conformsToShape> <'||v_shp||'> .'||chr(10);
+    END IF;
+  END IF;
   RETURN v_ttl;
 END;
 $function$
@@ -958,7 +1010,7 @@ CREATE OR REPLACE FUNCTION ckp.apply(p_payload jsonb)
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  C           text := 'https://conceptkernel.org/ontology/v3.8/core#';
+  C           text := 'https://conceptkernel.org/ontology/v3.11/core#';
   v_about     text := p_payload->>'about';
   v_proj      text := COALESCE(NULLIF(current_setting('ckp.project', true), ''), 'demo');
   v_prop      jsonb;
@@ -1037,7 +1089,7 @@ CREATE OR REPLACE FUNCTION ckp.apply_shape_ttl(p_ttl text, p_project text)
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  C             text := 'https://conceptkernel.org/ontology/v3.8/core#';
+  C             text := 'https://conceptkernel.org/ontology/v3.11/core#';
   v_scratch_iri text := 'urn:ckp:apply:'||pg_backend_pid();
   v_scratch     int;
   v_kernel      int;
@@ -1527,7 +1579,7 @@ BEGIN
   WHEN 'affordances' THEN
     res := jsonb_build_object('ok', true, 'affordances', COALESCE((
       SELECT jsonb_agg(jsonb_build_object('name', j->>'a', 'in', j->>'it', 'out', j->>'ot'))
-      FROM pgrdf.sparql($q$ PREFIX ckp:<https://conceptkernel.org/ontology/v3.8/core#>
+      FROM pgrdf.sparql($q$ PREFIX ckp:<https://conceptkernel.org/ontology/v3.11/core#>
         SELECT ?a ?it ?ot WHERE { GRAPH ?g { ?a a ckp:Affordance .
           OPTIONAL { ?a ckp:inTopic ?it } OPTIONAL { ?a ckp:outTopic ?ot } } } ORDER BY ?a $q$) AS j
     ), '[]'::jsonb));
@@ -1984,7 +2036,7 @@ BEGIN
     v_subject := 'ckp://Task#' || ckp.urn_normalise(COALESCE(v_id, p_instance_id));
 
     v_ttl := format(
-      '@prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> . '
+      '@prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> . '
       || '<%s> a ckp:Task',
       v_subject);
 
@@ -2007,7 +2059,7 @@ BEGIN
     v_subject := 'ckp://Goal#' || ckp.urn_normalise(COALESCE(v_id, p_instance_id));
 
     v_ttl := format(
-      '@prefix ckp:  <https://conceptkernel.org/ontology/v3.8/core#> . '
+      '@prefix ckp:  <https://conceptkernel.org/ontology/v3.11/core#> . '
       || '@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . '
       || '<%s> a ckp:Goal',
       v_subject);
@@ -2066,7 +2118,7 @@ CREATE OR REPLACE FUNCTION ckp.propose_change(p_kernel_urn text, p_payload jsonb
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  C        text := 'https://conceptkernel.org/ontology/v3.8/core#';
+  C        text := 'https://conceptkernel.org/ontology/v3.11/core#';
   v_core   int  := (SELECT v::int FROM ckp.config WHERE k='core_graph_id');
   v_ops    text[] := ARRAY['add_class','add_property','modify_shape_constraint','add_affordance',
                            'set_transition_map','set_quorum','set_materialize_policy'];
@@ -2403,7 +2455,7 @@ BEGIN
            j->>'ep' AS epoch,
            j->>'dg' AS delegate
     FROM pgrdf.sparql($q$
-      PREFIX ckp: <https://conceptkernel.org/ontology/v3.8/core#>
+      PREFIX ckp: <https://conceptkernel.org/ontology/v3.11/core#>
       SELECT ?a ?it ?ot ?is ?pl ?ep ?dg WHERE {
         GRAPH ?g {
           ?a a ckp:Affordance ; ckp:inTopic ?it .
@@ -2624,7 +2676,7 @@ BEGIN
   -- display fields only when they were supplied alongside an identified sub.
   p_body := (p_body - 'participant')
     || jsonb_build_object(
-      'https://conceptkernel.org/ontology/v3.8/core#participant', v_participant);
+      'https://conceptkernel.org/ontology/v3.11/core#participant', v_participant);
   IF v_display IS NOT NULL THEN
     p_body := jsonb_set(p_body, '{participant_display_name}', to_jsonb(v_display), true);
   END IF;
@@ -2650,8 +2702,14 @@ BEGIN
     v_report  jsonb;
   BEGIN
     v_comp := ckp._composed_shapes(v_project);
+    -- pgCK#41: the four substrate-derived properties (producedBy, createdBy,
+    -- sealedAtEpoch, conformsToShape) are demanded by ckp:InstanceShape with
+    -- minCount 1, but were derived AFTER this gate — so on the v3.11 root every
+    -- Instance-classed seal failed by construction. Derive them INTO the
+    -- candidate the gate validates: what is checked is what will be stamped.
     v_cand := ckp._body_to_ttl(p_body, p_instance_id, v_comp)
-              || ckp._parent_closure_ttl(v_type, p_instance_id, v_comp);
+              || ckp._parent_closure_ttl(v_type, p_instance_id, v_comp)
+              || ckp._derived_stamp_ttl(p_instance_id, v_type, v_project, v_participant, v_comp);
     v_report := ckp.validate_report(v_cand, v_comp);
     IF (v_report->>'conforms') IS DISTINCT FROM 'true' THEN
       RAISE EXCEPTION 'ckp.seal: payload fails the composed shape gate: %',
@@ -2668,7 +2726,7 @@ BEGIN
 
   -- 3. VALIDATE the protocol's OWN ledger op, then write it.
   v_led_ttl := format($t$
-    @prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> .
+    @prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
     @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
     <urn:ckp:led:%s> a ckp:LedgerEntry ;
       ckp:about <%s> ; ckp:bodySha "%s" ; ckp:sig "%s" ;
@@ -2682,7 +2740,7 @@ BEGIN
 
   -- 4. VALIDATE the protocol's OWN proof op, then write it.
   v_prf_ttl := format($t$
-    @prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> .
+    @prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
     @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
     <urn:ckp:prf:%s> a ckp:Proof ;
       ckp:about <%s> ; ckp:method "hmac+sha256" ; ckp:digest "%s" ;
@@ -2752,7 +2810,7 @@ BEGIN
     ) AS expected(shape, target)
   LOOP
     v_q := format(
-      'PREFIX ckp: <https://conceptkernel.org/ontology/v3.8/core#>
+      'PREFIX ckp: <https://conceptkernel.org/ontology/v3.11/core#>
        PREFIX sh:  <http://www.w3.org/ns/shacl#>
        PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
        ASK FROM <%s>
@@ -2851,7 +2909,7 @@ CREATE OR REPLACE FUNCTION ckp.transition(p_payload jsonb)
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  C        text := 'https://conceptkernel.org/ontology/v3.8/core#';
+  C        text := 'https://conceptkernel.org/ontology/v3.11/core#';
   N        text := 'https://conceptkernel.org/ontology/v3.7/';
   v_id     text := p_payload->>'id';
   v_to     text := p_payload->>'to_state';
@@ -2994,16 +3052,20 @@ $function$
 CREATE OR REPLACE FUNCTION ckp.validate(ttl text, shapes_graph_id integer)
  RETURNS boolean
  LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
   scratch_id INT := 1000000000 + pg_backend_pid();
-  report JSONB;
+  report jsonb;
 BEGIN
-  PERFORM pgrdf.add_graph(scratch_id, format('urn:ckp:scratch:%s', scratch_id));
+  -- Bench-proven form (reconciled from pgck.localhost, 2026-08-08): the graph
+  -- is materialized BEFORE validation. pgrdf.validate does not entail and
+  -- entailment is per-graph, so without this the candidate's rdf:type closure
+  -- is invisible to targetClass resolution and a malformed entry can conform
+  -- vacuously — the PASS-10/PASS-17 failure shape, at the innermost gate.
+  PERFORM pgrdf.add_graph(scratch_id, 'urn:ckp:scratch:'||scratch_id);
   PERFORM pgrdf.clear_graph(scratch_id);
   PERFORM pgrdf.parse_turtle(ttl, scratch_id, 'urn:ckp:scratch#');
+  PERFORM pgrdf.materialize(scratch_id);
   report := pgrdf.validate(scratch_id, shapes_graph_id);
   PERFORM pgrdf.clear_graph(scratch_id);
   RETURN COALESCE((report->>'conforms')::boolean, false);
@@ -3255,7 +3317,7 @@ CREATE OR REPLACE FUNCTION ckp.vote(p_payload jsonb)
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  C           text := 'https://conceptkernel.org/ontology/v3.8/core#';
+  C           text := 'https://conceptkernel.org/ontology/v3.11/core#';
   v_core      int  := (SELECT v::int FROM ckp.config WHERE k='core_graph_id');
   v_about     text := p_payload->>'about';   -- the Proposal @id (IRI)
   v_value     text := p_payload->>'value';   -- approve | reject
