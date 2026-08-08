@@ -196,7 +196,14 @@ extension_sql_file!("../sql/pgck-baseline.sql", name = "pgck_baseline");
 extension_sql_file!(
     "../sql/pgck--0.4.1--0.4.2.sql",
     name = "pgck_install_completeness",
-    requires = ["pgck_baseline"]
+    // ckp::version / ckp::build_id are listed so the identity pair is emitted
+    // BEFORE this file. Without it pgrx placed the pair after the closing
+    // Ring-1 loop, so on a fresh install the two escaped the hardening while
+    // the upgrade path (which re-runs the loop last) caught them — measured as
+    // the only secdef/owner drift between otherwise identical catalogs. The
+    // invariant is that this file is the LAST sql include, covering every
+    // object anything earlier created — including pgrx-emitted functions.
+    requires = ["pgck_baseline", ckp::version, ckp::build_id]
 );
 
 /// Database the pgCK bridge worker attaches to (`connect_worker_to_spi`). It MUST

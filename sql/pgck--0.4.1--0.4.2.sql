@@ -119,7 +119,7 @@ BEGIN
     ) AS expected(shape, target)
   LOOP
     v_q := format(
-      'PREFIX ckp: <https://conceptkernel.org/ontology/v3.8/core#>
+      'PREFIX ckp: <https://conceptkernel.org/ontology/v3.11/core#>
        PREFIX sh:  <http://www.w3.org/ns/shacl#>
        PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
        ASK FROM <%s>
@@ -226,6 +226,15 @@ GRANT  EXECUTE ON ALL FUNCTIONS IN SCHEMA ckp TO ck_substrate;
 GRANT  ALL ON ALL TABLES    IN SCHEMA ckp TO ck_substrate;
 GRANT  ALL ON ALL SEQUENCES IN SCHEMA ckp TO ck_substrate;
 GRANT  USAGE ON SCHEMA ckp TO ck_participant;
+-- v0.4.28 fresh-install ring repair (measured 2026-08-08): the two grants
+-- below existed on every long-lived bench and in NO install file. The ring-1
+-- definer set resolves ckp.* as ck_substrate, and the outbox drain connects
+-- as ck_drainer — without schema USAGE both fail from zero with 'permission
+-- denied for schema ckp' at the first seal / first drain, while table and
+-- function grants above all succeed. ckp._enforce_internal_floor re-asserts
+-- the same pair on every floor pass.
+GRANT  USAGE ON SCHEMA ckp TO ck_substrate;
+GRANT  USAGE ON SCHEMA ckp TO ck_drainer;
 DO $door_042$
 DECLARE p record;
 BEGIN
