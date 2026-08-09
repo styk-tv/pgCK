@@ -89,7 +89,9 @@ BEGIN
   RESET ROLE;
   IF (res->>'ok') IS DISTINCT FROM 'false' THEN
     RAISE EXCEPTION 's39 FAIL (3): a Ship missing the GOVERNED-IN crew_size was NOT rejected — apply did not change the type: %', res; END IF;
-  IF res->>'error' NOT LIKE '%required%' AND res->>'error' NOT LIKE '%kernel shape%' THEN
+  -- v3.11 (#49): the refusal is the composed shape report naming the violated path.
+  IF res->>'error' NOT LIKE '%required%' AND res->>'error' NOT LIKE '%kernel shape%'
+     AND res->>'error' NOT LIKE '%fails the composed shape gate%' THEN
     RAISE EXCEPTION 's39 FAIL (3): rejected, but not for the new shape constraint: %', res; END IF;
 END $$;
 

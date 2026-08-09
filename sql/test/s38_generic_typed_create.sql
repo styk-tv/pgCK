@@ -83,7 +83,9 @@ BEGIN
   RESET ROLE;
   IF (res->>'ok') IS DISTINCT FROM 'false' THEN
     RAISE EXCEPTION 's38 FAIL (2): Ship missing required crew_size was NOT rejected: %', res; END IF;
-  IF res->>'error' NOT LIKE '%required%' AND res->>'error' NOT LIKE '%kernel shape%' THEN
+  -- v3.11 (#49): the refusal is the composed shape report naming the violated path.
+  IF res->>'error' NOT LIKE '%required%' AND res->>'error' NOT LIKE '%kernel shape%'
+     AND res->>'error' NOT LIKE '%fails the composed shape gate%' THEN
     RAISE EXCEPTION 's38 FAIL (2): rejected, but not for the shape reason: %', res; END IF;
   -- and nothing leaked into the store for the rejected create.
   IF EXISTS (SELECT 1 FROM ckp.instances WHERE body->>'type'='urn:ckp:s38-test/type/Ship'
