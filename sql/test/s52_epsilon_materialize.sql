@@ -7,6 +7,17 @@
 -- file for assent|polarity|w_*|theta|lambda|kappa — must be zero.)
 \set ON_ERROR_STOP 1
 CALL ckp.bootstrap_kernel();
+-- urn:t:Item must be an admitted type to seal (#27) — declare it as an
+-- unconstrained class in the demo kernel/ck graph (these tests seal signal
+-- Items directly; the scoring machinery, not the type shape, is under test).
+DO $itemdecl$ DECLARE g int; BEGIN
+  g := pgrdf.add_graph('urn:ckp:demo/kernel/ck');
+  PERFORM pgrdf.parse_turtle('<urn:t:Item> a <http://www.w3.org/2000/01/rdf-schema#Class> .', g, 'urn:t#');
+  PERFORM pgrdf.materialize(g);
+  GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+  GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
+END $itemdecl$;
+
 INSERT INTO ckp.config(k,v) VALUES ('identity_key','demo-secret') ON CONFLICT (k) DO UPDATE SET v=EXCLUDED.v;
 
 -- T1 — generic source watermark: MAX(ckp.ledger.seq) over the scope advances on a new seal.

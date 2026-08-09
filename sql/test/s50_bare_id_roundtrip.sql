@@ -8,7 +8,10 @@
 -- had — s40 only ever fed full IRIs and even codified the bare-id break as expected reachable:false.
 \set ON_ERROR_STOP 1
 CALL ckp.bootstrap_kernel();
-DO $setup$ DECLARE g bigint; BEGIN g := pgrdf.add_graph('urn:ckp:s50-reach/kernel/ck'); PERFORM pgrdf.clear_graph(g); END $setup$;
+DO $setup$ DECLARE g bigint; BEGIN g := pgrdf.add_graph('urn:ckp:s50-reach/kernel/ck'); PERFORM pgrdf.clear_graph(g);
+  -- Node must be an admitted type to seal (#27) — declare it as an unconstrained class.
+  PERFORM pgrdf.parse_turtle('<urn:ckp:s50-reach/type/Node> a <http://www.w3.org/2000/01/rdf-schema#Class> .', g, 'urn:ckp:s50-reach/kernel#');
+  PERFORM pgrdf.materialize(g); END $setup$;
 -- ring repair for the fixture graph (#48/#49): the setup created it as the calling
 -- superuser; the seal's definer path reads it as ck_substrate.
 GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;

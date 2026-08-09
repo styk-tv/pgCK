@@ -10,6 +10,19 @@
 \set ON_ERROR_STOP 1
 CALL ckp.bootstrap_kernel();
 
+-- Declare the test type in the kernel/ck graph (#27): transition re-seals the
+-- instance, so its type must be admitted — the old direct INSERT leaned on the
+-- vacuous pass this gate removes. A bare class declaration is enough (no props
+-- to constrain here; the transition machinery is what's under test).
+DO $decl$ DECLARE g int; BEGIN
+  g := pgrdf.add_graph('urn:ckp:demo/kernel/ck');
+  PERFORM pgrdf.parse_turtle('<urn:test:Doc> a <http://www.w3.org/2000/01/rdf-schema#Class> .',
+                             g, 'urn:test#');
+  PERFORM pgrdf.materialize(g);
+  GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+  GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
+END $decl$;
+
 INSERT INTO ckp.instances(id, body) VALUES ('urn:doc:1', '{"type":"urn:test:Doc","state":"draft"}'::jsonb)
   ON CONFLICT (id) DO UPDATE SET body=EXCLUDED.body;
 

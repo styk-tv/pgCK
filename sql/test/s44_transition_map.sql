@@ -13,7 +13,11 @@
 CALL ckp.bootstrap_kernel();
 
 -- ensure this project's kernel graph exists + empty (the governance apply populates it).
-DO $setup$ DECLARE g bigint; BEGIN g := pgrdf.add_graph('urn:ckp:s44-test/kernel/ck'); PERFORM pgrdf.clear_graph(g); END $setup$;
+DO $setup$ DECLARE g bigint; BEGIN g := pgrdf.add_graph('urn:ckp:s44-test/kernel/ck'); PERFORM pgrdf.clear_graph(g);
+  -- Ship must be admitted to seal (#27); the transition-map apply adds
+  -- allowsTransition, not a class/shape-target, so declare the class here.
+  PERFORM pgrdf.parse_turtle('<urn:ckp:s44-test/type/Ship> a <http://www.w3.org/2000/01/rdf-schema#Class> .', g, 'urn:ckp:s44-test/kernel#');
+  PERFORM pgrdf.materialize(g); END $setup$;
 -- ring repair for the fixture graph (#48/#49): the setup created it as the calling
 -- superuser; the seal's definer path reads it as ck_substrate.
 GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
