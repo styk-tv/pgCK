@@ -19,12 +19,22 @@ use nkeys::KeyPair;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-/// The event/result subjects any admitted connection may read. Governance-derived
-/// (the transport gate mirrors the kernel's own `event.kernel.pgCK.*` surface).
-/// The verified-tier PUBLISH grant is per-identity — see [`permissions_for`].
-const EVENT_SUBJECT: &str = "event.kernel.pgCK.>";
-const RESULT_SUBJECT: &str = "result.kernel.pgCK.>";
+/// The reply inbox is kernel-independent (NATS mints `_INBOX.<nuid>` per
+/// connection), so it is the one subject that is not parameterised over a
+/// kernel. Event/result/input subjects ARE per-kernel and are derived from the
+/// configured kernel set — see [`permissions_for`] (pgCK#30).
 const INBOX_SUBJECT: &str = "_INBOX.>";
+
+/// The subjects a connection reads/writes on ONE kernel `k`, per tier.
+fn event_subject(k: &str) -> String {
+    format!("event.kernel.{k}.>")
+}
+fn result_subject(k: &str) -> String {
+    format!("result.kernel.{k}.>")
+}
+fn input_subject(k: &str, sub_token: &str) -> String {
+    format!("input.kernel.{k}.id.{sub_token}.action.>")
+}
 
 /// NATS subject permissions minted for a connection.
 #[derive(Debug, Clone, PartialEq)]
@@ -57,30 +67,40 @@ fn subject_token(sub: &str) -> String {
 }
 
 /// Governance-derived admittance permissions (SPEC.OAUTH2 §5 Tier 2, subject-scoped
-/// per SPEC.SECURITY hop 4):
-/// - **Verified** — may DISPATCH, but ONLY on its own identity-scoped subject
-///   `input.kernel.pgCK.id.<sub-token>.action.>` — the broker thereby enforces the
-///   `<sub>` segment the F1-inbound bridge binds to `ckp.requester`. Plus read:
-///   events + results + its own inbox.
-/// - **Anonymous** — subscribe-only on the public event stream; NO publish. The
-///   kernel still refuses to trust any client-claimed identity, so an anonymous
-///   connection can observe but not act.
-pub fn permissions_for(admission: &Admission) -> UserPermissions {
+/// per SPEC.SECURITY hop 4), minted over the deployment's configured kernel set
+/// `kernels` — NEVER a hardcoded `pgCK` literal (pgCK#30). A `demo` or
+/// `Dictionary` deployment thus grants on its OWN kernel's subjects. The set is
+/// the kernels the DEPLOYMENT hosts; narrowing to the kernels a given identity is
+/// entitled to is the authority-chain's job (F-group), not the transport gate's.
+/// - **Verified** — may DISPATCH on its own identity-scoped subject
+///   `input.kernel.<k>.id.<sub-token>.action.>` for each `k` — the broker thereby
+///   enforces the `<sub>` segment the F1-inbound bridge binds to `ckp.requester`.
+///   Plus read: events + results per kernel + its own inbox.
+/// - **Anonymous** — subscribe-only on each kernel's event stream; NO publish.
+///
+/// An empty `kernels` yields no kernel-scoped grants (a misconfigured deployment
+/// admits nothing rather than silently falling back to a literal) — the caller
+/// defaults the set from config, so this is the fail-closed floor, not the norm.
+pub fn permissions_for(admission: &Admission, kernels: &[String]) -> UserPermissions {
     match admission {
-        Admission::Verified { sub } => UserPermissions {
-            pub_allow: vec![format!(
-                "input.kernel.pgCK.id.{}.action.>",
-                subject_token(sub)
-            )],
-            sub_allow: vec![
-                EVENT_SUBJECT.to_string(),
-                RESULT_SUBJECT.to_string(),
-                INBOX_SUBJECT.to_string(),
-            ],
-        },
+        Admission::Verified { sub } => {
+            let token = subject_token(sub);
+            let mut pub_allow = Vec::with_capacity(kernels.len());
+            let mut sub_allow = Vec::with_capacity(kernels.len() * 2 + 1);
+            for k in kernels {
+                pub_allow.push(input_subject(k, &token));
+                sub_allow.push(event_subject(k));
+                sub_allow.push(result_subject(k));
+            }
+            sub_allow.push(INBOX_SUBJECT.to_string());
+            UserPermissions {
+                pub_allow,
+                sub_allow,
+            }
+        }
         Admission::Anonymous => UserPermissions {
             pub_allow: vec![], // deny all publish
-            sub_allow: vec![EVENT_SUBJECT.to_string()],
+            sub_allow: kernels.iter().map(|k| event_subject(k)).collect(),
         },
     }
 }
@@ -247,6 +267,7 @@ pub fn handle_request(
     account: &KeyPair,
     now_unix: i64,
     admit_anonymous: bool,
+    kernels: &[String],
 ) -> String {
     let req = match parse_auth_request(request_jwt) {
         Some(r) => r,
@@ -294,7 +315,7 @@ pub fn handle_request(
         .unwrap_or_default();
     }
 
-    let perms = permissions_for(&admission);
+    let perms = permissions_for(&admission, kernels);
     let name = match &admission {
         Admission::Verified { sub } => format!("urn:ckp:participant:{sub}"),
         Admission::Anonymous => "urn:ckp:participant:anon".to_string(),
@@ -307,6 +328,11 @@ pub fn handle_request(
 mod tests {
     use super::*;
 
+    /// The default single-kernel set, as `pgck.kernels` defaults it.
+    fn kv() -> Vec<String> {
+        vec!["pgCK".to_string()]
+    }
+
     // Fail-closed admittance: with admit_anonymous=false an unverified connection is
     // REFUSED, not downgraded. Guards the highest-severity finding of the v3.11 wave —
     // "not-a-jwt-at-all gets in" — and pins that the default still admits.
@@ -314,8 +340,8 @@ mod tests {
     fn unverified_is_refused_when_admit_anonymous_is_false() {
         let account = KeyPair::new_account();
         let req = fake_request_jwt("UCONN", "NSERVER", Some("not-a-jwt-at-all"));
-        let strict = handle_request(&req, None, &account, 1_800_000_000, false);
-        let lenient = handle_request(&req, None, &account, 1_800_000_000, true);
+        let strict = handle_request(&req, None, &account, 1_800_000_000, false, &kv());
+        let lenient = handle_request(&req, None, &account, 1_800_000_000, true, &kv());
         // the lenient path mints a user-JWT; the strict path must not
         let lclaims = decode_claims(&lenient).unwrap();
         assert!(lclaims["nats"]["jwt"].is_string(), "lenient admits");
@@ -340,13 +366,66 @@ mod tests {
     #[test]
     fn verified_pub_grant_is_scoped_to_the_connections_own_identity() {
         let sub = "some-verified-sub"; // synthetic — never a captured identity
-        let p = permissions_for(&Admission::Verified { sub: sub.into() });
+        let p = permissions_for(&Admission::Verified { sub: sub.into() }, &kv());
         assert_eq!(
             p.pub_allow,
             vec![format!("input.kernel.pgCK.id.{sub}.action.>")]
         );
-        assert!(p.sub_allow.iter().any(|s| s == EVENT_SUBJECT));
-        assert!(p.sub_allow.iter().any(|s| s == RESULT_SUBJECT));
+        assert!(p.sub_allow.iter().any(|s| s == &event_subject("pgCK")));
+        assert!(p.sub_allow.iter().any(|s| s == &result_subject("pgCK")));
+    }
+
+    // pgCK#30: the grant is DERIVED from the kernel set — a non-pgCK deployment
+    // gets grants on ITS OWN kernel, never a hardcoded `pgCK`. This is the exact
+    // defect the ticket names: a `demo`/`Dictionary` consumer was granted nothing.
+    #[test]
+    fn grant_is_derived_per_kernel_not_a_pgck_literal() {
+        let sub = "u-1";
+        let kernels = vec!["demo".to_string(), "Dictionary".to_string()];
+        let p = permissions_for(&Admission::Verified { sub: sub.into() }, &kernels);
+        // publish: one identity-scoped input subject PER kernel, none literal-pgCK
+        assert_eq!(
+            p.pub_allow,
+            vec![
+                format!("input.kernel.demo.id.{sub}.action.>"),
+                format!("input.kernel.Dictionary.id.{sub}.action.>"),
+            ]
+        );
+        assert!(
+            !p.pub_allow.iter().any(|s| s.contains(".pgCK.")),
+            "a demo/Dictionary deployment must not be granted pgCK subjects"
+        );
+        // read: event+result per kernel, plus the one kernel-independent inbox
+        assert!(p.sub_allow.contains(&event_subject("demo")));
+        assert!(p.sub_allow.contains(&result_subject("Dictionary")));
+        assert!(p.sub_allow.contains(&INBOX_SUBJECT.to_string()));
+        assert_eq!(
+            p.sub_allow.iter().filter(|s| *s == INBOX_SUBJECT).count(),
+            1,
+            "the inbox is granted once regardless of kernel count"
+        );
+    }
+
+    // Anonymous over multiple kernels: subscribe on each event stream, no publish.
+    #[test]
+    fn anonymous_reads_every_configured_kernel_event_stream() {
+        let kernels = vec!["demo".to_string(), "Dictionary".to_string()];
+        let p = permissions_for(&Admission::Anonymous, &kernels);
+        assert!(p.pub_allow.is_empty());
+        assert_eq!(
+            p.sub_allow,
+            vec![event_subject("demo"), event_subject("Dictionary")]
+        );
+    }
+
+    // Fail-closed floor: an empty kernel set mints NO kernel-scoped grant, rather
+    // than silently falling back to a `pgCK` literal.
+    #[test]
+    fn empty_kernel_set_grants_nothing_kernel_scoped() {
+        let p = permissions_for(&Admission::Verified { sub: "u".into() }, &[]);
+        assert!(p.pub_allow.is_empty());
+        // only the kernel-independent inbox remains for a verified connection
+        assert_eq!(p.sub_allow, vec![INBOX_SUBJECT.to_string()]);
     }
 
     // The GUC-delivered account seed round-trips to the same signing identity;
@@ -382,9 +461,9 @@ mod tests {
     // An anonymous admission → subscribe-only; NO publish.
     #[test]
     fn anonymous_is_subscribe_only() {
-        let p = permissions_for(&Admission::Anonymous);
+        let p = permissions_for(&Admission::Anonymous, &kv());
         assert!(p.pub_allow.is_empty(), "anonymous must not publish");
-        assert!(p.sub_allow.iter().any(|s| s == EVENT_SUBJECT));
+        assert!(p.sub_allow.iter().any(|s| s == &event_subject("pgCK")));
     }
 
     fn fake_request_jwt(user_nkey: &str, server_id: &str, auth_token: Option<&str>) -> String {
@@ -435,7 +514,7 @@ mod tests {
     fn user_jwt_is_signed_by_account_and_well_formed() {
         let account = KeyPair::new_account();
         let sub = "some-verified-sub"; // synthetic — never a real account name
-        let perms = permissions_for(&Admission::Verified { sub: sub.into() });
+        let perms = permissions_for(&Admission::Verified { sub: sub.into() }, &kv());
         let jwt = build_user_jwt(
             "UXYZ",
             &format!("urn:ckp:participant:{sub}"),
@@ -465,7 +544,7 @@ mod tests {
     #[test]
     fn anonymous_user_jwt_denies_publish() {
         let account = KeyPair::new_account();
-        let perms = permissions_for(&Admission::Anonymous);
+        let perms = permissions_for(&Admission::Anonymous, &kv());
         let jwt =
             build_user_jwt("UXYZ", "urn:ckp:participant:anon", &perms, &account, 1).expect("mint");
         let claims = decode_claims(&jwt).unwrap();
@@ -478,7 +557,7 @@ mod tests {
     fn handle_request_without_config_admits_anonymous() {
         let account = KeyPair::new_account();
         let req = fake_request_jwt("UCONN", "NSERVER", Some("unverifiable.token"));
-        let resp = handle_request(&req, None, &account, 1_700_000_000, true);
+        let resp = handle_request(&req, None, &account, 1_700_000_000, true, &kv());
         let parts: Vec<&str> = resp.split('.').collect();
         assert_eq!(parts.len(), 3);
         let claims = decode_claims(&resp).unwrap();
@@ -497,7 +576,7 @@ mod tests {
     #[test]
     fn user_jwt_audience_is_the_global_account() {
         let account = KeyPair::new_account();
-        let perms = permissions_for(&Admission::Anonymous);
+        let perms = permissions_for(&Admission::Anonymous, &kv());
         let jwt =
             build_user_jwt("UXYZ", "urn:ckp:participant:anon", &perms, &account, 1).expect("mint");
         let claims = decode_claims(&jwt).unwrap();
@@ -511,7 +590,7 @@ mod tests {
     #[test]
     fn user_jwt_carries_no_issuer_account_in_config_mode() {
         let account = KeyPair::new_account();
-        let perms = permissions_for(&Admission::Anonymous);
+        let perms = permissions_for(&Admission::Anonymous, &kv());
         let jwt =
             build_user_jwt("UXYZ", "urn:ckp:participant:anon", &perms, &account, 1).expect("mint");
         let claims = decode_claims(&jwt).unwrap();
@@ -526,7 +605,7 @@ mod tests {
     fn response_is_signed_by_account() {
         let account = KeyPair::new_account();
         let req = fake_request_jwt("UCONN", "NSERVER", None);
-        let resp = handle_request(&req, None, &account, 1, true);
+        let resp = handle_request(&req, None, &account, 1, true, &kv());
         let parts: Vec<&str> = resp.split('.').collect();
         let signing_input = format!("{}.{}", parts[0], parts[1]);
         let sig = URL_SAFE_NO_PAD.decode(parts[2]).unwrap();

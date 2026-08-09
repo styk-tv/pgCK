@@ -366,6 +366,7 @@ async fn run_callout(client: async_nats::Client, ctx: CalloutContext) {
             &ctx.account,
             now,
             crate::admit_anonymous(),
+            &crate::configured_kernels(),
         );
         if let Err(e) = client.publish(reply, response.into_bytes().into()).await {
             eprintln!("pgck auth-callout: response publish failed: {e}");

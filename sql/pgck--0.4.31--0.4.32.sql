@@ -1,0 +1,11 @@
+-- pgck 0.4.31 -> 0.4.32 — auth-callout grant is derived per kernel (pgCK#30).
+--
+-- NO SQL SCHEMA CHANGE. The fix is entirely in the .so + a new GUC
+-- (pgck.kernels): the auth-callout responder mints event/result/input subject
+-- grants over the configured kernel set instead of a hardcoded pgCK literal, so
+-- a demo/Dictionary deployment is granted on its OWN kernel's subjects.
+-- version()/build_id() are pg_extern (compiled into the binary), so the version
+-- advance lands with the .so swap; this script exists only so
+-- ALTER EXTENSION pgck UPDATE resolves 0.4.31 -> 0.4.32. build_id() distinguishes
+-- the two binaries (SPEC.SECURITY v3.11 A5).
+SELECT 1;
