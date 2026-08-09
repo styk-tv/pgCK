@@ -42,6 +42,36 @@ SET check_function_bodies = false;
 
 CREATE SCHEMA IF NOT EXISTS ckp;
 
+-- ==================== ROLES ====================
+-- AMENDED IN pgCK (#48), not part of the CK-org generation: the generator's
+-- proof obligation was function-set parity, and roles are not functions, so
+-- the retired chain's role lifecycle (pgck--0.2.2--0.2.3.sql CREATE ROLE,
+-- pgck--0.2.5--0.2.6.sql ALTER ... LOGIN) was structurally invisible to it.
+-- Every warm cluster carries these roles from history — roles are
+-- cluster-level and survive DROP EXTENSION — so only a virgin cluster ever
+-- reached the first OWNER TO below without them (s34's exact contract).
+-- Chain end-state, create-if-missing; a pre-existing role is never mutated
+-- (an operator's configuration outranks a replay).
+DO $ck_roles$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ck_substrate') THEN
+    CREATE ROLE ck_substrate NOLOGIN;
+    COMMENT ON ROLE ck_substrate IS
+      'pgCK Ring-1 owner; the ONLY role granted pgrdf.* and the ckp internals (CKP v3.9 §7 / CI-A-4). Non-login.';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ck_participant') THEN
+    CREATE ROLE ck_participant LOGIN;
+    COMMENT ON ROLE ck_participant IS
+      'The only role connections/agents receive; granted EXACTLY ckp.dispatch (CKP v3.9 §7). LOGIN so it can be connected-as; no password here — auth is the deployment''s concern.';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ck_drainer') THEN
+    CREATE ROLE ck_drainer LOGIN;
+    COMMENT ON ROLE ck_drainer IS
+      'The outbox drain connection role; schema USAGE on ckp plus what the floor pass grants — nothing else.';
+  END IF;
+END
+$ck_roles$;
+
 -- ==================== STRUCTURE ====================
 
 -- sequences first: table defaults reference them via nextval()
@@ -220,6 +250,28 @@ ALTER TABLE ckp.proof ADD CONSTRAINT proof_verified_at_not_null NOT NULL verifie
 
 CREATE INDEX ckp_outbox_seq_idx ON ckp.outbox USING btree (seq);
 CREATE INDEX dictionary_v_idx ON ckp.dictionary USING btree (v);
+
+-- ==================== CONFIG SEED ====================
+-- AMENDED IN pgCK (#48), same family as the ROLES block above: the retired
+-- chain's base scripts seeded these rows and the flatten's function-set
+-- parity proof could not see data rows, so every virgin install lost them.
+-- Warm clusters masked it — config rows survive nothing, but the chain
+-- re-seeded ON CONFLICT DO NOTHING on every install, so they were always
+-- there. Without kernel_graph_id, ckp.load_kernel passes NULL into
+-- pgrdf.parse_turtle (measured: 'argument 1 must not be null' on the s4
+-- gate's fresh volume); without transition_map, ckp.transition gates against
+-- nothing. core_graph_id is re-derived BY IRI at ckp.boot (P0-A0: never
+-- assume an id from config) — the seed only covers the window before boot.
+-- kernel_graph_id is an id-to-IRI BINDING instruction consumed by
+-- load_kernel's add_graph(id, iri), the chain's proven fresh-install shape.
+-- transition_map is the chain's FINAL widened form (0.4.2--0.4.3, DO UPDATE
+-- then, DO NOTHING here so a governed refinement is never clobbered).
+INSERT INTO ckp.config(k,v) VALUES
+  ('core_graph_id','1'), ('kernel_graph_id','2')
+ON CONFLICT (k) DO NOTHING;
+INSERT INTO ckp.config(k,v) VALUES
+  ('transition_map', '{"draft":["review"],"review":["approved","draft"],"approved":[],"planned":["in_progress","blocked"],"in_progress":["done","blocked","planned"],"blocked":["in_progress","planned"],"done":["in_progress"]}')
+ON CONFLICT (k) DO NOTHING;
 
 -- ==================== ROUTINES (80) ====================
 
