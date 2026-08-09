@@ -224,10 +224,36 @@ static PGCK_WORKER_DATABASE: pgrx::GucSetting<Option<std::ffi::CString>> =
 #[cfg(feature = "nats-client")]
 static PGCK_ADMIT_ANONYMOUS: pgrx::GucSetting<bool> = pgrx::GucSetting::<bool>::new(true);
 
+/// The kernels this deployment hosts (comma-separated). The auth-callout mints
+/// event/result/input grants per kernel from this set (pgCK#30) instead of a
+/// hardcoded `pgCK` literal — a `demo`/`Dictionary` deployment grants on its own
+/// subjects. Default `pgCK` preserves the single-kernel deployment unchanged.
+#[cfg(feature = "nats-client")]
+static PGCK_KERNELS: pgrx::GucSetting<Option<std::ffi::CString>> =
+    pgrx::GucSetting::<Option<std::ffi::CString>>::new(Some(c"pgCK"));
+
 /// Snapshot of `pgck.admit_anonymous` (default `true`).
 #[cfg(feature = "nats-client")]
 pub(crate) fn admit_anonymous() -> bool {
     PGCK_ADMIT_ANONYMOUS.get()
+}
+
+/// The configured kernel set for the auth-callout grant (pgCK#30). Splits
+/// `pgck.kernels` on commas, trims, drops empties and any token carrying a NATS
+/// subject metacharacter (`.` `*` `>` whitespace) so a kernel name can never
+/// widen a grant beyond its own token. Empty result ⇒ the callout mints no
+/// kernel-scoped grant (fail-closed), never a silent `pgCK` fallback.
+#[cfg(feature = "nats-client")]
+pub(crate) fn configured_kernels() -> Vec<String> {
+    PGCK_KERNELS
+        .get()
+        .as_ref()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default()
+        .split(',')
+        .map(|k| k.trim().to_string())
+        .filter(|k| !k.is_empty() && !k.contains(['.', '*', '>', ' ', '\t', '\r', '\n']))
+        .collect()
 }
 
 /// Snapshot of `pgck.worker_database` (default `postgres` when unset/empty).
@@ -316,6 +342,16 @@ pub extern "C-unwind" fn _PG_init() {
             &PGCK_NATS_ACCOUNT_SEED,
             pgrx::GucContext::Sighup,
             pgrx::GucFlags::SUPERUSER_ONLY,
+        );
+        pgrx::GucRegistry::define_string_guc(
+            c"pgck.kernels",
+            c"Kernels this deployment hosts (comma-separated) — the auth-callout grant set",
+            c"The callout mints event/result/input subject grants per kernel from this set \
+              (pgCK#30), not a hardcoded pgCK literal. Tokens with a NATS metachar (. * > \
+              whitespace) are dropped. Default 'pgCK'; empty = no kernel-scoped grant.",
+            &PGCK_KERNELS,
+            pgrx::GucContext::Sighup,
+            pgrx::GucFlags::default(),
         );
     }
 
