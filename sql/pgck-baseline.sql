@@ -251,6 +251,28 @@ ALTER TABLE ckp.proof ADD CONSTRAINT proof_verified_at_not_null NOT NULL verifie
 CREATE INDEX ckp_outbox_seq_idx ON ckp.outbox USING btree (seq);
 CREATE INDEX dictionary_v_idx ON ckp.dictionary USING btree (v);
 
+-- ==================== CONFIG SEED ====================
+-- AMENDED IN pgCK (#48), same family as the ROLES block above: the retired
+-- chain's base scripts seeded these rows and the flatten's function-set
+-- parity proof could not see data rows, so every virgin install lost them.
+-- Warm clusters masked it — config rows survive nothing, but the chain
+-- re-seeded ON CONFLICT DO NOTHING on every install, so they were always
+-- there. Without kernel_graph_id, ckp.load_kernel passes NULL into
+-- pgrdf.parse_turtle (measured: 'argument 1 must not be null' on the s4
+-- gate's fresh volume); without transition_map, ckp.transition gates against
+-- nothing. core_graph_id is re-derived BY IRI at ckp.boot (P0-A0: never
+-- assume an id from config) — the seed only covers the window before boot.
+-- kernel_graph_id is an id-to-IRI BINDING instruction consumed by
+-- load_kernel's add_graph(id, iri), the chain's proven fresh-install shape.
+-- transition_map is the chain's FINAL widened form (0.4.2--0.4.3, DO UPDATE
+-- then, DO NOTHING here so a governed refinement is never clobbered).
+INSERT INTO ckp.config(k,v) VALUES
+  ('core_graph_id','1'), ('kernel_graph_id','2')
+ON CONFLICT (k) DO NOTHING;
+INSERT INTO ckp.config(k,v) VALUES
+  ('transition_map', '{"draft":["review"],"review":["approved","draft"],"approved":[],"planned":["in_progress","blocked"],"in_progress":["done","blocked","planned"],"blocked":["in_progress","planned"],"done":["in_progress"]}')
+ON CONFLICT (k) DO NOTHING;
+
 -- ==================== ROUTINES (80) ====================
 
 CREATE OR REPLACE PROCEDURE ckp._enforce_internal_floor()
