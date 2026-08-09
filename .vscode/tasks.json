@@ -149,6 +149,34 @@
       "problemMatcher": []
     },
     {
+      "label": "pgck: web server",
+      "detail": "Serve web/ (FastAPI: web/static + /api/* + /cklib) on the first free port from PGCK_BROWSER_PORT (default 8000). Prints the URL, then hot-reloads on edits to web/. Ctrl-C to stop.",
+      "type": "shell",
+      "command": ". .venv/bin/activate; export PGPORT=\"${PGPORT:-${POSTGRES_PORT:-$(docker port pgck-postgres 5432 2>/dev/null | head -1 | sed 's/.*://')}}\"; export PGPORT=\"${PGPORT:-5432}\"; export PGHOST=\"${PGHOST:-127.0.0.1}\"; PORT=\"${PGCK_BROWSER_PORT:-8000}\"; while lsof -iTCP:\"$PORT\" -sTCP:LISTEN -t >/dev/null 2>&1; do echo \"  port $PORT busy, trying $((PORT+1))\"; PORT=$((PORT+1)); done; nc -z -w 1 \"$PGHOST\" \"$PGPORT\" >/dev/null 2>&1 || printf '\\n  !! postgres %s:%s is DOWN. web/app.py queries it on startup and will exit.\\n     run the \"pgck: compose-up\" task first, or use \"pgck: web static\" instead.\\n' \"$PGHOST\" \"$PGPORT\"; printf '\\n  pgCK web server\\n  URL     http://127.0.0.1:%s\\n  db      %s:%s\\n  root    web/static  (index.html)\\n  api     /api/board  /api/goals  /api/kernels  /healthz\\n  reload  on edits under web/\\n  stop    Ctrl-C\\n\\n' \"$PORT\" \"$PGHOST\" \"$PGPORT\"; exec uvicorn web.app:app --host 0.0.0.0 --port \"$PORT\" --reload --reload-dir web",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false,
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "pgck: web static",
+      "detail": "Serve web/static as plain files on the first free port from PGCK_STATIC_PORT (default 8080). No database, no /api/*, no /cklib — for pure HTML/CSS/JS work when the kernel container is not up.",
+      "type": "shell",
+      "command": "PORT=\"${PGCK_STATIC_PORT:-8080}\" && while lsof -iTCP:\"$PORT\" -sTCP:LISTEN -t >/dev/null 2>&1; do echo \"  port $PORT busy, trying $((PORT+1))\"; PORT=$((PORT+1)); done; printf '\\n  pgCK web static  (files only — no DB, no /api)\\n  URL     http://127.0.0.1:%s\\n  root    web/static\\n  stop    Ctrl-C\\n\\n' \"$PORT\"; exec python3 -m http.server \"$PORT\" --directory web/static --bind 127.0.0.1",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false,
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "pgck: dev dispatcher",
       "detail": "Local Tier-1 request/reply dispatcher (dev scaffold) so browser tools (tutorial/board/explorer/forge) work until the Rust CKA-4 dispatcher ships. Logs every request. Ctrl-C to stop.",
       "type": "shell",
