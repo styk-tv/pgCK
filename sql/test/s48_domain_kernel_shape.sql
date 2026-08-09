@@ -46,6 +46,9 @@ BEGIN
 $ttl$, g, 'urn:ckp:demo/kernel/ck#');
   PERFORM pgrdf.materialize(g);
 END $load$;
+-- ring repair for the fixture graph (#48/#49): superuser-created, definer-read.
+GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
 
 -- 1) VALID ConsensusTopic seals (required props present)
 DO $ok$

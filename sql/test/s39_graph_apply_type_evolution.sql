@@ -22,6 +22,10 @@ BEGIN
   g := pgrdf.add_graph('urn:ckp:s39-test/kernel/ck');
   PERFORM pgrdf.clear_graph(g);
 END $setup$;
+-- ring repair for the fixture graph (#48/#49): the setup created it as the calling
+-- superuser; the seal's definer path reads it as ck_substrate.
+GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
 
 SET ckp.project = 's39-test';
 

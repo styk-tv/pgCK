@@ -28,6 +28,10 @@ BEGIN
      <urn:s41:ship-b> <http://www.w3.org/2000/01/rdf-schema#label> "Voyager Vessel" .',
     g, 'urn:ckp:s41-test/data#');
 END $setup$;
+-- ring repair for the fixture graph (#48/#49): the setup created it as the calling
+-- superuser; the seal's definer path reads it as ck_substrate.
+GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
 
 -- (1) govern-add a label-search query affordance through the governance plane.
 DO $$

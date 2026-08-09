@@ -9,6 +9,10 @@
 \set ON_ERROR_STOP 1
 CALL ckp.bootstrap_kernel();
 DO $setup$ DECLARE g bigint; BEGIN g := pgrdf.add_graph('urn:ckp:s50-reach/kernel/ck'); PERFORM pgrdf.clear_graph(g); END $setup$;
+-- ring repair for the fixture graph (#48/#49): the setup created it as the calling
+-- superuser; the seal's definer path reads it as ck_substrate.
+GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
 SET ckp.project = 's50-reach';   -- no declared predicates -> namespace-allowlist fallback for the predicate
 
 -- (1) create two real instances; capture their BARE ids (the form create returns).
