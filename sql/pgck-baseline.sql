@@ -309,6 +309,22 @@ INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane) VALUES
   ('pgCK','kernel.apply',         'input.kernel.pgCK.action.kernel.apply',         'governance')
 ON CONFLICT (kernel, verb) DO NOTHING;
 
+-- Fifth member (#48): the governed concept.match plan — the ONLY static
+-- ckp.plans seed in the chain (0.4.12--0.4.13; everything else in ckp.plans
+-- is compiled at governed apply time). $graph$/$term$ are bound by
+-- ckp.concept_match at run time; the query text is the governed fact.
+-- Chain semantics kept (DO UPDATE): every install re-asserted the epoch-1
+-- plan text; governed recompiles land at higher epochs.
+INSERT INTO ckp.plans(kernel, verb, epoch, plan)
+VALUES ('pgCK', 'concept.match', 1, jsonb_build_object(
+  'kind', 'sparql',
+  'params', jsonb_build_array('term'),
+  'statement',
+    'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> '
+    || 'SELECT ?id ?label WHERE { GRAPH <$graph$> { ?id rdfs:label ?label . '
+    || 'FILTER(CONTAINS(LCASE(STR(?label)), LCASE("$term$"))) } } ORDER BY ?label'))
+ON CONFLICT (kernel, verb, epoch) DO UPDATE SET plan = EXCLUDED.plan, compiled_at = now();
+
 -- ==================== ROUTINES (80) ====================
 
 CREATE OR REPLACE PROCEDURE ckp._enforce_internal_floor()
