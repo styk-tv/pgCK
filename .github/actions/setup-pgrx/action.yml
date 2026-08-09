@@ -41,11 +41,16 @@ runs:
 
     - name: Install cargo-pgrx
       shell: bash
-      # PGRX_VERSION default matches the workspace pin in
-      # Cargo.toml (`pgrx = "0.16"`). The default fallback (0.17)
-      # diverges from the runtime version and ICEs at init time
-      # (see specs/ERRATA.v0.2.md E-006 for pgrx 0.17+ status).
-      run: cargo install cargo-pgrx --locked --version "^${PGRX_VERSION:-0.16}"
+      # cargo-pgrx MUST equal the crate's RESOLVED pgrx version — derived
+      # from Cargo.lock, the same rule as compose/builder.Containerfile:
+      # "cargo-pgrx and pgrx library versions must be identical". The old
+      # hardcoded ^0.16 drifted against the crate's 0.19.2 (moved by #45)
+      # and would have failed every tag build the way it failed build-ext
+      # on main. Exact (=), not caret: a ^-installed newer CLI would
+      # mismatch the committed lock the same way.
+      run: |
+        ver=$(awk '$0=="name = \"pgrx\"" {getline; sub(/version = "/,""); sub(/"$/,""); print; exit}' Cargo.lock)
+        cargo install cargo-pgrx --locked --version "=${ver}"
 
     - name: cargo pgrx init
       shell: bash
