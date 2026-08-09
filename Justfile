@@ -1,5 +1,5 @@
 set shell := ["bash", "-uc"]
-pgrdf_ver := "0.6.20"
+pgrdf_ver := "0.6.22"
 pg := "18"
 arch := "arm64"
 docker_context := env_var_or_default("DOCKER_CONTEXT", "colima")

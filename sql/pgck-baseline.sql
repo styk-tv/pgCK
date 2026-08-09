@@ -1418,7 +1418,14 @@ AS $function$
 DECLARE
   v_type    text := p_payload->>'type';
   v_proj    text := COALESCE(NULLIF(current_setting('ckp.project', true), ''), 'demo');
-  v_sub     text := p_payload->>'sub';
+  -- F-A / P0-C (pgCK#26): identity is SERVER-DERIVED from the verified
+  -- connection (the ckp.requester GUC the trusted ingress sets from the
+  -- NATS-verified bearer), NEVER the client payload. A payload {sub} is
+  -- ignored — it cannot forge created_by or the participant claim. This is
+  -- the same rule task.create and notify already carry; the generic path
+  -- was the last reader of payload sub (measured: s58's instance.create
+  -- case sealed participant:attacker before this fix).
+  v_sub     text := current_setting('ckp.requester', true);
   N         text := 'https://conceptkernel.org/ontology/v3.7/';       -- v3.7 core NS (gate + task.create)
   v_core    text[] := ARRAY['lifecycle_state'];                       -- recognized core keys → core NS
   v_local   text;
@@ -1457,7 +1464,7 @@ BEGIN
   v_body := jsonb_build_object('type', v_type, '@id', 'ckp://' || v_local || '#' || v_iid);
   FOR v_key, v_val IN SELECT key, value FROM jsonb_each(p_payload)
   LOOP
-    CONTINUE WHEN v_key IN ('type', 'sub', '@id');                    -- control keys, not data
+    CONTINUE WHEN v_key IN ('type', 'sub', '@id', 'participant');     -- control keys, not data (sub/participant: identity is never payload)
     IF position(':' in v_key) > 0 THEN
       v_keyiri := v_key;                                             -- already a full IRI: pass through
     ELSIF v_propmap ? v_key THEN
@@ -1474,7 +1481,11 @@ BEGIN
     'https://conceptkernel.org/ontology/v3.7/created_at',
     to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'));
   IF v_sub IS NOT NULL THEN
-    v_body := v_body || jsonb_build_object('participant', jsonb_build_object('sub', v_sub));
+    -- created_by from the VERIFIED requester (same shape as task.create), and
+    -- the participant claim seal maps to core#participant — also verified.
+    v_body := v_body || jsonb_build_object(
+      N||'created_by', 'urn:ckp:participant:'||ckp._slug(v_sub),
+      'participant', jsonb_build_object('sub', v_sub));
   END IF;
 
   PERFORM ckp.seal(v_iid, v_body);

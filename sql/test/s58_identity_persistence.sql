@@ -32,6 +32,26 @@ BEGIN
   RAISE NOTICE 's58 PASS: task.create created_by derives from the verified requester; forged payload sub ignored (%)', cby;
 END $$;
 
+-- (1b) instance.create — the GENERIC typed path (#26 / P0-C's exact ask: prove the
+-- forged-sub ignore on instance.create itself, not only the task.create concretion).
+DO $$
+DECLARE res jsonb; v_id text; cby text;
+BEGIN
+  res := ckp.dispatch('instance.create',
+    '{"type":"urn:ckp:kernel#Greeting","urn:ckp:kernel#name":"s58-generic","sub":"attacker"}'::jsonb);
+  IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's58 FAIL: instance.create not ok: %', res; END IF;
+  v_id := res->>'id';
+  SELECT body->>'https://conceptkernel.org/ontology/v3.7/created_by' INTO cby FROM ckp.instances WHERE id = v_id;
+  IF cby = 'urn:ckp:participant:attacker' THEN
+    RAISE EXCEPTION 's58 FAIL (SECURITY): forged payload sub became created_by on instance.create (%)', cby;
+  END IF;
+  IF cby IS DISTINCT FROM 'urn:ckp:participant:verified-requester' THEN
+    RAISE EXCEPTION 's58 FAIL: instance.create created_by must be urn:ckp:participant:verified-requester, got % (body=%)',
+      cby, (SELECT body FROM ckp.instances WHERE id=v_id);
+  END IF;
+  RAISE NOTICE 's58 PASS: instance.create created_by derives from the verified requester; forged payload sub ignored (%)', cby;
+END $$;
+
 -- (2) notify (message path — the msg.by / created_by attribution) — same rule.
 DO $$
 DECLARE res jsonb; v_id text; cby text;

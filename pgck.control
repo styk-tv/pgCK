@@ -1,6 +1,6 @@
 # pgCK — PostgreSQL Concept Kernel extension (rc3)
 comment = 'Concept Kernel Protocol runtime in-database: NATS bridge + SHACL validator + materializer'
-default_version = '0.4.28'
+default_version = '0.4.29'
 # Bare name, NOT '$libdir/pgck'. PostgreSQL resolves a bare module_pathname
 # through dynamic_library_path, which the bench sets to '/ext/lib:$libdir'.
 # With '$libdir/pgck' the library is pinned to pkglibdir and a drop into
