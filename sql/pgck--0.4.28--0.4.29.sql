@@ -126,4 +126,11 @@ BEGIN
 END
 $floor_0429$;
 
+-- ENGINE FLOOR (pgRDF >= 0.6.25, pgRDF#96): partitions inherit the parent's
+-- ACL at creation — grant ONCE on the parent so every future graph is
+-- covered. Existing partitions are covered by the runtime re-asserts and by
+-- pgRDF's own upgrade backfill. Own statement, never combined with graph
+-- creation in one transaction (deadlock shape named by pgRDF's ship note).
+GRANT ALL ON TABLE pgrdf._pgrdf_quads TO ck_substrate;
+
 CALL ckp._enforce_internal_floor();

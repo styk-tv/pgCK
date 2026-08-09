@@ -72,6 +72,19 @@ BEGIN
 END
 $ck_roles$;
 
+-- ==================== ENGINE FLOOR (pgRDF >= 0.6.25) ====================
+-- pgRDF#96 (shipped v0.6.25): per-graph quad partitions INHERIT the parent's
+-- ACL at creation. The lasting pattern is therefore ONE grant on the parent,
+-- BEFORE any graph exists — granting after creation only covers graphs that
+-- already exist. Placement here is deliberate on both of pgRDF's operational
+-- notes: at install time no graph has been created yet, and the extension
+-- script is its own transaction with no concurrent add_graph to deadlock
+-- against (GRANT locks the parent; partition creation takes the DDL gate
+-- then the parent lock — never combine the two in a live transaction).
+-- The runtime re-asserts in boot/load_kernel/import_module stay as
+-- belt-and-braces for engines older than the pin and pre-existing graphs.
+GRANT ALL ON TABLE pgrdf._pgrdf_quads TO ck_substrate;
+
 -- ==================== STRUCTURE ====================
 
 -- sequences first: table defaults reference them via nextval()

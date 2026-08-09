@@ -7,6 +7,10 @@
 # board flow (boot + import_module from the shipped /ontology layout) must work, and the
 # v3.9 floor must hold for the participant (no table reach, no pgrdf reach).
 #
+# v3.11 / pgRDF 0.6.25 ordering: BEFORE boot arms the enforcement surface, a governed
+# write FAILS CLOSED (the engine no longer passes conformant-against-nothing). The
+# keystone dispatch therefore runs AFTER boot; the pre-boot refusal is itself asserted.
+#
 # This reproduces the exact consumer journey of ociger-ck-allinone (fresh cluster, OCI
 # artifact mounts) instead of the warm compose volume the s4..s33 suite runs against.
 #
@@ -67,16 +71,29 @@ echo "s34: CREATE EXTENSION pgck CASCADE ✓"
   || fail "(ask 1) ckp.{instances,ledger,proof,outbox} missing after CREATE EXTENSION — bootstrap is still manual"
 echo "s34: tables exist out-of-the-box ✓"
 
-# (2) THE KEYSTONE — governed 2-arg dispatch as a REAL ck_participant login, zero prep
+# (2a) FAIL-CLOSED PRE-BOOT — v3.11 / pgRDF 0.6.25: an absent shapes surface
+# no longer yields a vacuous conforms=true (the conformant-against-nothing
+# hole is closed engine-side). Before boot arms the gate, a governed write
+# MUST refuse — the old contract ("seal works with zero prep") was standing
+# on exactly the vacuous pass this version exists to kill.
 R="$(PART "SELECT ckp.dispatch('instance.create','{\"task\":{\"target_kernel\":\"s34\",\"title\":\"fresh-install\"}}'::jsonb)->>'ok'")" \
-  || fail "(asks 2/5) dispatch as ck_participant ERRORED on a fresh cluster"
-[ "$R" = "true" ] || fail "(asks 2/5) dispatch as ck_participant returned ok=$R"
-echo "s34: governed dispatch as ck_participant ok:true ✓"
+  || fail "(ask 2a) pre-boot dispatch ERRORED (should refuse cleanly, ok=false)"
+[ "$R" = "false" ] || fail "(ask 2a) pre-boot governed write must FAIL CLOSED (no shapes loaded), got ok=$R"
+echo "s34: pre-boot governed write refused — fail-closed, not vacuous ✓"
 
-# (3) ask-3: the documented ontology layout works (boot + module import from /ontology)
+# (2b) the documented arming step: boot + module import from /ontology.
+# Still zero MANUAL prep in the consumer sense — no grants, no bootstrap_kernel,
+# no ALTER OWNER; boot is the first-start step every consumer image runs.
 SU "CALL ckp.boot();" >/dev/null
 SU "CALL ckp.import_module('task','demo'); CALL ckp.import_module('goal','demo');" >/dev/null
 echo "s34: boot + import_module from shipped /ontology layout ✓"
+
+# (2c) THE KEYSTONE — governed 2-arg dispatch as a REAL ck_participant login,
+# now against an ARMED gate.
+R="$(PART "SELECT ckp.dispatch('instance.create','{\"task\":{\"target_kernel\":\"s34\",\"title\":\"fresh-install\"}}'::jsonb)->>'ok'")" \
+  || fail "(ask 2c) dispatch as ck_participant ERRORED on a fresh cluster"
+[ "$R" = "true" ] || fail "(ask 2c) dispatch as ck_participant returned ok=$R"
+echo "s34: governed dispatch as ck_participant ok:true ✓"
 
 # (4) the full legacy board verb still works for the participant after boot
 R="$(PART "SELECT ckp.dispatch('task.create','{\"task\":{\"target_kernel\":\"s34\",\"title\":\"board task\",\"goal\":\"v0.4.2\"}}'::jsonb)->>'ok'")"
