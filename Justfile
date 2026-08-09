@@ -20,8 +20,12 @@ pgrdf-fetch:
       tar xzf "pgrdf-{{pgrdf_ver}}-pg{{pg}}-glibc-{{arch}}.tar.gz" --strip-components=1
 
 build-ext: colima-up
+    # Build identity: .git never enters the docker context, so the id is
+    # collected HERE, at invocation, from the real working tree — including
+    # the -dirty marker — and passed down. See builder.Containerfile.
     DOCKER_CONTEXT={{docker_context}} DOCKER_BUILDKIT=1 docker build --target export \
       -t pgck-builder:pg{{pg}} --build-arg PG_MAJOR={{pg}} \
+      --build-arg PGCK_BUILD_ID="$(git describe --tags --always --dirty)" \
       -f compose/builder.Containerfile .
     rm -rf compose/extensions/pgck/lib compose/extensions/pgck/share
     mkdir -p compose/extensions/pgck/lib compose/extensions/pgck/share/extension
@@ -44,6 +48,7 @@ build-ext-nats: colima-up
     DOCKER_CONTEXT={{docker_context}} DOCKER_BUILDKIT=1 docker build --target export \
       -t pgck-builder:pg{{pg}}-nats --build-arg PG_MAJOR={{pg}} \
       --build-arg NATS_FEATURE=nats-client \
+      --build-arg PGCK_BUILD_ID="$(git describe --tags --always --dirty)" \
       -f compose/builder.Containerfile .
     rm -rf compose/extensions/pgck/lib compose/extensions/pgck/share
     mkdir -p compose/extensions/pgck/lib compose/extensions/pgck/share/extension

@@ -38,12 +38,20 @@ jobs:
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-22.04' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # build identity needs the tag history: a depth-1 clone makes
+          # `git describe --tags` fall back to a bare sha (SECURITY v3.11 A3).
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: ./.github/actions/setup-pgrx
         with: { pg: "${{ matrix.pg }}" }
 
       - name: Build extension package
-        run: cargo pgrx package --no-default-features --features ${{ matrix.variant.features }} --pg-config /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
+        # PGCK_BUILD_ID is collected HERE, from the tagged checkout, and
+        # compiled in (option_env! + rerun-if-env-changed). Without it every
+        # attested artifact answers build_id()='unknown' and the artifact
+        # chain (A5: loaded build_id == delivered identity) cannot close.
+        run: PGCK_BUILD_ID="$(git describe --tags --always --dirty)" cargo pgrx package --no-default-features --features ${{ matrix.variant.features }} --pg-config /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
 
       # SPEC.PGCK.DEPLOY.v0.1 §2 layout (pgRDF INSTALL-spec parity):
       #   pgck-<ver>-pg<PG>-glibc-<arch>.tar.gz

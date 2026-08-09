@@ -5,6 +5,13 @@
 # different compiler than the package layer.
 FROM docker.io/library/rust:1.97-bookworm AS builder
 ARG PG_MAJOR=18
+# Build identity (#52-fix): .git is excluded from the context (see the
+# dockerignore), so `git describe` CANNOT run in here — the caller collects
+# it on the host at invocation and passes it down. Without this the compiled
+# build_id() honestly answers "unknown", which defeats the identity chain
+# (SPEC.SECURITY v3.11 A3/A5). build.rs carries rerun-if-env-changed, so a
+# changed value forces the recompile that keeps id == binary.
+ARG PGCK_BUILD_ID=
 # NATS profile: embedded-nats (compose dev — pgCK hosts its own NATS) or
 # nats-client (bundle/cluster — pgCK is a client of a separate nats-server,
 # e.g. ck-allinone). Mutually exclusive; pick one. Default keeps compose intact.
@@ -38,6 +45,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo pgrx init --pg${PG_MAJOR} "$(which pg_config)"
 WORKDIR /work
 COPY . .
+ENV PGCK_BUILD_ID=${PGCK_BUILD_ID}
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,target=/work/target,sharing=locked \
