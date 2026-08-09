@@ -18,7 +18,9 @@ DECLARE
   ttl text := '@prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
 <urn:ckp:aff:s18-ok> a ckp:Affordance ;
   ckp:inTopic "input.kernel.TestK.action.ok.read" ;
-  ckp:plane "instance" .';
+  ckp:plane "instance" ;
+  ckp:derivedBy <urn:ckp:pgCK/kernel/ck> .';
+  -- derivedBy: required by the v3.11 AffordanceShape (minCount 1) (#49).
 BEGIN
   rep := ckp.validate_report(ttl, v_core);
   IF (rep->>'conforms')::boolean IS NOT TRUE THEN

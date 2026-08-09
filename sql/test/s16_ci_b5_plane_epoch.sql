@@ -32,7 +32,10 @@ DECLARE
 <urn:ckp:aff:s16-ok> a ckp:Affordance ;
   ckp:inTopic "input.kernel.pgCK.action.s16" ;
   ckp:plane "instance" ;
-  ckp:epoch "1"^^xsd:integer .';
+  ckp:epoch "1"^^xsd:integer ;
+  ckp:derivedBy <urn:ckp:pgCK/kernel/ck> .';
+  -- derivedBy: required by the v3.11 AffordanceShape (minCount 1) — every
+  -- affordance names its source (#49).
 BEGIN
   IF NOT ckp.validate(ttl, v_core) THEN
     RAISE EXCEPTION 's16 FAIL: a plane=instance / epoch=1 affordance did NOT conform to AffordanceShape';
