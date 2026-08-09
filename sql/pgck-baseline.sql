@@ -417,6 +417,14 @@ BEGIN
   v_ttl := pg_read_file(v_path);
   PERFORM pgrdf.parse_turtle(v_ttl, v_g, format('urn:ckp:%s/module/%s#', p_project, p_module));
   PERFORM pgrdf.materialize(v_g);
+  -- Ring repair (#48, same pattern as ckp.boot): add_graph created the
+  -- per-graph quad table owned by the CALLING superuser; the ring-1 definer
+  -- set (e.g. _composed_shapes at first seal) reads it as ck_substrate.
+  -- Re-assert the substrate floor over pgrdf so dynamically created graphs
+  -- are covered. (Lasting fix: grant-at-creation inside pgrdf.add_graph —
+  -- the filed engine ask.)
+  GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+  GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
 END;
 $procedure$
 ;
@@ -435,6 +443,13 @@ BEGIN
   v_ttl := pg_read_file(p_path);
   PERFORM pgrdf.parse_turtle(v_ttl, v_k, 'urn:ckp:kernel#');
   PERFORM pgrdf.materialize(v_k);
+  -- Ring repair (#48, same pattern as ckp.boot): the kernel graph's quad
+  -- table was just created owned by the CALLING superuser; the first seal's
+  -- definer path (_composed_shapes -> pgrdf.copy_graph) reads it as
+  -- ck_substrate. Measured on the s4 gate's fresh volume: 'permission denied
+  -- for table _pgrdf_quads_g2'. Re-assert the substrate floor over pgrdf.
+  GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+  GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
 
   -- CKB-3: ambient board graph for the project — task + goal modules.
   -- Best-effort: a missing ontology file (e.g. stale container mount) raises;
