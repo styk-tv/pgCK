@@ -65,7 +65,7 @@ DO $$
 DECLARE
   v_count int;
   v_query text := '
-    PREFIX ckp: <https://conceptkernel.org/ontology/v3.8/core#>
+    PREFIX ckp: <https://conceptkernel.org/ontology/v3.11/core#>
     SELECT DISTINCT ?kernel FROM <urn:ckp:s7-test/kernel/board>
     WHERE {
       ?t a ckp:Task ;

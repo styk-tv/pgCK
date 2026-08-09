@@ -13,7 +13,7 @@
 DO $$
 DECLARE
   v_g bigint;
-  ttl text := '@prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> .
+  ttl text := '@prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 <urn:ckp:aff:s17-read> a ckp:Affordance ;
   ckp:inTopic "input.kernel.TestK.action.thing.read" ;

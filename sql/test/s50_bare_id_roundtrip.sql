@@ -28,7 +28,7 @@ END $mk$;
 
 -- (2) link A->B by BARE id over a core predicate -> materializes a traversable quad (reachable:true).
 DO $lnk$
-DECLARE r jsonb; P text := 'https://conceptkernel.org/ontology/v3.8/core#link';
+DECLARE r jsonb; P text := 'https://conceptkernel.org/ontology/v3.11/core#link';
 BEGIN
   SET LOCAL ROLE ck_participant;
   r := ckp.dispatch('instance.link', jsonb_build_object(
@@ -41,7 +41,7 @@ END $lnk$;
 
 -- (3) reach from A by BARE id reaches B's @id (the round-trip the client actually uses).
 DO $rch$
-DECLARE res jsonb; P text := 'https://conceptkernel.org/ontology/v3.8/core#link'; b_iri text;
+DECLARE res jsonb; P text := 'https://conceptkernel.org/ontology/v3.11/core#link'; b_iri text;
 BEGIN
   b_iri := ckp._resolve_ref(current_setting('s50.b'));   -- B's stamped @id
   SET LOCAL ROLE ck_participant;

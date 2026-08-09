@@ -61,7 +61,7 @@ DECLARE res jsonb;
 BEGIN
   SET LOCAL ROLE ck_participant;
   res := ckp.dispatch('instance.reach',
-    jsonb_build_object('from','urn:s43:a','via','https://conceptkernel.org/ontology/v3.8/core#link'));
+    jsonb_build_object('from','urn:s43:a','via','https://conceptkernel.org/ontology/v3.11/core#link'));
   RESET ROLE;
   IF res->>'error' <> 'undeclared_predicate' THEN
     RAISE EXCEPTION 's43 FAIL (3a): a namespaced-but-UNDECLARED predicate was NOT rejected by reach (declared set is the gate, not the namespace): %', res; END IF;
@@ -73,7 +73,7 @@ DECLARE res jsonb;
 BEGIN
   SET LOCAL ROLE ck_participant;
   res := ckp.dispatch('instance.link', jsonb_build_object(
-    'source','urn:s43:a','predicate','https://conceptkernel.org/ontology/v3.8/core#link','target','urn:s43:d'));
+    'source','urn:s43:a','predicate','https://conceptkernel.org/ontology/v3.11/core#link','target','urn:s43:d'));
   RESET ROLE;
   IF res->>'error' <> 'undeclared_predicate' THEN
     RAISE EXCEPTION 's43 FAIL (3b): undeclared predicate NOT rejected by link: %', res; END IF;

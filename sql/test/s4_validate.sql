@@ -1,12 +1,12 @@
 \set ON_ERROR_STOP 1
 DO $$
 BEGIN
-  IF ckp.validate('@prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> .
+  IF ckp.validate('@prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
     <urn:ckp:prf:bad> a ckp:Proof ; ckp:about <urn:ckp:i:1> .', 1) THEN
     RAISE EXCEPTION 'expected malformed proof payload to be rejected';
   END IF;
 
-  IF NOT ckp.validate('@prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> .
+  IF NOT ckp.validate('@prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
     @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
     <urn:ckp:prf:ok> a ckp:Proof ; ckp:about <urn:ckp:i:1> ; ckp:method "hmac+sha256" ;
     ckp:digest "0000000000000000000000000000000000000000000000000000000000000000" ;
@@ -14,7 +14,7 @@ BEGIN
     RAISE EXCEPTION 'expected v0.1.2 HMAC proof payload to be accepted';
   END IF;
 
-  IF ckp.validate('@prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> .
+  IF ckp.validate('@prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
     @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
     <urn:ckp:prf:old> a ckp:Proof ; ckp:about <urn:ckp:i:1> ; ckp:method "ed25519+sha256" ;
     ckp:digest "0000000000000000000000000000000000000000000000000000000000000000" ;

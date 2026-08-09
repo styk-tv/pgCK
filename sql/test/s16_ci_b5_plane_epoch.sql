@@ -14,7 +14,7 @@ DO $$
 DECLARE v_ask text;
 BEGIN
   SELECT COALESCE(j->>'_ask', j->>'boolean') INTO v_ask FROM pgrdf.sparql(
-    'PREFIX ckp: <https://conceptkernel.org/ontology/v3.8/core#>
+    'PREFIX ckp: <https://conceptkernel.org/ontology/v3.11/core#>
      PREFIX owl: <http://www.w3.org/2002/07/owl#>
      ASK FROM <urn:ckp:core>
      WHERE { ckp:plane a owl:DatatypeProperty . ckp:epoch a owl:DatatypeProperty . }') j LIMIT 1;
@@ -27,7 +27,7 @@ END $$;
 DO $$
 DECLARE
   v_core int := (SELECT v::int FROM ckp.config WHERE k='core_graph_id');
-  ttl text := '@prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> .
+  ttl text := '@prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 <urn:ckp:aff:s16-ok> a ckp:Affordance ;
   ckp:inTopic "input.kernel.pgCK.action.s16" ;
@@ -43,7 +43,7 @@ END $$;
 DO $$
 DECLARE
   v_core int := (SELECT v::int FROM ckp.config WHERE k='core_graph_id');
-  ttl text := '@prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> .
+  ttl text := '@prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
 <urn:ckp:aff:s16-bad> a ckp:Affordance ;
   ckp:inTopic "input.kernel.pgCK.action.s16bad" ;
   ckp:plane "bogus" .';

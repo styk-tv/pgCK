@@ -11,7 +11,7 @@
 -- consults for the body's `type`. (core.ttl also ships an AffordanceShape, but
 -- in the core graph, which step-1 does NOT consult — hence the kernel-TTL copy.)
 --
--- Namespace: affordances are v3.8/core# (where ckp:Affordance + vocab live),
+-- Namespace: affordances are v3.11/core# (where ckp:Affordance + vocab live),
 -- NOT the board's v3.7/ Goal/Task namespace.
 --
 -- Runs on the §9 test substrate: ck-allinone:v0.7.1 with examples/ mounted at
@@ -40,7 +40,7 @@ BEGIN
   SELECT count(*) INTO v_shapes FROM pgrdf.sparql($q$
     PREFIX sh: <http://www.w3.org/ns/shacl#>
     SELECT ?s WHERE { GRAPH <urn:ckp:s10-aff/kernel/ck> {
-      ?s sh:targetClass <https://conceptkernel.org/ontology/v3.8/core#Affordance> } }
+      ?s sh:targetClass <https://conceptkernel.org/ontology/v3.11/core#Affordance> } }
   $q$) AS j;
   IF v_shapes < 1 THEN
     RAISE EXCEPTION 's10 FAIL: AffordanceShape not present in kernel/ck graph (got %)', v_shapes;
@@ -48,7 +48,7 @@ BEGIN
 
   SELECT count(*) INTO v_affs FROM pgrdf.sparql($q$
     SELECT ?a WHERE { GRAPH <urn:ckp:s10-aff/kernel/ck> {
-      ?a a <https://conceptkernel.org/ontology/v3.8/core#Affordance> } }
+      ?a a <https://conceptkernel.org/ontology/v3.11/core#Affordance> } }
   $q$) AS j;
   IF v_affs < 5 THEN
     RAISE EXCEPTION 's10 FAIL: expected >=5 registered affordances, got %', v_affs;
@@ -59,10 +59,10 @@ END $$;
 DO $$
 DECLARE
   v_body jsonb := jsonb_build_object(
-    'type', 'https://conceptkernel.org/ontology/v3.8/core#Affordance',
-    'https://conceptkernel.org/ontology/v3.8/core#inTopic',
+    'type', 'https://conceptkernel.org/ontology/v3.11/core#Affordance',
+    'https://conceptkernel.org/ontology/v3.11/core#inTopic',
       'input.kernel.pgCK.action.display.broadcast',
-    'https://conceptkernel.org/ontology/v3.8/core#outTopic',
+    'https://conceptkernel.org/ontology/v3.11/core#outTopic',
       'event.kernel.pgCK.Display.theme'
   );
 BEGIN
@@ -77,8 +77,8 @@ END $$;
 DO $$
 DECLARE
   v_body jsonb := jsonb_build_object(
-    'type', 'https://conceptkernel.org/ontology/v3.8/core#Affordance',
-    'https://conceptkernel.org/ontology/v3.8/core#outTopic',
+    'type', 'https://conceptkernel.org/ontology/v3.11/core#Affordance',
+    'https://conceptkernel.org/ontology/v3.11/core#outTopic',
       'event.kernel.pgCK.Display.theme'
   );
   v_caught text;

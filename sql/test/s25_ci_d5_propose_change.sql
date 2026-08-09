@@ -26,7 +26,7 @@ BEGIN
   pid := res->>'proposal';
   IF NOT EXISTS (
     SELECT 1 FROM ckp.instances
-    WHERE id = pid AND body->>'https://conceptkernel.org/ontology/v3.8/core#proposalState' = 'pending'
+    WHERE id = pid AND body->>'https://conceptkernel.org/ontology/v3.11/core#proposalState' = 'pending'
   ) THEN RAISE EXCEPTION 's25 FAIL: Proposal instance not sealed pending: %', pid; END IF;
   IF (res->>'verified') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's25 FAIL: proposal HMAC chain not verified: %', res; END IF;
 END $$;

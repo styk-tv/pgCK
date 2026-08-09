@@ -16,8 +16,8 @@ BEGIN
   v_g := pgrdf.add_graph('urn:ckp:s30-reach');
   PERFORM pgrdf.clear_graph(v_g);
   PERFORM pgrdf.parse_turtle(
-    '<urn:reach:a> <https://conceptkernel.org/ontology/v3.8/core#link> <urn:reach:b> .
-     <urn:reach:b> <https://conceptkernel.org/ontology/v3.8/core#link> <urn:reach:c> .',
+    '<urn:reach:a> <https://conceptkernel.org/ontology/v3.11/core#link> <urn:reach:b> .
+     <urn:reach:b> <https://conceptkernel.org/ontology/v3.11/core#link> <urn:reach:c> .',
     v_g, 'urn:ckp:s30#');
 END $$;
 
@@ -33,7 +33,7 @@ DECLARE res jsonb;
 BEGIN
   SET LOCAL ROLE ck_participant;
   res := ckp.dispatch('instance.reach',
-    '{"from":"urn:reach:a","via":"https://conceptkernel.org/ontology/v3.8/core#link"}'::jsonb);
+    '{"from":"urn:reach:a","via":"https://conceptkernel.org/ontology/v3.11/core#link"}'::jsonb);
   RESET ROLE;
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's30 FAIL: reach not ok: %', res; END IF;
   IF jsonb_array_length(res->'reached') <> 2 THEN RAISE EXCEPTION 's30 FAIL: reached % (want 2: b,c): %', jsonb_array_length(res->'reached'), res; END IF;
@@ -65,7 +65,7 @@ DO $$
 DECLARE res jsonb;
 BEGIN
   SET LOCAL ROLE ck_participant;
-  res := ckp.dispatch('instance.reach', '{"from":"urn:reach:a","via":"https://conceptkernel.org/ontology/v3.8/core#link"}'::jsonb);
+  res := ckp.dispatch('instance.reach', '{"from":"urn:reach:a","via":"https://conceptkernel.org/ontology/v3.11/core#link"}'::jsonb);
   RESET ROLE;
   IF (res->>'max_depth') IS NULL THEN RAISE EXCEPTION 's30 FAIL: max_depth not reported: %', res; END IF;
 END $$;
