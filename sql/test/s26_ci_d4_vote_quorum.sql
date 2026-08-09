@@ -12,13 +12,15 @@ CALL ckp.bootstrap_kernel();
 CREATE TEMP TABLE IF NOT EXISTS s26 (piri text);
 TRUNCATE s26;
 
--- propose a change requiring 2 approvals.
+-- propose a change requiring 2 approvals. Uses add_class (a projectored op) —
+-- #28 refuses projectorless ops at propose, and quorum-counting is independent
+-- of which op carries requires_quorum.
 DO $$
 DECLARE res jsonb;
 BEGIN
   SET LOCAL ROLE ck_participant;
   res := ckp.dispatch('kernel.propose_change',
-    '{"op":"set_quorum","about":"urn:ckp:demo/kernel/board","requires_quorum":2}'::jsonb);
+    '{"op":"add_class","about":"urn:ckp:demo/kernel/board","requires_quorum":2,"detail":{"class":"urn:ckp:demo/type/S26Quorum"}}'::jsonb);
   RESET ROLE;
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's26 FAIL: propose failed: %', res; END IF;
   INSERT INTO s26 VALUES (res->>'proposal_iri');

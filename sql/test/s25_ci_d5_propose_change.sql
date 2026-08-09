@@ -39,7 +39,8 @@ BEGIN
   SET LOCAL ROLE ck_participant;
   res := ckp.dispatch('kernel.propose_change', '{"op":"drop_table_haha","about":"urn:ckp:demo/kernel/board"}'::jsonb);
   RESET ROLE;
-  IF res->>'error' <> 'unknown_proposal_op' THEN RAISE EXCEPTION 's25 FAIL: unknown op not rejected: %', res; END IF;
+  -- #28: an op with no projector (incl. a garbage op) is refused at propose.
+  IF res->>'error' <> 'op_has_no_projector' THEN RAISE EXCEPTION 's25 FAIL: unknown op not rejected: %', res; END IF;
   IF (SELECT count(*) FROM ckp.instances) <> v_before THEN RAISE EXCEPTION 's25 FAIL: rejected proposal still sealed an instance'; END IF;
 END $$;
 

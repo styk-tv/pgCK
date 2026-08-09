@@ -16,7 +16,8 @@ BEGIN
   SET LOCAL ROLE ck_participant;
 
   -- GOVERNANCE plane: propose → vote → apply (a quorum-1 type change).
-  r := ckp.dispatch('kernel.propose_change', '{"op":"set_quorum","about":"urn:ckp:demo/kernel/board","requires_quorum":1}'::jsonb);
+  -- add_class (a projectored op) — #28 refuses projectorless ops at propose.
+  r := ckp.dispatch('kernel.propose_change', '{"op":"add_class","about":"urn:ckp:demo/kernel/board","requires_quorum":1,"detail":{"class":"urn:ckp:demo/type/S33Hot"}}'::jsonb);
   IF (r->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's33 FAIL: propose: %', r; END IF;
   piri := r->>'proposal_iri';
   PERFORM ckp.dispatch('kernel.vote', jsonb_build_object('about', piri, 'value', 'approve'));
