@@ -696,6 +696,31 @@ END;
 $function$
 ;
 
+-- P0-E (pgCK#28): a deterministic digest of a shapes graph — sha256 over the
+-- s|p|o triples in sorted order. Re-derivable by anyone re-running it against
+-- the same graph, so a Materialization's surfaceDigest is a CHECKABLE claim
+-- ("re-derive the surface at that epoch"), not a trusted number. 64 lowercase
+-- hex, matching ckp:surfaceDigest's sh:pattern.
+CREATE OR REPLACE FUNCTION ckp._surface_digest(p_graph bigint)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE v_iri text; v_concat text;
+BEGIN
+  v_iri := pgrdf.graph_iri(p_graph);
+  SELECT COALESCE(string_agg(
+           (j->>'s')||'|'||(j->>'p')||'|'||(j->>'o'), chr(10)
+           ORDER BY (j->>'s'), (j->>'p'), (j->>'o')), '')
+    INTO v_concat
+  FROM pgrdf.sparql(format(
+    'SELECT ?s ?p ?o WHERE { GRAPH <%s> { ?s ?p ?o } }', v_iri)) j;
+  RETURN encode(digest(convert_to(v_concat, 'UTF8'), 'sha256'), 'hex');
+END;
+$function$
+;
+
 CREATE OR REPLACE FUNCTION ckp._envelope(p_id text)
  RETURNS jsonb
  LANGUAGE sql
@@ -1268,8 +1293,45 @@ BEGIN
     v_applied := jsonb_build_object('graph_changed', true, 'applied_quads', v_ga->'applied_quads');
   END IF;
 
-  -- 4b. CASCADE — _recompile + epoch advance.
-  v_epoch := ckp.bump_epoch('pgCK');
+  -- 4b. CASCADE — epoch advance, and it MUST produce a sealed Materialization
+  --     (P0-E, pgCK#28). The epoch is not a counter: the bump recompiles the
+  --     plan surface (compile_plans + plan_cache_clear inside bump_epoch), and
+  --     the rebuild is SEALED as a first-class ckp:Materialization that
+  --     produces a ckp:Epoch carrying the surface digest. All in THIS txn: if
+  --     the Materialization or Epoch fails its shape gate, the whole apply
+  --     rolls back — a bumped epoch with no valid Materialization cannot
+  --     commit. "Show me the Materialization that produced this epoch, and
+  --     re-derive the surface at that epoch" is answerable from the seals.
+  DECLARE
+    v_from   int := COALESCE((SELECT epoch FROM ckp.kernel_epoch WHERE kernel = 'pgCK'), 1);
+    v_comp_e int;
+    v_srcd   text;
+    v_surfd  text;
+    v_kiri   text := format('urn:ckp:%s/kernel/ck', v_proj);
+    v_eiri   text;
+    v_miri   text;
+  BEGIN
+    v_epoch := ckp.bump_epoch('pgCK');           -- recompiles plans + clears cache (same txn)
+    v_comp_e := ckp._composed_shapes(v_proj);    -- rebuild the enforcement surface from the new shapes
+    v_srcd  := ckp._surface_digest(pgrdf.add_graph(v_kiri));   -- the governed source shapes
+    v_surfd := ckp._surface_digest(v_comp_e);                  -- the enforcement surface produced
+    v_eiri  := format('urn:ckp:%s/epoch/%s', v_proj, v_epoch);
+    v_miri  := format('urn:ckp:%s/materialization/%s', v_proj, v_epoch);
+    -- the Epoch resource: the position, named by the digest of its surface.
+    PERFORM ckp.seal('epoch-'||v_proj||'-'||v_epoch, jsonb_build_object(
+      'type', C||'Epoch', '@id', v_eiri,
+      C||'epoch', to_jsonb(v_epoch),
+      C||'surfaceDigest', v_surfd));
+    -- the Materialization: the sealed rebuild that produced that epoch.
+    PERFORM ckp.seal('mat-'||v_proj||'-'||v_epoch, jsonb_build_object(
+      'type', C||'Materialization', '@id', v_miri,
+      C||'materializes', v_kiri,
+      C||'fromEpoch', to_jsonb(v_from),
+      C||'toEpoch', to_jsonb(v_epoch),
+      C||'sourceDigest', v_srcd,
+      C||'surfaceDigest', v_surfd,
+      C||'producesEpoch', v_eiri));
+  END;
 
   -- 4c. QUERY AFFORDANCE (Tier 2 3/3b) — an add_affordance carrying query text is compiled into
   --     ckp.plans + registered plane='query', keyed to the new epoch (governed, sealed).
@@ -2341,8 +2403,16 @@ AS $function$
 DECLARE
   C        text := 'https://conceptkernel.org/ontology/v3.11/core#';
   v_core   int  := (SELECT v::int FROM ckp.config WHERE k='core_graph_id');
-  v_ops    text[] := ARRAY['add_class','add_property','modify_shape_constraint','add_affordance',
-                           'set_transition_map','set_quorum','set_materialize_policy'];
+  -- P0-E (pgCK#28): NO GOVERNED OP WITHOUT A PROJECTOR. An op that cannot
+  -- project a change is refused HERE, at propose — never sealed as an inert
+  -- "applied" that bumps the epoch and changes nothing. These four have a
+  -- projector today: add_class / add_property / set_transition_map translate
+  -- via ckp._op_to_ttl; add_affordance registers a query/derived plan at apply.
+  -- modify_shape_constraint / set_quorum / set_materialize_policy have none yet
+  -- (they would seal and do nothing) — refused until a projector exists,
+  -- default-deny per I2. Widening this set requires implementing the projector,
+  -- not editing the list.
+  v_ops    text[] := ARRAY['add_class','add_property','set_transition_map','add_affordance'];
   v_op     text := p_payload->>'op';
   v_about  text := COALESCE(p_payload->>'about', p_kernel_urn);
   v_quorum int;
@@ -2353,7 +2423,8 @@ DECLARE
 BEGIN
   -- 1. INJECTION-SAFE FIELD GATE (mirrors ProposalShape; makes step 2's TTL construction safe).
   IF v_op IS NULL OR NOT (v_op = ANY(v_ops)) THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'unknown_proposal_op', 'op', v_op,
+    RETURN jsonb_build_object('ok', false, 'error', 'op_has_no_projector', 'op', v_op,
+                              'hint', 'a governed op is refused at propose unless it can project a change (P0-E, pgCK#28)',
                               'allowed', to_jsonb(v_ops));
   END IF;
   IF v_about IS NULL OR v_about !~ '^[A-Za-z][A-Za-z0-9+.:#/_-]*$' THEN
