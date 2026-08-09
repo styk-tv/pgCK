@@ -13,7 +13,7 @@
 DO $$
 DECLARE res jsonb;
 BEGIN
-  res := ckp.stage_ttl('@prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> .
+  res := ckp.stage_ttl('@prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
@@ -26,7 +26,7 @@ END $$;
 DO $$
 DECLARE res jsonb;
 BEGIN
-  res := ckp.stage_ttl('@prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> .
+  res := ckp.stage_ttl('@prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
 <urn:ckp:sneaky> ckp:title "I am instance data, not ontology" .');
   IF res->>'error' <> 'fence_violation' THEN RAISE EXCEPTION 's28 FAIL: instance data not fenced: %', res; END IF;
 END $$;

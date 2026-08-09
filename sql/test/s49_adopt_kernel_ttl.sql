@@ -10,6 +10,9 @@
 CALL ckp.bootstrap_kernel();
 
 DO $setup$ DECLARE g bigint; BEGIN g := pgrdf.add_graph('urn:ckp:s49-test/kernel/ck'); PERFORM pgrdf.clear_graph(g); END $setup$;
+-- ring repair for the fixture graph (#48/#49): superuser-created, definer-read.
+GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
 SET ckp.project = 's49-test';
 
 -- (1) adopt a Widget shape (required `code`) into /ck via the SANCTIONED writer; assert it lands in /ck.

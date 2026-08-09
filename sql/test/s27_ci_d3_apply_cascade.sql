@@ -37,7 +37,7 @@ BEGIN
   IF (res->>'verified') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's27 FAIL: applied proposal not verified: %', res; END IF;
   IF NOT EXISTS (
     SELECT 1 FROM ckp.instances
-    WHERE body->>'@id' = piri AND body->>'https://conceptkernel.org/ontology/v3.8/core#proposalState' = 'applied'
+    WHERE body->>'@id' = piri AND body->>'https://conceptkernel.org/ontology/v3.11/core#proposalState' = 'applied'
   ) THEN RAISE EXCEPTION 's27 FAIL: proposal instance not sealed applied'; END IF;
 END $$;
 

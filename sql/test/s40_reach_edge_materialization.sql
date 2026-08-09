@@ -16,7 +16,7 @@ SET ckp.project = 's40-test';
 
 -- (1) two participant-created edges A->B->C through the door — materialized as quads.
 DO $$
-DECLARE r1 jsonb; r2 jsonb; P text := 'https://conceptkernel.org/ontology/v3.8/core#link';
+DECLARE r1 jsonb; r2 jsonb; P text := 'https://conceptkernel.org/ontology/v3.11/core#link';
 BEGIN
   SET LOCAL ROLE ck_participant;
   r1 := ckp.dispatch('edge.create', jsonb_build_object('source','urn:ckp:s40/a','predicate',P,'target','urn:ckp:s40/b'));
@@ -29,7 +29,7 @@ END $$;
 
 -- (2) reach now traverses the participant-created edges transitively: A reaches {B, C}.
 DO $$
-DECLARE res jsonb; P text := 'https://conceptkernel.org/ontology/v3.8/core#link';
+DECLARE res jsonb; P text := 'https://conceptkernel.org/ontology/v3.11/core#link';
 BEGIN
   SET LOCAL ROLE ck_participant;
   res := ckp.dispatch('instance.reach', jsonb_build_object('from','urn:ckp:s40/a','via',P));
@@ -43,7 +43,7 @@ END $$;
 
 -- (3) a bare (non-IRI) endpoint seals the Edge instance but is honestly flagged not-traversable.
 DO $$
-DECLARE res jsonb; P text := 'https://conceptkernel.org/ontology/v3.8/core#link';
+DECLARE res jsonb; P text := 'https://conceptkernel.org/ontology/v3.11/core#link';
 BEGIN
   SET LOCAL ROLE ck_participant;
   res := ckp.dispatch('edge.create', jsonb_build_object('source','task-bare-1','predicate',P,'target','task-bare-2'));

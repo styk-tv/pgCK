@@ -273,6 +273,58 @@ INSERT INTO ckp.config(k,v) VALUES
   ('transition_map', '{"draft":["review"],"review":["approved","draft"],"approved":[],"planned":["in_progress","blocked"],"in_progress":["done","blocked","planned"],"blocked":["in_progress","planned"],"done":["in_progress"]}')
 ON CONFLICT (k) DO NOTHING;
 
+-- ==================== REGISTRY SEED ====================
+-- AMENDED IN pgCK (#48), fourth member of the same family: the registry is
+-- the SOLE routing authority (CI-B-1 — dispatch refuses any verb absent from
+-- it with unknown_affordance, zero payload evaluation), and the chain seeded
+-- pgCK's shipped verbs across its steps (0.3.0--0.3.1 core+reads,
+-- 0.3.4--0.3.5 reach/transition/match/explain, 0.4.2--0.4.3 retire). The
+-- flatten created the table EMPTY: table rows are invisible to function-set
+-- parity, and every prior run re-seeded through the chain at CREATE
+-- EXTENSION, masking it. Measured: s15's snapshot.board (canon
+-- instance.snapshot) -> unknown_affordance on the flattened install.
+-- Cumulative chain end-state; governed query/derived affordances stay
+-- runtime-registered by their compilers, never seeded here.
+INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane) VALUES
+  ('pgCK','instance.create',      'input.kernel.pgCK.action.instance.create',      'instance'),
+  ('pgCK','instance.update',      'input.kernel.pgCK.action.instance.update',      'instance'),
+  ('pgCK','instance.link',        'input.kernel.pgCK.action.instance.link',        'instance'),
+  ('pgCK','instance.query',       'input.kernel.pgCK.action.instance.query',       'instance'),
+  ('pgCK','instance.get',         'input.kernel.pgCK.action.instance.get',         'instance'),
+  ('pgCK','instance.verify',      'input.kernel.pgCK.action.instance.verify',      'instance'),
+  ('pgCK','instance.snapshot',    'input.kernel.pgCK.action.instance.snapshot',    'instance'),
+  ('pgCK','instance.provenance',  'input.kernel.pgCK.action.instance.provenance',  'instance'),
+  ('pgCK','instance.validate',    'input.kernel.pgCK.action.instance.validate',    'instance'),
+  ('pgCK','instance.reach',       'input.kernel.pgCK.action.instance.reach',       'instance'),
+  ('pgCK','instance.transition',  'input.kernel.pgCK.action.instance.transition',  'instance'),
+  ('pgCK','instance.retire',      'input.kernel.pgCK.action.instance.retire',      'instance'),
+  ('pgCK','concept.match',        'input.kernel.pgCK.action.concept.match',        'instance'),
+  ('pgCK','instance.explain',     'input.kernel.pgCK.action.instance.explain',     'instance'),
+  ('pgCK','affordances',          'input.kernel.pgCK.action.affordances',          'instance'),
+  ('pgCK','kernels.list',         'input.kernel.pgCK.action.kernels.list',         'instance'),
+  ('pgCK','participant.join',     'input.kernel.pgCK.action.participant.join',     'instance'),
+  ('pgCK','notify',               'input.kernel.pgCK.action.notify',               'instance'),
+  ('pgCK','kernel.propose_change','input.kernel.pgCK.action.kernel.propose_change','governance'),
+  ('pgCK','kernel.vote',          'input.kernel.pgCK.action.kernel.vote',          'governance'),
+  ('pgCK','kernel.apply',         'input.kernel.pgCK.action.kernel.apply',         'governance')
+ON CONFLICT (kernel, verb) DO NOTHING;
+
+-- Fifth member (#48): the governed concept.match plan — the ONLY static
+-- ckp.plans seed in the chain (0.4.12--0.4.13; everything else in ckp.plans
+-- is compiled at governed apply time). $graph$/$term$ are bound by
+-- ckp.concept_match at run time; the query text is the governed fact.
+-- Chain semantics kept (DO UPDATE): every install re-asserted the epoch-1
+-- plan text; governed recompiles land at higher epochs.
+INSERT INTO ckp.plans(kernel, verb, epoch, plan)
+VALUES ('pgCK', 'concept.match', 1, jsonb_build_object(
+  'kind', 'sparql',
+  'params', jsonb_build_array('term'),
+  'statement',
+    'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> '
+    || 'SELECT ?id ?label WHERE { GRAPH <$graph$> { ?id rdfs:label ?label . '
+    || 'FILTER(CONTAINS(LCASE(STR(?label)), LCASE("$term$"))) } } ORDER BY ?label'))
+ON CONFLICT (kernel, verb, epoch) DO UPDATE SET plan = EXCLUDED.plan, compiled_at = now();
+
 -- ==================== ROUTINES (80) ====================
 
 CREATE OR REPLACE PROCEDURE ckp._enforce_internal_floor()
@@ -417,6 +469,14 @@ BEGIN
   v_ttl := pg_read_file(v_path);
   PERFORM pgrdf.parse_turtle(v_ttl, v_g, format('urn:ckp:%s/module/%s#', p_project, p_module));
   PERFORM pgrdf.materialize(v_g);
+  -- Ring repair (#48, same pattern as ckp.boot): add_graph created the
+  -- per-graph quad table owned by the CALLING superuser; the ring-1 definer
+  -- set (e.g. _composed_shapes at first seal) reads it as ck_substrate.
+  -- Re-assert the substrate floor over pgrdf so dynamically created graphs
+  -- are covered. (Lasting fix: grant-at-creation inside pgrdf.add_graph —
+  -- the filed engine ask.)
+  GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+  GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
 END;
 $procedure$
 ;
@@ -435,6 +495,13 @@ BEGIN
   v_ttl := pg_read_file(p_path);
   PERFORM pgrdf.parse_turtle(v_ttl, v_k, 'urn:ckp:kernel#');
   PERFORM pgrdf.materialize(v_k);
+  -- Ring repair (#48, same pattern as ckp.boot): the kernel graph's quad
+  -- table was just created owned by the CALLING superuser; the first seal's
+  -- definer path (_composed_shapes -> pgrdf.copy_graph) reads it as
+  -- ck_substrate. Measured on the s4 gate's fresh volume: 'permission denied
+  -- for table _pgrdf_quads_g2'. Re-assert the substrate floor over pgrdf.
+  GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+  GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
 
   -- CKB-3: ambient board graph for the project — task + goal modules.
   -- Best-effort: a missing ontology file (e.g. stale container mount) raises;

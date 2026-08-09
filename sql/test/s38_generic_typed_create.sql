@@ -33,6 +33,10 @@ ship:ShipShape a sh:NodeShape ;
 $ttl$, g, 'urn:ckp:s38-test/kernel#');
   PERFORM pgrdf.materialize(g);
 END $setup$;
+-- ring repair for the fixture graph (#48/#49): the setup created it as the calling
+-- superuser; the seal's definer path reads it as ck_substrate.
+GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
 
 SET ckp.project = 's38-test';
 
@@ -79,7 +83,9 @@ BEGIN
   RESET ROLE;
   IF (res->>'ok') IS DISTINCT FROM 'false' THEN
     RAISE EXCEPTION 's38 FAIL (2): Ship missing required crew_size was NOT rejected: %', res; END IF;
-  IF res->>'error' NOT LIKE '%required%' AND res->>'error' NOT LIKE '%kernel shape%' THEN
+  -- v3.11 (#49): the refusal is the composed shape report naming the violated path.
+  IF res->>'error' NOT LIKE '%required%' AND res->>'error' NOT LIKE '%kernel shape%'
+     AND res->>'error' NOT LIKE '%fails the composed shape gate%' THEN
     RAISE EXCEPTION 's38 FAIL (2): rejected, but not for the shape reason: %', res; END IF;
   -- and nothing leaked into the store for the rejected create.
   IF EXISTS (SELECT 1 FROM ckp.instances WHERE body->>'type'='urn:ckp:s38-test/type/Ship'

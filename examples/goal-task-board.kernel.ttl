@@ -1,5 +1,5 @@
 @prefix ckp:  <https://conceptkernel.org/ontology/v3.7/> .
-@prefix core: <https://conceptkernel.org/ontology/v3.8/core#> .
+@prefix core: <https://conceptkernel.org/ontology/v3.11/core#> .
 @prefix sh:   <http://www.w3.org/ns/shacl#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
@@ -33,10 +33,11 @@ ckp:TaskShape a sh:NodeShape ;
 # ---- Affordances (U2-a) ---------------------------------------------------
 # pgCK registers the capabilities it exposes as core:Affordance instances in
 # its OWN kernel graph (urn:ckp:<project>/kernel/ck, parsed here by
-# ckp.load_kernel). Vocabulary is v3.8/core# — that is where ckp:Affordance,
+# ckp.load_kernel). Vocabulary is v3.11/core# — that is where ckp:Affordance,
 # inTopic/outTopic/inShape, and AffordanceShape live (ontology/core.ttl,
 # ontology/affordance.ttl, examples/example.kernel.ttl). Goal/Task above stay
-# v3.7/; the file is intentionally bi-namespace during the v3.7→v3.8 migration.
+# v3.7/; the file is intentionally bi-namespace pending the module re-issue
+# (#47 — v3.7 residue is #46).
 #
 # Gating: ckp.seal()'s step-1 required-prop check reads the shape whose
 # sh:targetClass matches the body's `type` FROM THIS kernel/ck graph — so the

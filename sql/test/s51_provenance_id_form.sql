@@ -8,6 +8,9 @@
 \set ON_ERROR_STOP 1
 CALL ckp.bootstrap_kernel();
 DO $setup$ DECLARE g bigint; BEGIN g := pgrdf.add_graph('urn:ckp:s51-test/kernel/ck'); PERFORM pgrdf.clear_graph(g); END $setup$;
+-- ring repair for the fixture graph (#48/#49): superuser-created, definer-read.
+GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
 SET ckp.project = 's51-test';
 
 -- create one instance; capture its BARE id (what create returns) + its stamped @id.

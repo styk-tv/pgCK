@@ -38,21 +38,27 @@ force** by being present. A module is in force only because a sealed
 | `v3.11/modules/lexicon.ttl` | v3.11 | mirror — the closed defect-symptom lexicon module | `ce9f20f4dc43b79b704a1266ca69956890b006564824c051d44eb31cc90b0329` |
 | `v3.11/index.html` | — | mirror — the publication page (states the digest discipline of itself) | — |
 | `v3.8/core.ttl`, `v3.8/index.html` | **v3.8** | mirror of the published legacy surface, for reference | `6c4aa53a2abfcd9b907682bb26ee3c682248bc74e8d0648bcd42c4893bb1cf86` |
-| `task.ttl` `goal.ttl` `proof.ttl` `validate.ttl` `affordance.ttl` `delegation.ttl` `delivery.ttl` | **v3.8** | pgCK module build inputs on the legacy line | — |
+| `task.ttl` `goal.ttl` | **v3.11 (interim)** | board module build inputs, re-pointed so the board shapes gate what the substrate emits; lasting form is the [#47](https://github.com/styk-tv/pgCK/issues/47) re-issue | — |
+| `proof.ttl` `validate.ttl` `affordance.ttl` `delegation.ttl` `delivery.ttl` | **v3.8** | pgCK module build inputs on the legacy line | — |
 
 Earlier published versions (v3.4 … v3.9) live at the same CK-org surface and
 are not mirrored here.
 
-## The v3.8 module files
+## The module files
 
-The seven top-level module `.ttl` files still carry the v3.8 namespace. This
-is deliberate and tracked: no v3.11 module authority has been published for
-them yet. They are **not** migrated in place — the v3.11 resolution is that
-modules are **re-issued as digest-addressed entities** against the v3.11 core
-and adopted by digest, like everything else
+Five module `.ttl` files still carry the v3.8 namespace. This is deliberate
+and tracked: no v3.11 module authority has been published for them yet. They
+are **not** migrated in place — the v3.11 resolution is that modules are
+**re-issued as digest-addressed entities** against the v3.11 core and adopted
+by digest, like everything else
 ([#47](https://github.com/styk-tv/pgCK/issues/47)). Until then they are the
 legacy line: do not author new v3.8 content against them
 (see also [#46](https://github.com/styk-tv/pgCK/issues/46) for v3.7 residue).
+
+`task.ttl` and `goal.ttl` carry an **interim v3.11 re-point** (#49): the
+board's `shapes_self_test` requires v3.11 `TaskShape`/`GoalShape`, and a
+v3.8 shape targets nothing the re-pointed substrate emits. The interim is
+named as such in each file's header; the lasting form is the #47 re-issue.
 
 ## Verifying a mirror
 

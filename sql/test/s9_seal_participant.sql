@@ -4,8 +4,8 @@
 --   urn:ckp:participant:alice; seal without participant → an anonymous URN
 --   urn:ckp:participant:anon:<nonce> is minted into the body.
 --
--- Canonical IRI key is the v3.8 core predicate
--- https://conceptkernel.org/ontology/v3.8/core#participant; display claims
+-- Canonical IRI key is the v3.11 core predicate
+-- https://conceptkernel.org/ontology/v3.11/core#participant; display claims
 -- (preferred_username, email) ride as non-authoritative participant_display_name
 -- / participant_email per NOTIFIES.pgCK §D.
 --
@@ -39,10 +39,10 @@ BEGIN
 
   SELECT body INTO v_stored FROM ckp.instances WHERE id = 'cf3-alice';
 
-  IF (v_stored->>'https://conceptkernel.org/ontology/v3.8/core#participant')
+  IF (v_stored->>'https://conceptkernel.org/ontology/v3.11/core#participant')
        <> 'urn:ckp:participant:alice' THEN
     RAISE EXCEPTION 's9 FAIL: alice participant IRI not persisted, got %',
-      v_stored->>'https://conceptkernel.org/ontology/v3.8/core#participant';
+      v_stored->>'https://conceptkernel.org/ontology/v3.11/core#participant';
   END IF;
 
   -- Raw claims object must be replaced (not left alongside the IRI).
@@ -77,7 +77,7 @@ BEGIN
   PERFORM ckp.seal('cf3-anon', v_body);
 
   SELECT body INTO v_stored FROM ckp.instances WHERE id = 'cf3-anon';
-  v_iri := v_stored->>'https://conceptkernel.org/ontology/v3.8/core#participant';
+  v_iri := v_stored->>'https://conceptkernel.org/ontology/v3.11/core#participant';
 
   IF v_iri NOT LIKE 'urn:ckp:participant:anon:%' THEN
     RAISE EXCEPTION 's9 FAIL: anon URN not minted, got %', v_iri;
@@ -109,7 +109,7 @@ DECLARE
   v_iri text;
 BEGIN
   PERFORM ckp.seal('cf3-empty-sub', v_body);
-  SELECT body->>'https://conceptkernel.org/ontology/v3.8/core#participant'
+  SELECT body->>'https://conceptkernel.org/ontology/v3.11/core#participant'
     INTO v_iri FROM ckp.instances WHERE id = 'cf3-empty-sub';
   IF v_iri NOT LIKE 'urn:ckp:participant:anon:%' THEN
     RAISE EXCEPTION 's9 FAIL: empty sub should fall back to anon, got %', v_iri;
@@ -128,7 +128,7 @@ DECLARE
   v_iri text;
 BEGIN
   PERFORM ckp.seal('cf3-norm', v_body);
-  SELECT body->>'https://conceptkernel.org/ontology/v3.8/core#participant'
+  SELECT body->>'https://conceptkernel.org/ontology/v3.11/core#participant'
     INTO v_iri FROM ckp.instances WHERE id = 'cf3-norm';
   IF v_iri <> 'urn:ckp:participant:alice-smith' THEN
     RAISE EXCEPTION 's9 FAIL: sub normalisation wrong, expected urn:ckp:participant:alice-smith got %', v_iri;

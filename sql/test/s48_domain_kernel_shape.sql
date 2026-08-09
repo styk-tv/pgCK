@@ -46,6 +46,9 @@ BEGIN
 $ttl$, g, 'urn:ckp:demo/kernel/ck#');
   PERFORM pgrdf.materialize(g);
 END $load$;
+-- ring repair for the fixture graph (#48/#49): superuser-created, definer-read.
+GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
 
 -- 1) VALID ConsensusTopic seals (required props present)
 DO $ok$
@@ -66,7 +69,9 @@ BEGIN
     '{"type":"urn:ckp:consensus/type/ConsensusTopic","urn:ckp:consensus/prop/kind":"agreement"}'::jsonb);
   RAISE EXCEPTION 's48 FAIL: should reject ConsensusTopic missing label';
 EXCEPTION WHEN others THEN
-  IF SQLERRM LIKE '%missing required%' AND SQLERRM LIKE '%label%' THEN RAISE NOTICE 's48 PASS: %', SQLERRM;
+  -- v3.11 (#49): the refusal is the composed shape report; label still names
+  -- the violated path inside it.
+  IF SQLERRM LIKE '%fails the composed shape gate%' AND SQLERRM LIKE '%label%' THEN RAISE NOTICE 's48 PASS: %', SQLERRM;
   ELSE RAISE; END IF;
 END $rej$;
 SELECT count(*)=0 AS s48_no_bad FROM ckp.instances WHERE id='s48-topic-bad';

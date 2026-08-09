@@ -13,7 +13,7 @@ DO $$
 DECLARE v_ask text;
 BEGIN
   SELECT COALESCE(j->>'_ask', j->>'boolean') INTO v_ask FROM pgrdf.sparql(
-    'PREFIX ckp: <https://conceptkernel.org/ontology/v3.8/core#>
+    'PREFIX ckp: <https://conceptkernel.org/ontology/v3.11/core#>
      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
      ASK FROM <urn:ckp:core>
      WHERE { ckp:Proposal a rdfs:Class . ckp:Vote a rdfs:Class . ckp:Grant a rdfs:Class . }') j LIMIT 1;
@@ -26,12 +26,14 @@ END $$;
 DO $$
 DECLARE
   v_core int := (SELECT v::int FROM ckp.config WHERE k='core_graph_id');
-  ttl text := '@prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> .
+  ttl text := '@prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 <urn:ckp:prop:s24-ok> a ckp:Proposal ;
   ckp:about <urn:ckp:demo/kernel/board> ;
   ckp:proposalState "pending" ;
+  ckp:proposalOp "add_type" ;
   ckp:requiresQuorum "2"^^xsd:integer .';
+  -- proposalOp: required by the v3.11 ProposalShape (minCount 1) (#49).
 BEGIN
   IF NOT ckp.validate(ttl, v_core) THEN RAISE EXCEPTION 's24 FAIL: conformant Proposal did NOT validate'; END IF;
 END $$;
@@ -40,7 +42,7 @@ END $$;
 DO $$
 DECLARE
   v_core int := (SELECT v::int FROM ckp.config WHERE k='core_graph_id');
-  ttl text := '@prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> .
+  ttl text := '@prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
 <urn:ckp:prop:s24-bad> a ckp:Proposal ;
   ckp:about <urn:ckp:demo/kernel/board> ; ckp:proposalState "bogus" .';
 BEGIN
@@ -51,7 +53,7 @@ END $$;
 DO $$
 DECLARE
   v_core int := (SELECT v::int FROM ckp.config WHERE k='core_graph_id');
-  ttl text := '@prefix ckp: <https://conceptkernel.org/ontology/v3.8/core#> .
+  ttl text := '@prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
 <urn:ckp:vote:s24> a ckp:Vote ; ckp:about <urn:ckp:prop:s24-ok> ; ckp:voteValue "approve" .';
 BEGIN
   IF NOT ckp.validate(ttl, v_core) THEN RAISE EXCEPTION 's24 FAIL: conformant Vote did NOT validate'; END IF;

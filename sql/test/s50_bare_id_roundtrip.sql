@@ -9,6 +9,10 @@
 \set ON_ERROR_STOP 1
 CALL ckp.bootstrap_kernel();
 DO $setup$ DECLARE g bigint; BEGIN g := pgrdf.add_graph('urn:ckp:s50-reach/kernel/ck'); PERFORM pgrdf.clear_graph(g); END $setup$;
+-- ring repair for the fixture graph (#48/#49): the setup created it as the calling
+-- superuser; the seal's definer path reads it as ck_substrate.
+GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
 SET ckp.project = 's50-reach';   -- no declared predicates -> namespace-allowlist fallback for the predicate
 
 -- (1) create two real instances; capture their BARE ids (the form create returns).
@@ -28,7 +32,7 @@ END $mk$;
 
 -- (2) link A->B by BARE id over a core predicate -> materializes a traversable quad (reachable:true).
 DO $lnk$
-DECLARE r jsonb; P text := 'https://conceptkernel.org/ontology/v3.8/core#link';
+DECLARE r jsonb; P text := 'https://conceptkernel.org/ontology/v3.11/core#link';
 BEGIN
   SET LOCAL ROLE ck_participant;
   r := ckp.dispatch('instance.link', jsonb_build_object(
@@ -41,7 +45,7 @@ END $lnk$;
 
 -- (3) reach from A by BARE id reaches B's @id (the round-trip the client actually uses).
 DO $rch$
-DECLARE res jsonb; P text := 'https://conceptkernel.org/ontology/v3.8/core#link'; b_iri text;
+DECLARE res jsonb; P text := 'https://conceptkernel.org/ontology/v3.11/core#link'; b_iri text;
 BEGIN
   b_iri := ckp._resolve_ref(current_setting('s50.b'));   -- B's stamped @id
   SET LOCAL ROLE ck_participant;
