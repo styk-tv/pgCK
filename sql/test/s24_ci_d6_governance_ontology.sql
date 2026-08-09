@@ -31,7 +31,9 @@ DECLARE
 <urn:ckp:prop:s24-ok> a ckp:Proposal ;
   ckp:about <urn:ckp:demo/kernel/board> ;
   ckp:proposalState "pending" ;
+  ckp:proposalOp "add_type" ;
   ckp:requiresQuorum "2"^^xsd:integer .';
+  -- proposalOp: required by the v3.11 ProposalShape (minCount 1) (#49).
 BEGIN
   IF NOT ckp.validate(ttl, v_core) THEN RAISE EXCEPTION 's24 FAIL: conformant Proposal did NOT validate'; END IF;
 END $$;
