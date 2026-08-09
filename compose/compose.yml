@@ -27,7 +27,7 @@ services:
       - pgdata:/var/lib/postgresql
       - ./extensions/pgrdf/lib/pgrdf.so:/usr/lib/postgresql/18/lib/pgrdf.so:ro,z
       - ./extensions/pgrdf/share/extension/pgrdf.control:/usr/share/postgresql/18/extension/pgrdf.control:ro,z
-      - ./extensions/pgrdf/share/extension/pgrdf--0.6.20.sql:/usr/share/postgresql/18/extension/pgrdf--0.6.20.sql:ro,z
+      - ./extensions/pgrdf/share/extension/pgrdf--0.6.22.sql:/usr/share/postgresql/18/extension/pgrdf--0.6.22.sql:ro,z
       # Complete SQL set per oci-germination packaging (ship the whole share/extension,
       # not just the base install). A stock postgres image is bind-mounted here, so the
       # whole-dir COPY the bundles use would shadow built-in pgcrypto/plpgsql — instead
@@ -37,7 +37,11 @@ services:
       - ./extensions/pgrdf/share/extension/pgrdf--0.5.1--0.6.20.sql:/usr/share/postgresql/18/extension/pgrdf--0.5.1--0.6.20.sql:ro,z
       - ./extensions/pgck/lib/pgck.so:/usr/lib/postgresql/18/lib/pgck.so:ro,z
       - ./extensions/pgck/share/extension/pgck.control:/usr/share/postgresql/18/extension/pgck.control:ro,z
-      - ./extensions/pgck/share/extension/pgck--0.4.28.sql:/usr/share/postgresql/18/extension/pgck--0.4.28.sql:ro,z
+      - ./extensions/pgck/share/extension/pgck--0.4.29.sql:/usr/share/postgresql/18/extension/pgck--0.4.29.sql:ro,z
+      # The upgrade script is NOT in the builder export (pgrx emits only the
+      # per-version install) — mount it from the repo so ALTER EXTENSION
+      # pgck UPDATE resolves on this rig, same intent as the pgrdf line above.
+      - ../sql/pgck--0.4.28--0.4.29.sql:/usr/share/postgresql/18/extension/pgck--0.4.28--0.4.29.sql:ro,z
       # NOTE: parent is NOT :ro — docker must create mountpoints for the
       # task.ttl/goal.ttl overlays below (they don't exist in fixtures, and a
       # read-only parent bind-mount rejects mknod of new mountpoint files).
