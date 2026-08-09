@@ -273,6 +273,42 @@ INSERT INTO ckp.config(k,v) VALUES
   ('transition_map', '{"draft":["review"],"review":["approved","draft"],"approved":[],"planned":["in_progress","blocked"],"in_progress":["done","blocked","planned"],"blocked":["in_progress","planned"],"done":["in_progress"]}')
 ON CONFLICT (k) DO NOTHING;
 
+-- ==================== REGISTRY SEED ====================
+-- AMENDED IN pgCK (#48), fourth member of the same family: the registry is
+-- the SOLE routing authority (CI-B-1 — dispatch refuses any verb absent from
+-- it with unknown_affordance, zero payload evaluation), and the chain seeded
+-- pgCK's shipped verbs across its steps (0.3.0--0.3.1 core+reads,
+-- 0.3.4--0.3.5 reach/transition/match/explain, 0.4.2--0.4.3 retire). The
+-- flatten created the table EMPTY: table rows are invisible to function-set
+-- parity, and every prior run re-seeded through the chain at CREATE
+-- EXTENSION, masking it. Measured: s15's snapshot.board (canon
+-- instance.snapshot) -> unknown_affordance on the flattened install.
+-- Cumulative chain end-state; governed query/derived affordances stay
+-- runtime-registered by their compilers, never seeded here.
+INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane) VALUES
+  ('pgCK','instance.create',      'input.kernel.pgCK.action.instance.create',      'instance'),
+  ('pgCK','instance.update',      'input.kernel.pgCK.action.instance.update',      'instance'),
+  ('pgCK','instance.link',        'input.kernel.pgCK.action.instance.link',        'instance'),
+  ('pgCK','instance.query',       'input.kernel.pgCK.action.instance.query',       'instance'),
+  ('pgCK','instance.get',         'input.kernel.pgCK.action.instance.get',         'instance'),
+  ('pgCK','instance.verify',      'input.kernel.pgCK.action.instance.verify',      'instance'),
+  ('pgCK','instance.snapshot',    'input.kernel.pgCK.action.instance.snapshot',    'instance'),
+  ('pgCK','instance.provenance',  'input.kernel.pgCK.action.instance.provenance',  'instance'),
+  ('pgCK','instance.validate',    'input.kernel.pgCK.action.instance.validate',    'instance'),
+  ('pgCK','instance.reach',       'input.kernel.pgCK.action.instance.reach',       'instance'),
+  ('pgCK','instance.transition',  'input.kernel.pgCK.action.instance.transition',  'instance'),
+  ('pgCK','instance.retire',      'input.kernel.pgCK.action.instance.retire',      'instance'),
+  ('pgCK','concept.match',        'input.kernel.pgCK.action.concept.match',        'instance'),
+  ('pgCK','instance.explain',     'input.kernel.pgCK.action.instance.explain',     'instance'),
+  ('pgCK','affordances',          'input.kernel.pgCK.action.affordances',          'instance'),
+  ('pgCK','kernels.list',         'input.kernel.pgCK.action.kernels.list',         'instance'),
+  ('pgCK','participant.join',     'input.kernel.pgCK.action.participant.join',     'instance'),
+  ('pgCK','notify',               'input.kernel.pgCK.action.notify',               'instance'),
+  ('pgCK','kernel.propose_change','input.kernel.pgCK.action.kernel.propose_change','governance'),
+  ('pgCK','kernel.vote',          'input.kernel.pgCK.action.kernel.vote',          'governance'),
+  ('pgCK','kernel.apply',         'input.kernel.pgCK.action.kernel.apply',         'governance')
+ON CONFLICT (kernel, verb) DO NOTHING;
+
 -- ==================== ROUTINES (80) ====================
 
 CREATE OR REPLACE PROCEDURE ckp._enforce_internal_floor()
