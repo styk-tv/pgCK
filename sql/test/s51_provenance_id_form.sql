@@ -7,7 +7,10 @@
 -- BARE id is non-hollow (baseline), and provenance by the @id returns the SAME body + proof + verified.
 \set ON_ERROR_STOP 1
 CALL ckp.bootstrap_kernel();
-DO $setup$ DECLARE g bigint; BEGIN g := pgrdf.add_graph('urn:ckp:s51-test/kernel/ck'); PERFORM pgrdf.clear_graph(g); END $setup$;
+DO $setup$ DECLARE g bigint; BEGIN g := pgrdf.add_graph('urn:ckp:s51-test/kernel/ck'); PERFORM pgrdf.clear_graph(g);
+  -- Note must be an admitted type to seal (#27) — declare it as an unconstrained class.
+  PERFORM pgrdf.parse_turtle('<urn:ckp:s51-test/type/Note> a <http://www.w3.org/2000/01/rdf-schema#Class> .', g, 'urn:ckp:s51-test/kernel#');
+  PERFORM pgrdf.materialize(g); END $setup$;
 -- ring repair for the fixture graph (#48/#49): superuser-created, definer-read.
 GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;

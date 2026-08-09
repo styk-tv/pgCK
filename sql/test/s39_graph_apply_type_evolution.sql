@@ -15,12 +15,19 @@
 \set ON_ERROR_STOP 1
 CALL ckp.bootstrap_kernel();
 
--- Ensure this project's kernel graph exists and starts EMPTY (Ship unshaped).
+-- Ship starts UNSHAPED but DECLARED (#27): a type must be admitted to seal, and
+-- "declared class, no property shape" is exactly the legitimate unconstrained
+-- baseline this test evolves — governance later ADDS the constraining shape.
+-- (Pre-#27 the graph started empty and Ship leaned on the vacuous pass.)
 DO $setup$
 DECLARE g bigint;
 BEGIN
   g := pgrdf.add_graph('urn:ckp:s39-test/kernel/ck');
   PERFORM pgrdf.clear_graph(g);
+  PERFORM pgrdf.parse_turtle(
+    '<urn:ckp:s39-test/type/Ship> a <http://www.w3.org/2000/01/rdf-schema#Class> .',
+    g, 'urn:ckp:s39-test/kernel#');
+  PERFORM pgrdf.materialize(g);
 END $setup$;
 -- ring repair for the fixture graph (#48/#49): the setup created it as the calling
 -- superuser; the seal's definer path reads it as ck_substrate.

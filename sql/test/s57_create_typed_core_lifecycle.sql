@@ -10,7 +10,7 @@ INSERT INTO ckp.config(k,v) VALUES ('identity_key','demo-secret') ON CONFLICT (k
 -- a pending→sealed transition map for the type (sealed in the demo kernel graph)
 SELECT pgrdf.parse_turtle(
   '@prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .' || chr(10) ||
-  '<urn:ckp:demo/type/Thing> ckp:allowsTransition [ ckp:fromState "pending" ; ckp:toState "sealed" ] .',
+  '<urn:ckp:demo/type/Thing> a <http://www.w3.org/2000/01/rdf-schema#Class> ; ckp:allowsTransition [ ckp:fromState "pending" ; ckp:toState "sealed" ] .',
   pgrdf.add_graph('urn:ckp:demo/kernel/ck'), 'https://conceptkernel.org/ontology/v3.11/core#');
 
 -- (1) create with lifecycle_state:'pending' → must land under the v3.7 core NS as pending

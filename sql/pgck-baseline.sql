@@ -640,6 +640,62 @@ END;
 $function$
 ;
 
+-- P0-D mechanism 2 (pgCK#27): the admitted-TYPE gate — a substrate lookup, NOT
+-- a shape. SHACL is target-driven: a type no shape targets is validated by
+-- nothing and returns conforms=true vacuously, so an invented type URN would
+-- seal `verified:true` with an arbitrary body. No sh:closed and no ontology
+-- edit catches this (measured on the bench: `ex:u1 a ex:Undeclared` ->
+-- conforms=TRUE). The §4.4 generated-shape form (sh:closed over rdf:type with
+-- sh:in of the admitted set) is blocked on pgRDF#102 (sh:in does not match IRI
+-- value nodes) AND on the module/Adoption vocabulary being adopted; until then
+-- the lookup below IS the enforcement, reading the SAME composed surface the
+-- gate validates against (never a second procedural authority elsewhere).
+--
+-- Admitted = the composed shapes graph DECLARES the type: some shape targets it
+-- (sh:targetClass) OR it is a declared rdfs:Class / owl:Class. A declared class
+-- with no shape is admitted (declared, just unconstrained); an invented URN that
+-- is neither targeted nor declared is refused.
+CREATE OR REPLACE FUNCTION ckp._type_admitted(p_type text, p_project text, p_comp integer)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE v_comp_iri text; v_board_iri text; v_ask text;
+BEGIN
+  IF p_type IS NULL OR position(':' in p_type) = 0 THEN
+    RETURN false;   -- no resolvable type is not an admitted type
+  END IF;
+  -- TRANSITIONAL ALLOWANCE (pgCK#46): the legacy board path (task.create,
+  -- notify) still EMITS v3.7-namespaced instance types (Task, Goal, Message)
+  -- while their shapes are v3.11 — so those types are targeted by no shape and
+  -- would refuse here. That is the #46 residue, not an invented URN; tolerate
+  -- it until #46 re-points the body construction, at which point the board
+  -- path becomes non-vacuously validated and this allowance is deleted.
+  IF p_type LIKE 'https://conceptkernel.org/ontology/v3.7/%' THEN
+    RETURN true;
+  END IF;
+  -- Admitted = the type is DECLARED (a shape targets it, or it is a declared
+  -- class) anywhere the kernel loaded: the composed core+ck surface OR the
+  -- project board. Reads the same surfaces the gate/self-test consult — never
+  -- a second authority. An invented URN in none of them is refused.
+  v_comp_iri  := pgrdf.graph_iri(p_comp);
+  v_board_iri := format('urn:ckp:%s/kernel/board', p_project);
+  SELECT COALESCE(j->>'_ask', j->>'boolean') INTO v_ask
+  FROM pgrdf.sparql(format($q$
+    PREFIX sh:   <http://www.w3.org/ns/shacl#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+    ASK WHERE { GRAPH ?g {
+      { ?s sh:targetClass <%s> } UNION { <%s> a rdfs:Class } UNION { <%s> a owl:Class }
+    } FILTER(?g IN (<%s>, <%s>)) }
+  $q$, p_type, p_type, p_type, v_comp_iri, v_board_iri)) j
+  LIMIT 1;
+  RETURN COALESCE(v_ask, 'false') = 'true';
+END;
+$function$
+;
+
 CREATE OR REPLACE FUNCTION ckp._envelope(p_id text)
  RETURNS jsonb
  LANGUAGE sql
@@ -2867,6 +2923,14 @@ BEGIN
     v_report  jsonb;
   BEGIN
     v_comp := ckp._composed_shapes(v_project);
+    -- P0-D mechanism 2 (pgCK#27): fail closed on the UNDECLARED TYPE, BEFORE
+    -- validation runs. This is the half that produced the live defect — an
+    -- invented type URN is targeted by no shape, so SHACL never runs and the
+    -- body seals verified:true. The lookup refuses it; a declared type (class
+    -- or shape target) passes on to the measured-enforcing gate below.
+    IF NOT ckp._type_admitted(v_type, v_project, v_comp) THEN
+      RAISE EXCEPTION 'ckp.seal: type % is not admitted — no shape targets it and it is declared by no class in the composed surface (undeclared types cannot seal; SHACL would validate them vacuously)', COALESCE(v_type, '<null>');
+    END IF;
     -- pgCK#41: the four substrate-derived properties (producedBy, createdBy,
     -- sealedAtEpoch, conformsToShape) are demanded by ckp:InstanceShape with
     -- minCount 1, but were derived AFTER this gate — so on the v3.11 root every
@@ -3270,6 +3334,22 @@ BEGIN
   IF v_type IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'error', 'type_required');
   END IF;
+
+  -- P0-D mechanism 2 parity (pgCK#27): validate PREDICTS seal. seal refuses an
+  -- undeclared type before the SHACL gate; validate must report the same, or
+  -- validate <=> seal is a slogan. An undeclared type reports conforms=false
+  -- with a violation naming it — never the vacuous conforms=true that let
+  -- invented types look valid.
+  DECLARE v_comp0 int := ckp._composed_shapes(v_proj);
+  BEGIN
+    IF NOT ckp._type_admitted(v_type, v_proj, v_comp0) THEN
+      RETURN jsonb_build_object('ok', true, 'type', v_type, 'conforms', false,
+        'violations', jsonb_build_array(jsonb_build_object(
+          'focusNode', v_type, 'resultMessage', 'type is not admitted — no shape targets it and it is declared by no class',
+          'sourceConstraintComponent', 'ckp:AdmittedTypeConstraint')),
+        'report', jsonb_build_object('conforms', false));
+    END IF;
+  END;
 
   -- Resolve the body's short keys to declared property IRIs (mirror ckp.create_typed) so validate
   -- accepts the same {type, …fields} shape as instance.create. Already-IRI keys pass through.

@@ -60,7 +60,11 @@ BEGIN
   IF (res->>'count')::int < 1 THEN RAISE EXCEPTION 's37 FAIL (c): concept.match found % for a title that exists (label-field fix)', res->>'count'; END IF;
 END $$;
 
--- (a) instance.validate is handled (not unknown), and an unshaped type is valid silence → conforms.
+-- (a) instance.validate is handled (not unknown), and validate PREDICTS seal
+-- (#27): an UNDECLARED type reports conforms=false — no longer the vacuous
+-- "valid silence" that let invented types look valid. (Pre-#27 this asserted
+-- conforms=true; that was the codified defect. A DECLARED-but-unconstrained
+-- type still conforms — covered by s61's declared-Greeting case.)
 DO $$
 DECLARE res jsonb;
 BEGIN
@@ -68,7 +72,7 @@ BEGIN
   res := ckp.dispatch('instance.validate', '{"body":{"type":"urn:test:NoShape","x":1}}'::jsonb);
   RESET ROLE;
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's37 FAIL (a): validate not handled (unknown_affordance?): %', res; END IF;
-  IF (res->>'conforms') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's37 FAIL (a): unshaped type should be valid silence: %', res; END IF;
+  IF (res->>'conforms') IS DISTINCT FROM 'false' THEN RAISE EXCEPTION 's37 FAIL (a): undeclared type must NOT conform (validate predicts seal, #27): %', res; END IF;
 END $$;
 
 \echo s37_tier1_consumer_fixes: PASS

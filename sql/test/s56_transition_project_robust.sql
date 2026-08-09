@@ -12,7 +12,7 @@ INSERT INTO ckp.config(k,v) VALUES ('identity_key','demo-secret') ON CONFLICT (k
 -- seal a pending->sealed map for urn:t:Thing into the demo kernel graph (as apply does)
 SELECT pgrdf.parse_turtle(
   '@prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .' || chr(10) ||
-  '<urn:t:Thing> ckp:allowsTransition [ ckp:fromState "pending" ; ckp:toState "sealed" ] .',
+  '<urn:t:Thing> a <http://www.w3.org/2000/01/rdf-schema#Class> ; ckp:allowsTransition [ ckp:fromState "pending" ; ckp:toState "sealed" ] .',
   pgrdf.add_graph('urn:ckp:demo/kernel/ck'), 'https://conceptkernel.org/ontology/v3.11/core#');
 
 -- (1) matching project: transition permitted (baseline)
