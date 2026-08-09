@@ -6,7 +6,10 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  PGRX_VERSION: "0.16"
+  # pgrx version is NOT declared here. Cargo.lock is the single source of truth
+  # (0.19.2); setup-pgrx derives cargo-pgrx from it so the CLI always equals the
+  # crate. A literal here can only drift (it was "0.16" while the lock held
+  # 0.19.2, consumed by nothing) — #45/#20.
 
 jobs:
   fmt:
