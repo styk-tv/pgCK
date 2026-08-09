@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CKP Core Ontology — runtime vocabulary (v3.8 namespace) — Concept Kernel Protocol</title>
+  <style>
+    body { font-family: 'Noto Sans', 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; background: #fff; color: #333; line-height: 1.6; }
+    .header { background: #005a9c; color: #fff; padding: 0.8rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+    .header a { color: #fff; text-decoration: none; font-size: 0.95rem; }
+    .header .title { font-weight: 600; }
+    .container { max-width: 900px; margin: 0 auto; padding: 2rem; }
+    .meta { background: #f8f9fa; border-left: 4px solid #059669; padding: 1rem 1.5rem; margin-bottom: 2rem; font-size: 0.88rem; }
+    .meta dt { font-weight: 600; color: #005a9c; }
+    .meta dd { margin: 0 0 0.4rem 0; }
+    .meta a { color: #005a9c; }
+    h1 { color: #005a9c; font-size: 1.6rem; margin-bottom: 0.5rem; }
+    h2 { font-size: 1.15rem; color: #005a9c; border-bottom: 1px solid #ddd; padding-bottom: 0.3rem; margin-top: 2rem; }
+    .status { display: inline-block; padding: 2px 10px; border-radius: 3px; font-size: 0.75rem; font-weight: 600; }
+    .status-release { background: #d1fae5; color: #059669; }
+    .prefix-box { background: #f0f4f8; border: 1px solid #d0dae4; padding: 0.7rem 1rem; border-radius: 4px; font-family: 'Consolas', monospace; font-size: 0.88rem; margin: 1rem 0; }
+    table { border-collapse: collapse; width: 100%; margin: 0.8rem 0; }
+    th { text-align: left; background: #f0f0f0; padding: 0.45rem 0.7rem; border: 1px solid #ddd; font-size: 0.8rem; color: #555; }
+    td { padding: 0.45rem 0.7rem; border: 1px solid #ddd; font-size: 0.88rem; }
+    td a { color: #005a9c; text-decoration: none; }
+    td a:hover { text-decoration: underline; }
+    code { background: #f4f4f4; padding: 0.1em 0.35em; border-radius: 2px; font-size: 0.82rem; font-family: 'Consolas', monospace; }
+    .footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #ddd; color: #999; font-size: 0.78rem; }
+    .footer a { color: #005a9c; }
+    p.abstract { font-size: 0.92rem; max-width: 720px; }
+  </style>
+</head>
+<body>
+<div class="header">
+  <span class="title"><a href="https://conceptkernel.org">Concept Kernel Protocol</a></span>
+  <span><a href="https://conceptkernel.org/ontology/v3.7/">v3.7</a></span>
+</div>
+<div class="container">
+
+<h1>CKP Core Ontology — the runtime vocabulary <span class="status status-release">stable namespace</span></h1>
+
+<dl class="meta">
+  <dt>This version</dt>
+  <dd><a href="https://conceptkernel.org/ontology/v3.8/">https://conceptkernel.org/ontology/v3.8/</a></dd>
+  <dt>Namespace URI</dt>
+  <dd><code>https://conceptkernel.org/ontology/v3.8/core#</code></dd>
+  <dt>Turtle file</dt>
+  <dd><a href="https://conceptkernel.org/ontology/v3.8/core.ttl">core.ttl</a></dd>
+  <dt>Shipped by</dt>
+  <dd><a href="https://github.com/styk-tv/pgCK">styk-tv/pgCK</a> — loaded into the graph <code>urn:ckp:core</code> at <code>CREATE EXTENSION</code></dd>
+  <dt>Governing specification</dt>
+  <dd>CKP v3.9.1 (Critical Isolation)</dd>
+  <dt>Previous ontology set</dt>
+  <dd><a href="https://conceptkernel.org/ontology/v3.7/">https://conceptkernel.org/ontology/v3.7/</a> (v3.7)</dd>
+</dl>
+
+<p class="abstract">This is the core vocabulary the Concept Kernel runtime ships and enforces. It governs the protocol's <strong>own</strong> operations: every governed write is validated against these shapes at commit. The namespace IRI is a <strong>stable handle</strong> — the vocabulary is versioned by the specification that governs it, and the IRI holds still so that every sealed instance, every client, and every example dereferences the same address across protocol epochs.</p>
+
+<div class="prefix-box">@prefix ckp: &lt;https://conceptkernel.org/ontology/v3.8/core#&gt; .</div>
+
+<h2>Classes (11)</h2>
+<table>
+  <tr><th>Class</th><th>Meaning</th></tr>
+  <tr><td><code>ckp:Kernel</code></td><td>A versioned, ontology-defined unit of behaviour.</td></tr>
+  <tr><td><code>ckp:Organ</code></td><td>CK | TOOL | DATA.</td></tr>
+  <tr><td><code>ckp:Affordance</code></td><td>Binds an inbound verb to an action.</td></tr>
+  <tr><td><code>ckp:LedgerEntry</code></td><td>Append-only HMAC-authenticated audit record.</td></tr>
+  <tr><td><code>ckp:Proof</code></td><td>Verifiable HMAC-backed attestation about an instance.</td></tr>
+  <tr><td><code>ckp:Provenance</code></td><td>PROV-O subset for derivation.</td></tr>
+  <tr><td><code>ckp:Proposal</code></td><td>A governed change to the kernel's own types — the entry to the governance plane.</td></tr>
+  <tr><td><code>ckp:Vote</code></td><td>A participant's recorded position on a Proposal.</td></tr>
+  <tr><td><code>ckp:QuorumLevel</code></td><td>The threshold a Proposal must clear to apply.</td></tr>
+  <tr><td><code>ckp:Grant</code></td><td>Who may invoke which verb on which class.</td></tr>
+  <tr><td><code>ckp:Transition</code></td><td>A declared, shape-gated state move.</td></tr>
+</table>
+
+<h2>Shapes (8)</h2>
+<p class="abstract">Each shape is the seal gate for its class: <code>ckp:KernelShape</code>, <code>ckp:AffordanceShape</code>, <code>ckp:LedgerEntryShape</code>, <code>ckp:ProofShape</code>, <code>ckp:ProposalShape</code>, <code>ckp:VoteShape</code>, <code>ckp:GrantShape</code>, <code>ckp:TransitionShape</code>. A candidate body that violates its shape is rejected at the seal.</p>
+
+<h2>Domain kernels</h2>
+<p class="abstract">Adopter types are <strong>project-scoped URNs</strong>, composed into the runtime alongside this core: <code>urn:ckp:&lt;project&gt;/type/&lt;Name&gt;</code> for classes, <code>urn:ckp:&lt;project&gt;/prop/&lt;name&gt;</code> for properties, <code>urn:ckp:&lt;project&gt;/shape/&lt;Name&gt;</code> for their gates. A domain concept is addressed by what it means.</p>
+
+<div class="footer">
+  <a href="https://conceptkernel.org">conceptkernel.org</a> ·
+  <a href="https://conceptkernel.org/browse/index.html">Ontology Browser</a> ·
+  <a href="https://github.com/styk-tv/pgCK">runtime source</a> ·
+  Concept Kernel Protocol — the vocabulary is enforced, not merely published.
+</div>
+
+</div>
+</body>
+</html>
