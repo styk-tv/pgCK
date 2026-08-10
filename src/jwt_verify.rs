@@ -265,7 +265,10 @@ impl AuthConfig {
 pub enum Admission {
     /// `exp` = the verified token's expiry, carried so the minted user-JWT can be
     /// bounded by the credential that earned it (IDENTITY-PATH §5.3).
-    Verified { sub: String, exp: i64 },
+    Verified {
+        sub: String,
+        exp: i64,
+    },
     Anonymous,
 }
 

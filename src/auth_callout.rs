@@ -402,7 +402,13 @@ mod tests {
     #[test]
     fn verified_pub_grant_is_scoped_to_the_connections_own_identity() {
         let sub = "some-verified-sub"; // synthetic — never a captured identity
-        let p = permissions_for(&Admission::Verified { sub: sub.into(), exp: 2_000_000_000 }, &kv());
+        let p = permissions_for(
+            &Admission::Verified {
+                sub: sub.into(),
+                exp: 2_000_000_000,
+            },
+            &kv(),
+        );
         assert_eq!(
             p.pub_allow,
             vec![format!("input.kernel.pgCK.id.{sub}.action.>")]
@@ -418,7 +424,13 @@ mod tests {
     fn grant_is_derived_per_kernel_not_a_pgck_literal() {
         let sub = "u-1";
         let kernels = vec!["demo".to_string(), "Dictionary".to_string()];
-        let p = permissions_for(&Admission::Verified { sub: sub.into(), exp: 2_000_000_000 }, &kernels);
+        let p = permissions_for(
+            &Admission::Verified {
+                sub: sub.into(),
+                exp: 2_000_000_000,
+            },
+            &kernels,
+        );
         // publish: one identity-scoped input subject PER kernel, none literal-pgCK
         assert_eq!(
             p.pub_allow,
@@ -458,7 +470,13 @@ mod tests {
     // than silently falling back to a `pgCK` literal.
     #[test]
     fn empty_kernel_set_grants_nothing_kernel_scoped() {
-        let p = permissions_for(&Admission::Verified { sub: "u".into(), exp: 2_000_000_000 }, &[]);
+        let p = permissions_for(
+            &Admission::Verified {
+                sub: "u".into(),
+                exp: 2_000_000_000,
+            },
+            &[],
+        );
         assert!(p.pub_allow.is_empty());
         // only the kernel-independent inbox remains for a verified connection
         assert_eq!(p.sub_allow, vec![INBOX_SUBJECT.to_string()]);
@@ -550,7 +568,13 @@ mod tests {
     fn user_jwt_is_signed_by_account_and_well_formed() {
         let account = KeyPair::new_account();
         let sub = "some-verified-sub"; // synthetic — never a real account name
-        let perms = permissions_for(&Admission::Verified { sub: sub.into(), exp: 2_000_000_000 }, &kv());
+        let perms = permissions_for(
+            &Admission::Verified {
+                sub: sub.into(),
+                exp: 2_000_000_000,
+            },
+            &kv(),
+        );
         let jwt = build_user_jwt(
             "UXYZ",
             &format!("urn:ckp:participant:{sub}"),
@@ -581,8 +605,15 @@ mod tests {
     fn anonymous_user_jwt_denies_publish() {
         let account = KeyPair::new_account();
         let perms = permissions_for(&Admission::Anonymous, &kv());
-        let jwt =
-            build_user_jwt("UXYZ", "urn:ckp:participant:anon", &perms, &account, 1, None).expect("mint");
+        let jwt = build_user_jwt(
+            "UXYZ",
+            "urn:ckp:participant:anon",
+            &perms,
+            &account,
+            1,
+            None,
+        )
+        .expect("mint");
         let claims = decode_claims(&jwt).unwrap();
         assert_eq!(claims["nats"]["pub"]["deny"][0], ">");
     }
@@ -613,8 +644,15 @@ mod tests {
     fn user_jwt_audience_is_the_global_account() {
         let account = KeyPair::new_account();
         let perms = permissions_for(&Admission::Anonymous, &kv());
-        let jwt =
-            build_user_jwt("UXYZ", "urn:ckp:participant:anon", &perms, &account, 1, None).expect("mint");
+        let jwt = build_user_jwt(
+            "UXYZ",
+            "urn:ckp:participant:anon",
+            &perms,
+            &account,
+            1,
+            None,
+        )
+        .expect("mint");
         let claims = decode_claims(&jwt).unwrap();
         assert_eq!(claims["aud"], "$G");
     }
@@ -627,8 +665,15 @@ mod tests {
     fn user_jwt_carries_no_issuer_account_in_config_mode() {
         let account = KeyPair::new_account();
         let perms = permissions_for(&Admission::Anonymous, &kv());
-        let jwt =
-            build_user_jwt("UXYZ", "urn:ckp:participant:anon", &perms, &account, 1, None).expect("mint");
+        let jwt = build_user_jwt(
+            "UXYZ",
+            "urn:ckp:participant:anon",
+            &perms,
+            &account,
+            1,
+            None,
+        )
+        .expect("mint");
         let claims = decode_claims(&jwt).unwrap();
         assert!(
             claims["nats"].get("issuer_account").is_none(),
@@ -667,8 +712,7 @@ mod tests {
 
         let now = 1_700_000_000_i64;
         let token_exp = now + 300; // a short-lived credential
-        let claims =
-            json!({"iss":issuer,"aud":audience,"sub":"exp-sub","iat":now,"exp":token_exp});
+        let claims = json!({"iss":issuer,"aud":audience,"sub":"exp-sub","iat":now,"exp":token_exp});
         let token = sign_realm_jwt(&claims, kid, &realm);
 
         let req = fake_request_jwt("UCONN", "NSERVER", Some(&token));
