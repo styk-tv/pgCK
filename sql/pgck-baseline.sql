@@ -307,6 +307,8 @@ INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane) VALUES
   -- and sealed as a ckp:Affordance on the bench so it is declared as well as
   -- dispatchable, rather than growing the gap B1 measured (pgCK#56).
   ('pgCK','surface.check',       'input.kernel.pgCK.action.surface.check',       'instance'),
+  ('pgCK','integrity.check',     'input.kernel.pgCK.action.integrity.check',     'instance'),
+  ('pgCK','authority.mine',      'input.kernel.pgCK.action.authority.mine',      'instance'),
   ('pgCK','instance.create',      'input.kernel.pgCK.action.instance.create',      'instance'),
   ('pgCK','instance.update',      'input.kernel.pgCK.action.instance.update',      'instance'),
   ('pgCK','instance.link',        'input.kernel.pgCK.action.instance.link',        'instance'),
@@ -1969,6 +1971,177 @@ BEGIN
 END;
 $function$
 ;
+CREATE OR REPLACE FUNCTION ckp.integrity_check(p_project text DEFAULT NULL)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  N      text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_proj text := COALESCE(p_project, NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  v_comp int;
+  v_giri text;
+  v_find jsonb := '[]'::jsonb;
+  v_total int; v_unattr int; v_vac int; v_vac_new int;
+  r record;
+BEGIN
+  v_comp := ckp._composed_shapes(v_proj);
+  SELECT iri INTO v_giri FROM pgrdf._pgrdf_graphs WHERE graph_id = v_comp;
+
+  SELECT count(*) INTO v_total FROM ckp.instances;
+
+  -- 1. ATTRIBUTION over sealed rows. InstanceShape requires createdBy; a stored
+  -- row without it predates 0.4.33 or bypassed the seal. Named, not assumed.
+  SELECT count(*) INTO v_unattr FROM ckp.instances
+   WHERE NOT (body ? (N||'createdBy'));
+  IF v_unattr > 0 THEN
+    v_find := v_find || jsonb_build_array(
+      v_unattr||' sealed row(s) carry no ckp:createdBy — unattributable work (pre-0.4.33 seals)');
+  END IF;
+
+  -- 2. VACUOUS SEALS. conformsToShape is omitted rather than invented when no
+  -- shape targeted the candidate, so its absence IS the vacuity signal.
+  -- Pre-governance rows (sealedAtEpoch 0) are SCARS: sealed before the root was in
+  -- force, unfixable by construction (nothing is ever unsealed), and legitimate
+  -- history under the S5 ruling — fence, never backfill. They are reported under
+  -- `historical`, NOT as findings: a check that can never go green trains its
+  -- reader to ignore it, which is how a real defect gets missed. A vacuous seal at
+  -- epoch >= 1 is a live defect and IS a finding.
+  SELECT count(*) INTO v_vac FROM ckp.instances
+   WHERE NOT (body ? (N||'conformsToShape'))
+     AND COALESCE((body->>(N||'sealedAtEpoch'))::int, 0) = 0;
+  SELECT count(*) INTO v_vac_new FROM ckp.instances
+   WHERE NOT (body ? (N||'conformsToShape'))
+     AND COALESCE((body->>(N||'sealedAtEpoch'))::int, 0) > 0;
+  IF v_vac_new > 0 THEN
+    v_find := v_find || jsonb_build_array(
+      v_vac_new||' row(s) sealed AT epoch >= 1 carry no ckp:conformsToShape — they passed a gate '||
+      'that targeted nothing. Post-adoption vacuity is a defect, not history.');
+  END IF;
+
+  -- 3. G-1 PROPER: cross-node references the gate cannot check. Each is reported
+  -- with its subject so the finding is actionable, never a bare count.
+  FOR r IN
+    SELECT i.id, i.body->>(N||'derivedBy') AS ref FROM ckp.instances i
+     WHERE i.body->>'type' = N||'Affordance' AND i.body ? (N||'derivedBy')
+       AND NOT EXISTS (SELECT 1 FROM ckp.instances m
+                        WHERE m.body->>'type' = N||'Materialization'
+                          AND m.body->>'@id' = i.body->>(N||'derivedBy'))
+       AND NOT EXISTS (SELECT 1 FROM ckp.instances s
+                        WHERE s.body->>'type' = N||'Supersession'
+                          AND s.body->>(N||'supersedes') = i.body->>'@id')
+  LOOP
+    v_find := v_find || jsonb_build_array(
+      'DANGLING derivedBy: affordance '||r.id||' names '||r.ref||' — no sealed Materialization. '||
+      'The root says a hand-registered action cannot hide; body locality means the gate cannot enforce it.');
+  END LOOP;
+
+  FOR r IN
+    SELECT i.id, i.body->>(N||'inShape') AS ref FROM ckp.instances i
+     WHERE i.body->>'type' = N||'Affordance' AND i.body ? (N||'inShape')
+       AND ckp._affordance_schema(i.body->>(N||'inShape'), v_comp) IS NULL
+       -- withdrawal is a sealed act (Supersession), never a delete: a superseded
+       -- affordance is out of force and must not keep raising.
+       AND NOT EXISTS (SELECT 1 FROM ckp.instances s
+                        WHERE s.body->>'type' = N||'Supersession'
+                          AND s.body->>(N||'supersedes') = i.body->>'@id')
+  LOOP
+    v_find := v_find || jsonb_build_array(
+      'UNRESOLVABLE inShape: affordance '||r.id||' names '||r.ref||' — not in the composed surface, '||
+      'so no input contract can be derived for it.');
+  END LOOP;
+
+  FOR r IN
+    SELECT i.id, i.body->>(N||'adopts') AS ref FROM ckp.instances i
+     WHERE i.body->>'type' = N||'Adoption' AND i.body ? (N||'adopts')
+       AND NOT EXISTS (SELECT 1 FROM ckp.instances m
+                        WHERE m.body->>'type' = N||'Module'
+                          AND m.body->>'@id' = i.body->>(N||'adopts'))
+  LOOP
+    v_find := v_find || jsonb_build_array(
+      'ADOPTION without a sealed Module: '||r.id||' adopts '||r.ref||' — the digest it claims to '||
+      'pin is not on the ledger.');
+  END LOOP;
+
+  -- 4. The §4.5 worked examples: a Grant must target an Organ, a Membership must
+  -- hold a Role. Zero rows today; the check exists so the first wrong one is seen.
+  FOR r IN
+    SELECT i.id, i.body->>(N||'permTarget') AS ref FROM ckp.instances i
+     WHERE i.body->>'type' = N||'Grant' AND i.body ? (N||'permTarget')
+       AND NOT EXISTS (SELECT 1 FROM ckp.instances o
+                        WHERE o.body->>'@id' = i.body->>(N||'permTarget')
+                          AND o.body->>'type' IN (N||'Organ', N||'CK', N||'TOOL', N||'DATA'))
+  LOOP
+    v_find := v_find || jsonb_build_array('GRANT targets a non-Organ: '||r.id||' -> '||r.ref);
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'ok', true, 'kernel', v_proj,
+    'sealed_rows', v_total,
+    'unattributed', v_unattr,
+    'historical', jsonb_build_object('pre_governance_vacuous_seals', v_vac,
+      'note', 'sealed before the root was in force; unfixable and legitimate — fence, never backfill'),
+    'vacuous_seals_live', v_vac_new,
+    'findings', v_find,
+    'healthy', jsonb_array_length(v_find) = 0);
+END;
+$function$
+;
+CREATE OR REPLACE FUNCTION ckp.authority_of(p_participant text DEFAULT NULL)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  N     text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_who text := COALESCE(p_participant, NULLIF(current_setting('ckp.requester', true), ''));
+  v_anon boolean := v_who IS NULL;
+  v_mem jsonb; v_grants jsonb;
+BEGIN
+  -- Anonymous is a TIER, not an identity: nothing durable accretes to it
+  -- (persona spec PR1), so it has no chain to traverse and saying so is the
+  -- answer — not an empty list that reads like "checked and found none".
+  IF v_anon THEN
+    RETURN jsonb_build_object('ok', true, 'identity', NULL, 'tier', 'anonymous',
+      'memberships', '[]'::jsonb, 'grants', '[]'::jsonb,
+      'note', 'anonymous tier: no verified identity, so no authority chain exists to resolve. '||
+              'Transport grants (events-only, no publish) are minted at admission and are not '||
+              'readable here — see SPEC.PGCK.IDENTITY-PATH.');
+  END IF;
+
+  SELECT jsonb_agg(jsonb_build_object('membership', m.body->>'@id',
+                                      'memberOf',  m.body->>(N||'memberOf'),
+                                      'holdsRole', m.body->>(N||'holdsRole')))
+    INTO v_mem
+  FROM ckp.instances m
+  WHERE m.body->>'type' = N||'Membership' AND m.body->>(N||'memberIs') = v_who;
+
+  SELECT jsonb_agg(jsonb_build_object('grant', g.body->>'@id',
+                                      'permTarget', g.body->>(N||'permTarget'),
+                                      'permission', g.body->>(N||'permission')))
+    INTO v_grants
+  FROM ckp.instances g
+  WHERE g.body->>'type' = N||'Grant'
+    AND g.body->>(N||'grantedVia') IN (
+      SELECT r.body->>'@id' FROM ckp.instances r
+       WHERE r.body->>'type' = N||'Role'
+         AND r.body->>'@id' IN (SELECT m.body->>(N||'holdsRole') FROM ckp.instances m
+                                 WHERE m.body->>'type' = N||'Membership'
+                                   AND m.body->>(N||'memberIs') = v_who));
+
+  RETURN jsonb_build_object('ok', true, 'identity', v_who, 'tier', 'verified',
+    'memberships', COALESCE(v_mem, '[]'::jsonb),
+    'grants', COALESCE(v_grants, '[]'::jsonb),
+    'note', CASE WHEN v_mem IS NULL
+      THEN 'no sealed Membership for this identity — the authority chain is EMPTY, which is '||
+           'not the same as unchecked. Dispatch is currently governed by the transport tier '||
+           'and the role floor, not by this chain.'
+      ELSE NULL END);
+END;
+$function$
+;
 CREATE OR REPLACE FUNCTION ckp.dispatch(p_verb text, p_payload jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -2075,6 +2248,15 @@ BEGIN
   -- and legitimate drift exists. Findings name what was measured; empty = pass.
   WHEN 'surface.check' THEN
     res := ckp.surface_check(v_proj);
+
+  -- B3: the store-level G-1 audit — the cross-node integrity body locality puts
+  -- beyond the instance gate (§4.5). B1a: authority resolved by traversal, with
+  -- an empty chain reported AS empty (persona spec §3).
+  WHEN 'integrity.check' THEN
+    res := ckp.integrity_check(v_proj);
+
+  WHEN 'authority.mine' THEN
+    res := ckp.authority_of(NULL);
 
   WHEN 'affordances' THEN
     -- B1 (pgCK#56): derived from SEALED ckp:Affordance instances of THIS kernel,
