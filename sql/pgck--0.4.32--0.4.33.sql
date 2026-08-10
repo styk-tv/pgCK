@@ -97,7 +97,7 @@ BEGIN
   SELECT epoch INTO v_ep FROM ckp.kernel_epoch WHERE kernel = p_project;
   v_out := v_out || jsonb_build_object(N||'sealedAtEpoch', to_jsonb(COALESCE(v_ep,0)));
 
-  -- conformsToShape — the declared shape targeting this type, resolved from the
+  -- conformsToShape — the declared shape that targets this type, resolved from the
   -- same graph the gate validates against. Absent => omitted rather than invented.
   IF p_shapes_graph IS NOT NULL THEN
     SELECT iri INTO v_giri FROM pgrdf._pgrdf_graphs WHERE graph_id = p_shapes_graph;
@@ -176,7 +176,6 @@ CREATE OR REPLACE FUNCTION ckp.seal(p_instance_id text, p_body jsonb)
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  N        TEXT := 'https://conceptkernel.org/ontology/v3.11/core#';
   v_core   INT := (SELECT v::int FROM ckp.config WHERE k='core_graph_id');
   v_kgraph INT := (SELECT v::int FROM ckp.config WHERE k='kernel_graph_id');
   v_identity_key TEXT := COALESCE(
@@ -196,6 +195,7 @@ DECLARE
   v_display TEXT;
   v_email  TEXT;
   v_participant TEXT;
+  N        TEXT := 'https://conceptkernel.org/ontology/v3.11/core#';
   v_stamps JSONB := '{}'::jsonb;
 BEGIN
   IF v_type IS NULL THEN
