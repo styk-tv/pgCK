@@ -918,8 +918,12 @@ $function$
 -- sealedAtEpoch (the kernel's epoch at seal), conformsToShape (the declared
 -- shape targeting the type, resolved from the SAME graph the gate validates
 -- against; absent => omitted rather than invented).
-CREATE OR REPLACE FUNCTION ckp._derived_stamp_ttl(p_subj text, p_type text, p_project text, p_participant text, p_shapes_graph integer)
- RETURNS text
+-- #59: ONE derivation, TWO renderings. Deriving the four stamps separately for
+-- the gate (Turtle) and the store (JSON) is the two-registries defect class this
+-- substrate has already shipped twice; two producers of the same value drift,
+-- and the drift is invisible because each side validates alone.
+CREATE OR REPLACE FUNCTION ckp._derived_stamps(p_subj text, p_type text, p_project text, p_participant text, p_shapes_graph integer)
+ RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'ckp', 'public', 'pg_temp'
@@ -928,22 +932,25 @@ DECLARE
   N     text := 'https://conceptkernel.org/ontology/v3.11/core#';
   v_ep  int;
   v_shp text;
-  v_ttl text := '';
   v_giri text;
+  v_out jsonb := '{}'::jsonb;
 BEGIN
-  IF p_subj IS NULL OR p_type IS NULL THEN RETURN ''; END IF;
+  IF p_subj IS NULL OR p_type IS NULL THEN RETURN '{}'::jsonb; END IF;
 
   -- producedBy — the kernel that processed this instance. Server-derived.
-  v_ttl := v_ttl || '<'||p_subj||'> <'||N||'producedBy> <urn:ckp:'||p_project||'/kernel/ck> .'||chr(10);
+  v_out := v_out || jsonb_build_object(N||'producedBy', 'urn:ckp:'||p_project||'/kernel/ck');
 
-  -- createdBy — the verified participant, already resolved. Never from the payload.
+  -- createdBy — the resolved participant. Never from the payload; the caller's
+  -- own claim was stripped before this ran.
   IF p_participant IS NOT NULL THEN
-    v_ttl := v_ttl || '<'||p_subj||'> <'||N||'createdBy> <'||p_participant||'> .'||chr(10);
+    v_out := v_out || jsonb_build_object(N||'createdBy', p_participant);
   END IF;
 
-  -- sealedAtEpoch — the producing kernel's epoch at seal.
+  -- sealedAtEpoch — the producing kernel's epoch at seal. Carried as a JSON
+  -- number so a re-projection of the stored body yields xsd:integer, which is
+  -- what InstanceShape declares.
   SELECT epoch INTO v_ep FROM ckp.kernel_epoch WHERE kernel = p_project;
-  v_ttl := v_ttl || '<'||p_subj||'> <'||N||'sealedAtEpoch> '||COALESCE(v_ep,0)::text||' .'||chr(10);
+  v_out := v_out || jsonb_build_object(N||'sealedAtEpoch', to_jsonb(COALESCE(v_ep,0)));
 
   -- conformsToShape — the declared shape that targets this type, resolved from the
   -- same graph the gate validates against. Absent => omitted rather than invented.
@@ -954,10 +961,51 @@ BEGIN
         SELECT ?s WHERE { GRAPH <%s> { ?s sh:targetClass <%s> } } LIMIT 1
       $q$, v_giri, p_type)) j;
     IF v_shp IS NOT NULL THEN
-      v_ttl := v_ttl || '<'||p_subj||'> <'||N||'conformsToShape> <'||v_shp||'> .'||chr(10);
+      v_out := v_out || jsonb_build_object(N||'conformsToShape', v_shp);
     END IF;
   END IF;
+  RETURN v_out;
+END;
+$function$
+;
+CREATE OR REPLACE FUNCTION ckp._stamps_to_ttl(p_subj text, p_stamps jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  N     text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_ttl text := '';
+BEGIN
+  IF p_subj IS NULL OR p_stamps IS NULL OR p_stamps = '{}'::jsonb THEN RETURN ''; END IF;
+
+  IF p_stamps ? (N||'producedBy') THEN
+    v_ttl := v_ttl || '<'||p_subj||'> <'||N||'producedBy> <'||(p_stamps->>(N||'producedBy'))||'> .'||chr(10);
+  END IF;
+  IF p_stamps ? (N||'createdBy') THEN
+    v_ttl := v_ttl || '<'||p_subj||'> <'||N||'createdBy> <'||(p_stamps->>(N||'createdBy'))||'> .'||chr(10);
+  END IF;
+  IF p_stamps ? (N||'sealedAtEpoch') THEN
+    v_ttl := v_ttl || '<'||p_subj||'> <'||N||'sealedAtEpoch> '||(p_stamps->>(N||'sealedAtEpoch'))||' .'||chr(10);
+  END IF;
+  IF p_stamps ? (N||'conformsToShape') THEN
+    v_ttl := v_ttl || '<'||p_subj||'> <'||N||'conformsToShape> <'||(p_stamps->>(N||'conformsToShape'))||'> .'||chr(10);
+  END IF;
   RETURN v_ttl;
+END;
+$function$
+;
+CREATE OR REPLACE FUNCTION ckp._derived_stamp_ttl(p_subj text, p_type text, p_project text, p_participant text, p_shapes_graph integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+BEGIN
+  RETURN ckp._stamps_to_ttl(
+    p_subj,
+    ckp._derived_stamps(p_subj, p_type, p_project, p_participant, p_shapes_graph));
 END;
 $function$
 ;
@@ -2939,6 +2987,8 @@ DECLARE
   v_display TEXT;
   v_email  TEXT;
   v_participant TEXT;
+  N        TEXT := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_stamps JSONB := '{}'::jsonb;
 BEGIN
   IF v_type IS NULL THEN
     RAISE EXCEPTION 'ckp.seal: body has no "type"';
@@ -2976,6 +3026,16 @@ BEGIN
     p_body := jsonb_set(p_body, '{participant_email}', to_jsonb(v_email), true);
   END IF;
 
+  -- 0b. #59: STRIP any caller-asserted substrate stamp. All four are maxCount 1
+  -- in ckp:InstanceShape, so a body carrying its own createdBy was projected
+  -- alongside the derived one and refused on MaxCountConstraintComponent — a
+  -- denial any client could trigger, reading as a shape defect rather than as a
+  -- rejected claim. §4.3 says these are server-derived and claim-ignoring;
+  -- removing them here is what makes that structural instead of conventional.
+  p_body := p_body - ARRAY[
+    N||'producedBy', N||'createdBy', N||'sealedAtEpoch', N||'conformsToShape'
+  ];
+
   -- 1. VALIDATE the payload against the COMPOSED shapes graph (P0-B, pgCK#25).
   --
   -- Was: a hand-rolled SPARQL scan for sh:minCount against the KERNEL graph only.
@@ -3007,9 +3067,14 @@ BEGIN
     -- minCount 1, but were derived AFTER this gate — so on the v3.11 root every
     -- Instance-classed seal failed by construction. Derive them INTO the
     -- candidate the gate validates: what is checked is what will be stamped.
+    --
+    -- #59: derive ONCE, here, and keep the jsonb. The Turtle below and the
+    -- stored body in step 2 are two renderings of this single value, so the
+    -- gate and the store cannot disagree about what was stamped.
+    v_stamps := ckp._derived_stamps(p_instance_id, v_type, v_project, v_participant, v_comp);
     v_cand := ckp._body_to_ttl(p_body, p_instance_id, v_comp)
               || ckp._parent_closure_ttl(v_type, p_instance_id, v_comp)
-              || ckp._derived_stamp_ttl(p_instance_id, v_type, v_project, v_participant, v_comp);
+              || ckp._stamps_to_ttl(p_instance_id, v_stamps);
     v_report := ckp.validate_report(v_cand, v_comp);
     IF (v_report->>'conforms') IS DISTINCT FROM 'true' THEN
       RAISE EXCEPTION 'ckp.seal: payload fails the composed shape gate: %',
@@ -3018,6 +3083,13 @@ BEGIN
   END;
 
   -- 2. MATERIALIZE durable instance.
+  --
+  -- #59: the stamps join the body BEFORE the digest. Merged last so they win
+  -- over anything of the same name (nothing can, after 0b) and so v_sha — and
+  -- therefore the HMAC, the ledger, the proof and ckp.verify()'s recompute —
+  -- covers the provenance. Before this the attestation said "this body was
+  -- sealed"; it now says "by this participant, under this shape, at this epoch".
+  p_body := p_body || v_stamps;
   v_sha := encode(digest(convert_to(p_body::text,'UTF8'),'sha256'),'hex');
   v_sig := encode(hmac(v_sha, v_identity_key, 'sha256'),'hex');
   SELECT max(seq) INTO v_prev FROM ckp.ledger;
