@@ -475,39 +475,48 @@ CREATE OR REPLACE PROCEDURE ckp.import_module(IN p_module text, IN p_project tex
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $procedure$
 DECLARE
-  v_known_modules text[] := ARRAY[
-    'task', 'goal', 'affordance', 'delegation',
-    'delivery', 'proof', 'validate'
-  ];
+  -- The five v3.8 modules are RETIRED (see header): affordance, delegation and
+  -- proof are superseded by the root's own declarations; delivery and validate
+  -- were cut by ruling. Only the board pair remains known, and it must still pass
+  -- the namespace guard below.
+  v_known_modules text[] := ARRAY['task', 'goal'];
+  v_core_ns text := 'https://conceptkernel.org/ontology/v3.11/core#';
   v_path text;
   v_iri  text := format('urn:ckp:%s/kernel/board', p_project);
   v_g    int;
   v_ttl  text;
+  v_minted text;
 BEGIN
   IF NOT (p_module = ANY (v_known_modules)) THEN
-    RAISE EXCEPTION 'ckp.import_module: unknown module %; known: %', p_module, v_known_modules;
+    RAISE EXCEPTION 'ckp.import_module: unknown module %; known: %. The v3.8 modules '
+      '(affordance, delegation, delivery, proof, validate) are RETIRED — their terms are '
+      'either declared by the v3.11 root itself or were cut by ruling.', p_module, v_known_modules;
   END IF;
 
   v_path := format('%s/%s.ttl', p_root, p_module);
+  v_ttl  := pg_read_file(v_path);
+
+  -- R7, NORMATIVE, enforced at the door: an extension MUST NOT mint terms into the
+  -- core namespace. Checked on the FILE TEXT before a single triple is parsed, so a
+  -- violating module can never reach a project board graph. E3 — seven
+  -- undeclared predicates live in the core namespace — is the defect this prevents.
+  SELECT string_agg(DISTINCT m[1], ', ')
+    INTO v_minted
+  FROM regexp_matches(v_ttl, '(?:^|[^A-Za-z0-9_])(ckp:[A-Za-z_][A-Za-z0-9_]*)\s+a\s+(?:rdfs:Class|owl:Class|owl:ObjectProperty|owl:DatatypeProperty|sh:NodeShape)', 'g') m;
+  IF v_minted IS NOT NULL THEN
+    RAISE EXCEPTION E'ckp.import_module: module "%" mints term(s) into the CORE namespace (%): %\n'
+      'R7 is normative — an extension MUST NOT mint terms into the core namespace, because a '
+      'project surface would then carry declarations the published root does not make, and its '
+      'digest claim would be false. Re-issue the module under domain naming '
+      '(urn:ckp:<project>/type|prop|shape/<Name>) or its own module namespace, then adopt it '
+      'by digest like any other module.', p_module, v_core_ns, v_minted;
+  END IF;
 
   -- One board graph per project; allocate once (pgrdf.add_graph is get-or-create on IRI).
   SELECT pgrdf.add_graph(v_iri) INTO v_g;
-
-  -- Idempotent re-load: parse the module into the board graph. parse_turtle
-  -- with same subjects is additive in pgRDF; for true idempotence the Rust
-  -- side may want to clear the module's own triples first. Leaving as-is in
-  -- the draft until the seal-hook implementation lands.
-  v_ttl := pg_read_file(v_path);
-  PERFORM pgrdf.parse_turtle(v_ttl, v_g, format('urn:ckp:%s/module/%s#', p_project, p_module));
+  PERFORM pgrdf.parse_turtle(v_ttl, v_g, v_iri || '#');
   PERFORM pgrdf.materialize(v_g);
-  -- Ring repair (#48, same pattern as ckp.boot): add_graph created the
-  -- per-graph quad table owned by the CALLING superuser; the ring-1 definer
-  -- set (e.g. _composed_shapes at first seal) reads it as ck_substrate.
-  -- Re-assert the substrate floor over pgrdf so dynamically created graphs
-  -- are covered. (Lasting fix: grant-at-creation inside pgrdf.add_graph —
-  -- the filed engine ask.)
-  GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
-  GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
+  RAISE NOTICE 'ckp.import_module: % imported into %', p_module, v_iri;
 END;
 $procedure$
 ;
