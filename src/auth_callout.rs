@@ -83,7 +83,7 @@ fn subject_token(sub: &str) -> String {
 /// defaults the set from config, so this is the fail-closed floor, not the norm.
 pub fn permissions_for(admission: &Admission, kernels: &[String]) -> UserPermissions {
     match admission {
-        Admission::Verified { sub } => {
+        Admission::Verified { sub, .. } => {
             let token = subject_token(sub);
             let mut pub_allow = Vec::with_capacity(kernels.len());
             let mut sub_allow = Vec::with_capacity(kernels.len() * 2 + 1);
@@ -194,19 +194,24 @@ fn encode_and_sign(mut claims: Value, signer: &KeyPair) -> Result<String, String
 /// Mint a signed NATS user-JWT for `user_nkey`, issued by `account`, carrying the
 /// governance-derived `perms` and the derived participant `name` (informational —
 /// the authoritative identity binding to `ckp.requester` is subject-scoped, task #20).
+///
+/// `exp` bounds the admission: for a verified connection it is the OIDC token's own
+/// expiry, inherited so the broker terminates the connection when the credential that
+/// earned it expires. `None` (anonymous) mints without exp — no credential to outlive.
 pub fn build_user_jwt(
     user_nkey: &str,
     name: &str,
     perms: &UserPermissions,
     account: &KeyPair,
     iat: i64,
+    exp: Option<i64>,
 ) -> Result<String, String> {
     let pub_perm = if perms.pub_allow.is_empty() {
         json!({ "deny": [">"] })
     } else {
         json!({ "allow": perms.pub_allow })
     };
-    let claims = json!({
+    let mut claims = json!({
         "iat": iat,
         "iss": account.public_key(),
         "sub": user_nkey,
@@ -228,6 +233,11 @@ pub fn build_user_jwt(
             "version": 2
         }
     });
+    if let Some(exp) = exp {
+        if let Some(obj) = claims.as_object_mut() {
+            obj.insert("exp".to_string(), json!(exp));
+        }
+    }
     encode_and_sign(claims, account)
 }
 
@@ -287,7 +297,7 @@ pub fn handle_request(
     // The token itself is NEVER logged; only the outcome and whether one was presented.
     let presented = req.auth_token.is_some();
     match &admission {
-        Admission::Verified { sub } => {
+        Admission::Verified { sub, .. } => {
             eprintln!("pgck auth-callout: ADMIT verified sub={sub} (token presented: {presented})")
         }
         Admission::Anonymous if !admit_anonymous => eprintln!(
@@ -317,10 +327,19 @@ pub fn handle_request(
 
     let perms = permissions_for(&admission, kernels);
     let name = match &admission {
-        Admission::Verified { sub } => format!("urn:ckp:participant:{sub}"),
+        Admission::Verified { sub, .. } => format!("urn:ckp:participant:{sub}"),
         Admission::Anonymous => "urn:ckp:participant:anon".to_string(),
     };
-    let user_jwt = build_user_jwt(&req.user_nkey, &name, &perms, account, now_unix);
+    // Admission is bounded by the credential that earned it (IDENTITY-PATH §5.3): a
+    // verified connection's user-JWT inherits the token's exp, so the broker itself
+    // terminates the connection when the credential expires — a client that never
+    // refreshes cannot keep its grants on socket lifetime alone. Anonymous carries no
+    // exp: there is no credential to outlive, and the tier holds no publish grants.
+    let exp = match &admission {
+        Admission::Verified { exp, .. } => Some(*exp),
+        Admission::Anonymous => None,
+    };
+    let user_jwt = build_user_jwt(&req.user_nkey, &name, &perms, account, now_unix, exp);
     build_response(&req.user_nkey, &req.server_id, account, user_jwt, now_unix).unwrap_or_default()
 }
 
@@ -366,7 +385,7 @@ mod tests {
     #[test]
     fn verified_pub_grant_is_scoped_to_the_connections_own_identity() {
         let sub = "some-verified-sub"; // synthetic — never a captured identity
-        let p = permissions_for(&Admission::Verified { sub: sub.into() }, &kv());
+        let p = permissions_for(&Admission::Verified { sub: sub.into(), exp: 2_000_000_000 }, &kv());
         assert_eq!(
             p.pub_allow,
             vec![format!("input.kernel.pgCK.id.{sub}.action.>")]
@@ -382,7 +401,7 @@ mod tests {
     fn grant_is_derived_per_kernel_not_a_pgck_literal() {
         let sub = "u-1";
         let kernels = vec!["demo".to_string(), "Dictionary".to_string()];
-        let p = permissions_for(&Admission::Verified { sub: sub.into() }, &kernels);
+        let p = permissions_for(&Admission::Verified { sub: sub.into(), exp: 2_000_000_000 }, &kernels);
         // publish: one identity-scoped input subject PER kernel, none literal-pgCK
         assert_eq!(
             p.pub_allow,
@@ -422,7 +441,7 @@ mod tests {
     // than silently falling back to a `pgCK` literal.
     #[test]
     fn empty_kernel_set_grants_nothing_kernel_scoped() {
-        let p = permissions_for(&Admission::Verified { sub: "u".into() }, &[]);
+        let p = permissions_for(&Admission::Verified { sub: "u".into(), exp: 2_000_000_000 }, &[]);
         assert!(p.pub_allow.is_empty());
         // only the kernel-independent inbox remains for a verified connection
         assert_eq!(p.sub_allow, vec![INBOX_SUBJECT.to_string()]);
@@ -514,7 +533,7 @@ mod tests {
     fn user_jwt_is_signed_by_account_and_well_formed() {
         let account = KeyPair::new_account();
         let sub = "some-verified-sub"; // synthetic — never a real account name
-        let perms = permissions_for(&Admission::Verified { sub: sub.into() }, &kv());
+        let perms = permissions_for(&Admission::Verified { sub: sub.into(), exp: 2_000_000_000 }, &kv());
         let jwt = build_user_jwt(
             "UXYZ",
             &format!("urn:ckp:participant:{sub}"),
@@ -546,7 +565,7 @@ mod tests {
         let account = KeyPair::new_account();
         let perms = permissions_for(&Admission::Anonymous, &kv());
         let jwt =
-            build_user_jwt("UXYZ", "urn:ckp:participant:anon", &perms, &account, 1).expect("mint");
+            build_user_jwt("UXYZ", "urn:ckp:participant:anon", &perms, &account, 1, None).expect("mint");
         let claims = decode_claims(&jwt).unwrap();
         assert_eq!(claims["nats"]["pub"]["deny"][0], ">");
     }
@@ -578,7 +597,7 @@ mod tests {
         let account = KeyPair::new_account();
         let perms = permissions_for(&Admission::Anonymous, &kv());
         let jwt =
-            build_user_jwt("UXYZ", "urn:ckp:participant:anon", &perms, &account, 1).expect("mint");
+            build_user_jwt("UXYZ", "urn:ckp:participant:anon", &perms, &account, 1, None).expect("mint");
         let claims = decode_claims(&jwt).unwrap();
         assert_eq!(claims["aud"], "$G");
     }
@@ -592,7 +611,7 @@ mod tests {
         let account = KeyPair::new_account();
         let perms = permissions_for(&Admission::Anonymous, &kv());
         let jwt =
-            build_user_jwt("UXYZ", "urn:ckp:participant:anon", &perms, &account, 1).expect("mint");
+            build_user_jwt("UXYZ", "urn:ckp:participant:anon", &perms, &account, 1, None).expect("mint");
         let claims = decode_claims(&jwt).unwrap();
         assert!(
             claims["nats"].get("issuer_account").is_none(),
@@ -610,6 +629,57 @@ mod tests {
         let signing_input = format!("{}.{}", parts[0], parts[1]);
         let sig = URL_SAFE_NO_PAD.decode(parts[2]).unwrap();
         assert!(account.verify(signing_input.as_bytes(), &sig).is_ok());
+    }
+
+    // Admission is bounded by the credential that earned it (IDENTITY-PATH §5.3):
+    // the minted user-JWT INHERITS the verified token's exp, so the broker itself
+    // terminates a connection whose credential expired — a client that never
+    // refreshes cannot keep its grants on socket lifetime alone. Full round-trip
+    // through handle_request with a locally-played realm, so the assertion covers
+    // the wiring, not just the mint helper.
+    #[test]
+    fn verified_user_jwt_inherits_the_tokens_exp() {
+        let realm = fresh_ed25519();
+        let account = KeyPair::new_account();
+        let kid = "exp-test";
+        let issuer = "https://pgck-exp.invalid/realms/t"; // .invalid — never routable
+        let audience = "account";
+        let x = URL_SAFE_NO_PAD.encode(realm.verifying_key().to_bytes());
+        let jwks = json!({"keys":[{"kty":"OKP","crv":"Ed25519","kid":kid,"x":x}]}).to_string();
+        let cfg = AuthConfig::from_parts(&jwks, issuer, audience).expect("jwks parses");
+
+        let now = 1_700_000_000_i64;
+        let token_exp = now + 300; // a short-lived credential
+        let claims =
+            json!({"iss":issuer,"aud":audience,"sub":"exp-sub","iat":now,"exp":token_exp});
+        let token = sign_realm_jwt(&claims, kid, &realm);
+
+        let req = fake_request_jwt("UCONN", "NSERVER", Some(&token));
+        let resp = handle_request(&req, Some(&cfg), &account, now, true, &kv());
+        let rclaims = decode_claims(&resp).unwrap();
+        let user_jwt = rclaims["nats"]["jwt"].as_str().expect("embedded user JWT");
+        let uclaims = decode_claims(user_jwt).unwrap();
+        assert_eq!(
+            uclaims["exp"].as_i64(),
+            Some(token_exp),
+            "minted user-JWT must inherit the verified token's exp"
+        );
+    }
+
+    // The anonymous tier holds no credential to outlive (and no publish grants),
+    // so its user-JWT carries NO exp — unchanged from the pre-fix behaviour.
+    #[test]
+    fn anonymous_user_jwt_carries_no_exp() {
+        let account = KeyPair::new_account();
+        let req = fake_request_jwt("UCONN", "NSERVER", None);
+        let resp = handle_request(&req, None, &account, 1_700_000_000, true, &kv());
+        let rclaims = decode_claims(&resp).unwrap();
+        let user_jwt = rclaims["nats"]["jwt"].as_str().expect("embedded user JWT");
+        let uclaims = decode_claims(user_jwt).unwrap();
+        assert!(
+            uclaims.get("exp").is_none(),
+            "anonymous admission has no credential to inherit an exp from"
+        );
     }
 
     // ── e2e fixture emitter (cycle-6 wire proof; scripts/dev-callout-e2e.sh) ──

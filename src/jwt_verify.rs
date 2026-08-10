@@ -24,6 +24,11 @@ use std::collections::HashMap;
 pub struct VerifiedIdentity {
     pub sub: String,
     pub preferred_username: Option<String>,
+    /// The token's `exp` (unix seconds). Mandatory at verification (an absent exp is
+    /// refused as Expired), carried so admission can be bounded by it: the minted NATS
+    /// user-JWT inherits this expiry, and the broker terminates the connection when it
+    /// passes. Without it, admission outlives the credential (IDENTITY-PATH §5.3).
+    pub exp: i64,
 }
 
 /// Why a token was rejected. Every variant means: do NOT admit this identity.
@@ -89,10 +94,10 @@ pub fn verify_eddsa(
         return Err(VerifyError::WrongAudience);
     }
     // `exp` is mandatory — an absent exp is treated as expired (never admit an unbounded token).
-    match claims.get("exp").and_then(|v| v.as_i64()) {
-        Some(exp) if exp + expected.leeway_secs > expected.now_unix => {}
+    let exp = match claims.get("exp").and_then(|v| v.as_i64()) {
+        Some(exp) if exp + expected.leeway_secs > expected.now_unix => exp,
         _ => return Err(VerifyError::Expired),
-    }
+    };
     if let Some(nbf) = claims.get("nbf").and_then(|v| v.as_i64()) {
         if nbf - expected.leeway_secs > expected.now_unix {
             return Err(VerifyError::NotYetValid);
@@ -112,6 +117,7 @@ pub fn verify_eddsa(
     Ok(VerifiedIdentity {
         sub,
         preferred_username,
+        exp,
     })
 }
 
@@ -257,7 +263,9 @@ impl AuthConfig {
 /// token yields `Verified{sub}`, and that `sub` becomes the `ckp.requester` the seal path persists.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Admission {
-    Verified { sub: String },
+    /// `exp` = the verified token's expiry, carried so the minted user-JWT can be
+    /// bounded by the credential that earned it (IDENTITY-PATH §5.3).
+    Verified { sub: String, exp: i64 },
     Anonymous,
 }
 
@@ -268,7 +276,10 @@ pub enum Admission {
 pub fn callout_identity(token: Option<&str>, cfg: Option<&AuthConfig>, now_unix: i64) -> Admission {
     match (token, cfg) {
         (Some(t), Some(c)) => match c.verify(t, now_unix) {
-            Ok(id) => Admission::Verified { sub: id.sub },
+            Ok(id) => Admission::Verified {
+                sub: id.sub,
+                exp: id.exp,
+            },
             // A present-but-invalid/forged token drops to anonymous — it is NEVER admitted as the
             // identity it claims. This is the un-forgeable property at the admission boundary.
             Err(_) => Admission::Anonymous,
@@ -432,7 +443,8 @@ mod tests {
         assert_eq!(
             callout_identity(Some(&t), Some(&cfg), 9_000),
             Admission::Verified {
-                sub: "alice".into()
+                sub: "alice".into(),
+                exp: 10_000
             }
         );
     }

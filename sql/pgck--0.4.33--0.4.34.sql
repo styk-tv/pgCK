@@ -1,0 +1,24 @@
+-- pgck 0.4.33 -> 0.4.34 — admission bounded by the credential; the build carries
+-- the identity plane by default (A0 + IDENTITY-PATH §5.3).
+--
+-- NO SQL SCHEMA CHANGE. Both fixes live in the .so + the build:
+--
+--   * exp-bounded admission: the auth-callout's minted NATS user-JWT now inherits
+--     the verified OIDC token's `exp`, so the broker itself terminates a
+--     connection whose credential expired. Before this the mint carried iat only —
+--     admission had no expiry, and a client that never reconnected kept its
+--     grants for the socket's lifetime, hours after its token died. Anonymous is
+--     unchanged (no credential to outlive, no publish grants to keep).
+--
+--   * nats-client is now a DEFAULT Cargo feature (PASS-25 d-25-pgck-2 / PASS-24
+--     R1): the shared builder passes no --features, which is exactly how a .so
+--     with no auth-callout — no responder, one pgck.* GUC, every connection
+--     refused — shipped under a passing build-identity check. The identity plane
+--     is not an option; the plain variant remains buildable via
+--     --no-default-features (CI's two-variant matrix is explicit and unaffected).
+--
+-- version()/build_id() are pg_extern (compiled into the binary), so the version
+-- advance lands with the .so swap; this script exists only so
+-- ALTER EXTENSION pgck UPDATE resolves 0.4.33 -> 0.4.34. build_id() distinguishes
+-- the two binaries (SPEC.SECURITY v3.11 A5).
+SELECT 1;

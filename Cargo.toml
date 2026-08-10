@@ -1,6 +1,6 @@
 [package]
 name = "pgck"
-version = "0.4.33"
+version = "0.4.34"
 edition = "2021"
 description = "PostgreSQL Concept Kernel extension — NATS bridge + SHACL validator + materializer, in-database"
 license = "MIT"
@@ -16,11 +16,20 @@ name = "pgrx_embed_pgck"
 path = "./src/bin/pgrx_embed.rs"
 
 [features]
-# No default feature — every invocation MUST pick a PG major explicitly
+# No default PG major — every invocation MUST pick one explicitly
 # (cargo pgrx run pgN, --no-default-features --features pgN). Mirrors
 # pgRDF: pgrx's per-PG features are mutually exclusive, so a default
 # makes the wrong thing implicit.
-default = []
+#
+# nats-client IS default (A0, PASS-25 d-25-pgck-2). The identity plane —
+# auth-callout responder, JWT verifier, every pgck.* identity GUC — lives
+# behind it, so a build without it has no security floor and nothing in the
+# artifact says so. The shared builder (ck-rust-builder) passes no --features,
+# which is exactly how a capability-less .so shipped: the default is what that
+# route builds. Explicit routes are unaffected — CI's two-variant matrix and
+# compose/builder.Containerfile both pass --no-default-features (the plain
+# variant remains buildable, now opt-in rather than opt-out).
+default = ["nats-client"]
 pg14 = ["pgrx/pg14", "pgrx-tests/pg14"]
 pg15 = ["pgrx/pg15", "pgrx-tests/pg15"]
 pg16 = ["pgrx/pg16", "pgrx-tests/pg16"]
@@ -33,7 +42,7 @@ pg_test = []
 #
 # `embedded-nats` and `nats-client` are MUTUALLY EXCLUSIVE — src/lib.rs
 # emits a compile_error! when both are enabled. Pick exactly one (or
-# neither, for the default minimal build).
+# neither — via --no-default-features — for the minimal plain build).
 #
 # `embedded-nats` profile  (dev / unit tests / S3 hermetic mode):
 #   - pgCK hosts its own NATS Core server on :4222 from src/nats/server.rs
