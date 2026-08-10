@@ -85,6 +85,13 @@ pub fn tick() {
 
     #[cfg(feature = "nats-client")]
     {
+        // Callout policy (admit_anonymous + kernels) is FFI-read HERE, every tick,
+        // into the cache the responder's async thread reads — pgrx 0.19 panics on
+        // GUC reads from a non-postgres thread, and the per-tick refresh is what
+        // keeps #32's Sighup semantics without cross-thread FFI. Runs BEFORE the
+        // relay first spawns so the cache is never empty when a request arrives.
+        crate::refresh_callout_policy();
+
         CLIENT_INITIALISED.get_or_init(|| {
             let url = crate::nats_url();
             let js_stream = crate::nats_js_stream();

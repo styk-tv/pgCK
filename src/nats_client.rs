@@ -360,13 +360,18 @@ async fn run_callout(client: async_nats::Client, ctx: CalloutContext) {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
+        // Policy from the bgworker-refreshed cache — NEVER the GUCs directly:
+        // GucSetting::get() is postgres FFI, and pgrx 0.19 panics on it from a
+        // non-postgres thread (guc.rs:194). The first live request did exactly
+        // that and killed this task silently (measured on the bench, 0.4.34).
+        let (admit_anonymous, kernels) = crate::callout_policy();
         let response = crate::auth_callout::handle_request(
             request_jwt,
             ctx.auth,
             &ctx.account,
             now,
-            crate::admit_anonymous(),
-            &crate::configured_kernels(),
+            admit_anonymous,
+            &kernels,
         );
         if let Err(e) = client.publish(reply, response.into_bytes().into()).await {
             eprintln!("pgck auth-callout: response publish failed: {e}");

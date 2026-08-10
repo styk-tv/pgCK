@@ -233,9 +233,48 @@ static PGCK_KERNELS: pgrx::GucSetting<Option<std::ffi::CString>> =
     pgrx::GucSetting::<Option<std::ffi::CString>>::new(Some(c"pgCK"));
 
 /// Snapshot of `pgck.admit_anonymous` (default `true`).
+///
+/// FFI — bgworker (postgres-attached) thread ONLY. pgrx 0.19 asserts
+/// single-threaded FFI (`guc.rs:194`), and the first live callout request on the
+/// relay's async thread panicked exactly there, killing the responder task
+/// silently: every subsequent CONNECT timed out after the broker's 2s callout
+/// wait. The async side reads [`callout_policy`] instead — a cache this
+/// thread refreshes each tick, which is also what keeps #32's Sighup semantics
+/// (tighten without a restart) true.
 #[cfg(feature = "nats-client")]
 pub(crate) fn admit_anonymous() -> bool {
     PGCK_ADMIT_ANONYMOUS.get()
+}
+
+/// The callout policy cache: (admit_anonymous, kernels). Written by the bgworker
+/// thread ([`refresh_callout_policy`], each tick), read by the callout responder
+/// on the relay thread — never postgres FFI from the async side.
+#[cfg(feature = "nats-client")]
+static CALLOUT_POLICY: std::sync::RwLock<Option<(bool, Vec<String>)>> =
+    std::sync::RwLock::new(None);
+
+/// Refresh the callout policy cache from the GUCs. bgworker thread only (FFI).
+/// Called once before the relay spawns and again every tick, so a Sighup'd
+/// `pgck.admit_anonymous=false` reaches the responder within one tick interval.
+#[cfg(feature = "nats-client")]
+pub(crate) fn refresh_callout_policy() {
+    let fresh = (admit_anonymous(), configured_kernels());
+    if let Ok(mut w) = CALLOUT_POLICY.write() {
+        *w = Some(fresh);
+    }
+}
+
+/// The cached (admit_anonymous, kernels) for the responder. Thread-safe, no FFI.
+/// Before the first refresh (unreachable in practice — the bgworker refreshes
+/// before spawning the relay) it falls back to the GUC defaults: admit `true`,
+/// kernel set `["pgCK"]`.
+#[cfg(feature = "nats-client")]
+pub(crate) fn callout_policy() -> (bool, Vec<String>) {
+    CALLOUT_POLICY
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+        .unwrap_or_else(|| (true, vec!["pgCK".to_string()]))
 }
 
 /// The configured kernel set for the auth-callout grant (pgCK#30). Splits
