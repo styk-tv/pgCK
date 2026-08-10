@@ -361,6 +361,14 @@ BEGIN
   -- ck_participant only; these two were only ever granted by hand.
   GRANT  USAGE ON SCHEMA ckp TO ck_substrate;
   GRANT  USAGE ON SCHEMA ckp TO ck_drainer;
+  -- PROCEDURES (measured 2026-08-10, B2): 'ALL FUNCTIONS' does not cover
+  -- procedures, so boot/import_module/load_kernel/bootstrap_kernel kept
+  -- default PUBLIC EXECUTE on every route — mitigated only accidentally by
+  -- their pg_read_file superuser gate. Revoke PUBLIC (explicit role grants
+  -- survive a PUBLIC revoke untouched); ck_substrate keeps EXECUTE.
+  REVOKE ALL ON ALL PROCEDURES IN SCHEMA ckp FROM PUBLIC;
+  REVOKE ALL ON ALL PROCEDURES IN SCHEMA ckp FROM ck_participant;
+  GRANT  EXECUTE ON ALL PROCEDURES IN SCHEMA ckp TO ck_substrate;
 END;
 $procedure$
 ;

@@ -141,4 +141,37 @@ BEGIN
 END
 $door_0435$;
 
+CREATE OR REPLACE PROCEDURE ckp._enforce_internal_floor()
+ LANGUAGE plpgsql
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $procedure$
+BEGIN
+  -- Single idempotent statement set: applies to EVERY table/sequence currently in
+  -- schema ckp (config + dictionary now; instances/ledger/proof/outbox after
+  -- bootstrap; plans after CI-C-4). No PUBLIC; ck_substrate is the operating role.
+  REVOKE ALL ON ALL TABLES    IN SCHEMA ckp FROM PUBLIC;
+  REVOKE ALL ON ALL SEQUENCES IN SCHEMA ckp FROM PUBLIC;
+  GRANT  ALL ON ALL TABLES    IN SCHEMA ckp TO ck_substrate;
+  GRANT  ALL ON ALL SEQUENCES IN SCHEMA ckp TO ck_substrate;
+  -- Schema USAGE for the operating roles (measured missing from zero,
+  -- 2026-08-08): the ring-1 definer set runs as ck_substrate and resolves
+  -- ckp.* by name, and the outbox drain connects as ck_drainer — without
+  -- USAGE both die on a FRESH install ('permission denied for schema ckp')
+  -- while every long-lived bench works, because its grants predate the
+  -- completeness file. The completeness pass grants ckp USAGE to
+  -- ck_participant only; these two were only ever granted by hand.
+  GRANT  USAGE ON SCHEMA ckp TO ck_substrate;
+  GRANT  USAGE ON SCHEMA ckp TO ck_drainer;
+  -- PROCEDURES (measured 2026-08-10, B2): 'ALL FUNCTIONS' does not cover
+  -- procedures, so boot/import_module/load_kernel/bootstrap_kernel kept
+  -- default PUBLIC EXECUTE on every route — mitigated only accidentally by
+  -- their pg_read_file superuser gate. Revoke PUBLIC (explicit role grants
+  -- survive a PUBLIC revoke untouched); ck_substrate keeps EXECUTE.
+  REVOKE ALL ON ALL PROCEDURES IN SCHEMA ckp FROM PUBLIC;
+  REVOKE ALL ON ALL PROCEDURES IN SCHEMA ckp FROM ck_participant;
+  GRANT  EXECUTE ON ALL PROCEDURES IN SCHEMA ckp TO ck_substrate;
+END;
+$procedure$
+;
+
 CALL ckp._enforce_internal_floor();
