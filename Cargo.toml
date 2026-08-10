@@ -8,12 +8,12 @@ license = "MIT"
 [lib]
 crate-type = ["cdylib", "lib"]
 
-# pgrx 0.12+ requires a small bin target used by `cargo pgrx package`
-# during schema generation and by `cargo pgrx test`. See
-# src/bin/pgrx_embed.rs. Mirrors pgRDF.
-[[bin]]
-name = "pgrx_embed_pgck"
-path = "./src/bin/pgrx_embed.rs"
+# NO pgrx_embed bin target. pgrx 0.12–0.16 required one; 0.19 removed the
+# `pgrx::pgrx_embed!` macro entirely, so the file referenced a symbol that no
+# longer exists. `cargo pgrx package` never compiles bin targets, which is why
+# every local/builder build stayed green while clippy and both test jobs — which
+# DO compile bins — went red on main at the 0.16→0.19 bump (#20) and stayed red.
+# Mirrors pgRDF, which deleted it in the same migration.
 
 [features]
 # No default PG major — every invocation MUST pick one explicitly

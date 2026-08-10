@@ -25,8 +25,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # pgCK#17: this installed pg17 and tested --features pg18 — the job has been
+      # red since it was added. The feature and the installed server must agree.
       - uses: ./.github/actions/setup-pgrx
-        with: { pg: "17" }
+        with: { pg: "18" }
       - run: cargo test --no-default-features --features pg18,embedded-nats nats::parser::tests
       - run: cargo test --no-default-features --features pg18,embedded-nats nats::router::tests
 
