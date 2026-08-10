@@ -1958,12 +1958,13 @@ BEGIN
 
   -- ---- discovery -------------------------------------------------------
   WHEN 'affordances' THEN
-    res := jsonb_build_object('ok', true, 'affordances', COALESCE((
-      SELECT jsonb_agg(jsonb_build_object('name', j->>'a', 'in', j->>'it', 'out', j->>'ot'))
-      FROM pgrdf.sparql($q$ PREFIX ckp:<https://conceptkernel.org/ontology/v3.11/core#>
-        SELECT ?a ?it ?ot WHERE { GRAPH ?g { ?a a ckp:Affordance .
-          OPTIONAL { ?a ckp:inTopic ?it } OPTIONAL { ?a ckp:outTopic ?ot } } } ORDER BY ?a $q$) AS j
-    ), '[]'::jsonb));
+    -- B1 (pgCK#56): derived from SEALED ckp:Affordance instances of THIS kernel,
+    -- carrying inShape resolved into a real input contract, retirement honoured,
+    -- and the registry/sealed drift reported under `unsealed` rather than merged.
+    -- Was: an unfiltered SPARQL scan of a graph nobody writes, which returned []
+    -- for a substrate holding sealed affordances — reads as "no grants", means
+    -- "nothing declared".
+    res := ckp.affordances_of(v_proj);
 
   WHEN 'kernels.list' THEN
     res := jsonb_build_object('ok', true, 'kernels', COALESCE((
