@@ -299,6 +299,14 @@ ON CONFLICT (k) DO NOTHING;
 -- Cumulative chain end-state; governed query/derived affordances stay
 -- runtime-registered by their compilers, never seeded here.
 INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane) VALUES
+  -- B4: the substrate's own integrity check. plane='instance' is the ROUTING
+  -- truth (the registry's plane column selects the handler: 'query'/'derived' mean
+  -- a compiled plan, 'instance' means the built-in CASE) — NOT the root's semantic
+  -- plane, which the column conflates with routing. Recorded as a #56-adjacent finding.
+  -- Registered here because it is a built-in (plpgsql), not a sealed SPARQL plan —
+  -- and sealed as a ckp:Affordance on the bench so it is declared as well as
+  -- dispatchable, rather than growing the gap B1 measured (pgCK#56).
+  ('pgCK','surface.check',       'input.kernel.pgCK.action.surface.check',       'instance'),
   ('pgCK','instance.create',      'input.kernel.pgCK.action.instance.create',      'instance'),
   ('pgCK','instance.update',      'input.kernel.pgCK.action.instance.update',      'instance'),
   ('pgCK','instance.link',        'input.kernel.pgCK.action.instance.link',        'instance'),
@@ -1856,6 +1864,111 @@ END;
 $function$
 ;
 
+CREATE OR REPLACE FUNCTION ckp.surface_check(p_project text DEFAULT NULL)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  N        text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_proj   text := COALESCE(p_project, NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  v_kiri   text;
+  v_epoch  int;
+  v_ep_iri text;
+  v_pin_surf text;
+  v_pin_src  text;
+  v_comp   int;
+  v_act_surf text;
+  v_act_src  text;
+  v_kquads int;
+  v_shapes int;
+  v_mods   jsonb := '[]'::jsonb;
+  v_iri    text;
+  v_n      int;
+  v_find   jsonb := '[]'::jsonb;
+BEGIN
+  v_kiri  := 'urn:ckp:'||v_proj||'/kernel/ck';
+  v_epoch := COALESCE((SELECT epoch FROM ckp.kernel_epoch WHERE kernel = v_proj), 0);
+
+  -- What the ledger says the surface was, at the epoch in force.
+  SELECT i.body->>'@id', i.body->>(N||'surfaceDigest')
+    INTO v_ep_iri, v_pin_surf
+  FROM ckp.instances i
+  WHERE i.body->>'type' = N||'Epoch'
+    AND i.body->>(N||'producedBy') = v_kiri
+    AND (i.body->>(N||'epoch'))::int = v_epoch
+  ORDER BY i.ts_created DESC LIMIT 1;
+
+  SELECT i.body->>(N||'sourceDigest') INTO v_pin_src
+  FROM ckp.instances i
+  WHERE i.body->>'type' = N||'Materialization'
+    AND i.body->>(N||'producesEpoch') = v_ep_iri
+  ORDER BY i.ts_created DESC LIMIT 1;
+
+  -- What it is now.
+  v_comp     := ckp._composed_shapes(v_proj);
+  v_act_surf := ckp._surface_digest(v_comp);
+  v_act_src  := ckp._surface_digest(pgrdf.add_graph(v_kiri));
+
+  SELECT count(*) INTO v_kquads
+    FROM pgrdf.sparql(format('SELECT ?s WHERE { GRAPH <%s> { ?s ?p ?o } }', v_kiri));
+  SELECT count(*) INTO v_shapes
+    FROM pgrdf.sparql(format('PREFIX sh:<http://www.w3.org/ns/shacl#> SELECT ?s WHERE { GRAPH <%s> { ?s a sh:NodeShape } }',
+                             (SELECT iri FROM pgrdf._pgrdf_graphs WHERE graph_id = v_comp)));
+
+  -- Every adopted module: present and non-empty, or named as missing.
+  FOREACH v_iri IN ARRAY ckp._adopted_graphs(v_proj) LOOP
+    SELECT count(*) INTO v_n
+      FROM pgrdf.sparql(format('SELECT ?s WHERE { GRAPH <%s> { ?s ?p ?o } }', v_iri));
+    v_mods := v_mods || jsonb_build_array(jsonb_build_object('iri', v_iri, 'quads', v_n, 'present', v_n > 0));
+    IF v_n = 0 THEN
+      v_find := v_find || jsonb_build_array('adopted module is ABSENT or EMPTY: '||v_iri);
+    END IF;
+  END LOOP;
+
+  -- Findings. Each names what was measured, never a guess at the cause.
+  IF v_kquads = 0 THEN
+    v_find := v_find || jsonb_build_array(
+      'kernel graph '||v_kiri||' is EMPTY — the enforcement surface is composed WITHOUT the '||
+      'kernel''s own shapes. This is the 2026-08-10 wipe signature.');
+  END IF;
+  IF v_shapes = 0 THEN
+    v_find := v_find || jsonb_build_array(
+      'composed surface carries ZERO NodeShapes — every gate is vacuous; refuse to trust any conformance result');
+  END IF;
+  IF v_pin_surf IS NULL THEN
+    v_find := v_find || jsonb_build_array(
+      'no sealed ckp:Epoch for epoch '||v_epoch||' — the surface in force names no digest, so drift is undetectable (pre-governance state)');
+  ELSIF v_pin_surf IS DISTINCT FROM v_act_surf THEN
+    v_find := v_find || jsonb_build_array(
+      'SURFACE DRIFT: the composed surface differs from the digest epoch '||v_epoch||' sealed. '||
+      'Either the surface changed outside a governed apply (adoption, a direct graph write, or a wipe), '||
+      'or an apply failed to reseal. Pinned '||left(v_pin_surf,12)||'… actual '||left(v_act_surf,12)||'…');
+  END IF;
+  IF v_pin_src IS NOT NULL AND v_pin_src IS DISTINCT FROM v_act_src THEN
+    v_find := v_find || jsonb_build_array(
+      'SOURCE DRIFT: the kernel graph differs from the sourceDigest its Materialization sealed. '||
+      'Pinned '||left(v_pin_src,12)||'… actual '||left(v_act_src,12)||'…');
+  END IF;
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'kernel', v_proj,
+    'epoch', v_epoch,
+    'epoch_resource', v_ep_iri,
+    'surface', jsonb_build_object('pinned', v_pin_surf, 'actual', v_act_surf,
+                                  'match', v_pin_surf IS NOT DISTINCT FROM v_act_surf),
+    'source',  jsonb_build_object('pinned', v_pin_src,  'actual', v_act_src,
+                                  'match', v_pin_src IS NOT DISTINCT FROM v_act_src),
+    'kernel_graph', jsonb_build_object('iri', v_kiri, 'quads', v_kquads, 'empty', v_kquads = 0),
+    'composed_nodeshapes', v_shapes,
+    'modules', v_mods,
+    'findings', v_find,
+    'healthy', jsonb_array_length(v_find) = 0);
+END;
+$function$
+;
 CREATE OR REPLACE FUNCTION ckp.dispatch(p_verb text, p_payload jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -1957,6 +2070,12 @@ BEGIN
     res := ckp._query(v_legacy, p_payload);
 
   -- ---- discovery -------------------------------------------------------
+  -- B4: the surface in force, checked against the digests its epoch sealed.
+  -- A READ, never a gate — a false positive here would take the substrate down,
+  -- and legitimate drift exists. Findings name what was measured; empty = pass.
+  WHEN 'surface.check' THEN
+    res := ckp.surface_check(v_proj);
+
   WHEN 'affordances' THEN
     -- B1 (pgCK#56): derived from SEALED ckp:Affordance instances of THIS kernel,
     -- carrying inShape resolved into a real input contract, retirement honoured,
