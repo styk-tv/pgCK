@@ -151,6 +151,22 @@ pub(crate) fn oidc_auth_config() -> Option<&'static crate::jwt_verify::AuthConfi
             let jwks = PGCK_OIDC_JWKS.get()?.to_string_lossy().into_owned();
             let issuer = PGCK_OIDC_ISSUER.get()?.to_string_lossy().into_owned();
             let audience = PGCK_OIDC_AUDIENCE.get()?.to_string_lossy().into_owned();
+            // The #22 contract, named at the moment it is violated: this GUC carries
+            // the JWKS DOCUMENT, never its URL. pgCK has no egress in the live path
+            // by design, so the delivery side pulls the document at init and
+            // pre-populates it — pre-populated, no egress is ever required. A URL
+            // here parses as not-JSON and identity silently stays anonymous, so say
+            // exactly what happened and whose fix it is.
+            if jwks.trim_start().starts_with("http://") || jwks.trim_start().starts_with("https://")
+            {
+                log!(
+                    "pgck: pgck.oidc_jwks carries a URL, not the JWKS document — pgCK never \
+                     fetches (no egress in the live path). The DELIVERY side must pull the \
+                     document at init and pre-populate this GUC with the JSON. Tokens NOT \
+                     verified (anonymous) until it does."
+                );
+                return None;
+            }
             match crate::jwt_verify::AuthConfig::from_parts(&jwks, &issuer, &audience) {
                 Ok(cfg) => {
                     log!("pgck: OIDC auth-config loaded — tokens verified in-memory against the configured realm JWK");
@@ -233,9 +249,48 @@ static PGCK_KERNELS: pgrx::GucSetting<Option<std::ffi::CString>> =
     pgrx::GucSetting::<Option<std::ffi::CString>>::new(Some(c"pgCK"));
 
 /// Snapshot of `pgck.admit_anonymous` (default `true`).
+///
+/// FFI — bgworker (postgres-attached) thread ONLY. pgrx 0.19 asserts
+/// single-threaded FFI (`guc.rs:194`), and the first live callout request on the
+/// relay's async thread panicked exactly there, killing the responder task
+/// silently: every subsequent CONNECT timed out after the broker's 2s callout
+/// wait. The async side reads [`callout_policy`] instead — a cache this
+/// thread refreshes each tick, which is also what keeps #32's Sighup semantics
+/// (tighten without a restart) true.
 #[cfg(feature = "nats-client")]
 pub(crate) fn admit_anonymous() -> bool {
     PGCK_ADMIT_ANONYMOUS.get()
+}
+
+/// The callout policy cache: (admit_anonymous, kernels). Written by the bgworker
+/// thread ([`refresh_callout_policy`], each tick), read by the callout responder
+/// on the relay thread — never postgres FFI from the async side.
+#[cfg(feature = "nats-client")]
+static CALLOUT_POLICY: std::sync::RwLock<Option<(bool, Vec<String>)>> =
+    std::sync::RwLock::new(None);
+
+/// Refresh the callout policy cache from the GUCs. bgworker thread only (FFI).
+/// Called once before the relay spawns and again every tick, so a Sighup'd
+/// `pgck.admit_anonymous=false` reaches the responder within one tick interval.
+#[cfg(feature = "nats-client")]
+pub(crate) fn refresh_callout_policy() {
+    let fresh = (admit_anonymous(), configured_kernels());
+    if let Ok(mut w) = CALLOUT_POLICY.write() {
+        *w = Some(fresh);
+    }
+}
+
+/// The cached (admit_anonymous, kernels) for the responder. Thread-safe, no FFI.
+/// Before the first refresh (unreachable in practice — the bgworker refreshes
+/// before spawning the relay) it falls back to the GUC defaults: admit `true`,
+/// kernel set `["pgCK"]`.
+#[cfg(feature = "nats-client")]
+pub(crate) fn callout_policy() -> (bool, Vec<String>) {
+    CALLOUT_POLICY
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+        .unwrap_or_else(|| (true, vec!["pgCK".to_string()]))
 }
 
 /// The configured kernel set for the auth-callout grant (pgCK#30). Splits
@@ -375,6 +430,17 @@ pub extern "C-unwind" fn pgck_bridge_main(_arg: pg_sys::Datum) {
 
     log!("pgck: bridge worker starting (database={db})");
     while BackgroundWorker::wait_latch(Some(TICK_INTERVAL)) {
+        // SIGHUP wakes the latch (attach_signal_handlers above) but does NOT
+        // reload config — a bgworker must do that itself, and this loop never
+        // did. So every Sighup-context GUC (pgck.admit_anonymous, pgck.kernels)
+        // was in truth restart-bound in the worker: a backend saw the new value
+        // while the responder kept minting from the boot-time one. Measured on
+        // the bench (ALTER SYSTEM + pg_reload_conf -> backend pgCK,Dictionary,
+        // worker still pgCK). Process the config file, then tick — the tick's
+        // policy-cache refresh picks the new values up.
+        if BackgroundWorker::sighup_received() {
+            unsafe { pg_sys::ProcessConfigFile(pg_sys::GucContext::PGC_SIGHUP) };
+        }
         bgworker::tick();
     }
     log!("pgck: bridge worker exiting");

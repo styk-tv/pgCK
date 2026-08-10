@@ -361,6 +361,14 @@ BEGIN
   -- ck_participant only; these two were only ever granted by hand.
   GRANT  USAGE ON SCHEMA ckp TO ck_substrate;
   GRANT  USAGE ON SCHEMA ckp TO ck_drainer;
+  -- PROCEDURES (measured 2026-08-10, B2): 'ALL FUNCTIONS' does not cover
+  -- procedures, so boot/import_module/load_kernel/bootstrap_kernel kept
+  -- default PUBLIC EXECUTE on every route — mitigated only accidentally by
+  -- their pg_read_file superuser gate. Revoke PUBLIC (explicit role grants
+  -- survive a PUBLIC revoke untouched); ck_substrate keeps EXECUTE.
+  REVOKE ALL ON ALL PROCEDURES IN SCHEMA ckp FROM PUBLIC;
+  REVOKE ALL ON ALL PROCEDURES IN SCHEMA ckp FROM ck_participant;
+  GRANT  EXECUTE ON ALL PROCEDURES IN SCHEMA ckp TO ck_substrate;
 END;
 $procedure$
 ;
@@ -618,13 +626,42 @@ END;
 $function$
 ;
 
+CREATE OR REPLACE FUNCTION ckp._adopted_graphs(p_project text)
+ RETURNS text[]
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  N text := 'https://conceptkernel.org/ontology/v3.11/core#';
+BEGIN
+  -- Sealed, unsuperseded Adoptions of THIS project, in seal order. intoProject
+  -- accepts both the bare project urn and the /kernel/ck form (the kernel IS
+  -- the project's governed identity; both spellings appear in early seals).
+  RETURN COALESCE((
+    SELECT array_agg(a.body->>(N||'adopts') ORDER BY a.ts_created)
+    FROM ckp.instances a
+    WHERE a.body->>'type' = N||'Adoption'
+      AND a.body->>(N||'adopts') IS NOT NULL
+      AND a.body->>(N||'intoProject') IN ('urn:ckp:'||p_project, 'urn:ckp:'||p_project||'/kernel/ck')
+      AND NOT EXISTS (
+        SELECT 1 FROM ckp.instances s
+        WHERE s.body->>'type' = N||'Supersession'
+          AND s.body->>(N||'supersedes') = a.body->>'@id')
+  ), ARRAY[]::text[]);
+END;
+$function$
+;
 CREATE OR REPLACE FUNCTION ckp._composed_shapes(p_project text DEFAULT 'demo'::text)
  RETURNS integer
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
-DECLARE v_core int; v_kernel int; v_comp int;
+DECLARE
+  v_core int; v_kernel int; v_comp int; v_mod int;
+  v_iri  text;
+  v_cnt  int;
 BEGIN
   v_core   := pgrdf.add_graph('urn:ckp:core');
   v_kernel := pgrdf.add_graph(format('urn:ckp:%s/kernel/ck', p_project));
@@ -632,6 +669,19 @@ BEGIN
   PERFORM pgrdf.clear_graph(v_comp);
   PERFORM pgrdf.copy_graph(v_core,   v_comp);
   PERFORM pgrdf.copy_graph(v_kernel, v_comp);
+  -- A2: every graph a sealed unsuperseded Adoption names joins the surface.
+  -- Module-IRI-is-graph-IRI: the adopts value IS the graph. Fail CLOSED on a
+  -- dangling or empty reference — a vanished module silently narrowing the
+  -- gate is un-enforcement nobody would see.
+  FOREACH v_iri IN ARRAY ckp._adopted_graphs(p_project) LOOP
+    v_mod := pgrdf.add_graph(v_iri);
+    SELECT count(*) INTO v_cnt
+      FROM pgrdf.sparql(format('SELECT ?s WHERE { GRAPH <%s> { ?s ?p ?o } } LIMIT 1', v_iri));
+    IF v_cnt = 0 THEN
+      RAISE EXCEPTION 'ckp._composed_shapes: adopted module graph % is absent or empty — a sealed Adoption names it, so composing without it would silently narrow the enforcement surface. Load the module graph or seal a Supersession.', v_iri;
+    END IF;
+    PERFORM pgrdf.copy_graph(v_mod, v_comp);
+  END LOOP;
   -- Entailment is per-graph and pgrdf.validate does not entail, so the closure
   -- is computed HERE, once, rather than depended on at validate time.
   PERFORM pgrdf.materialize(v_comp);
