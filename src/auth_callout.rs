@@ -300,10 +300,27 @@ pub fn handle_request(
         Admission::Verified { sub, .. } => {
             eprintln!("pgck auth-callout: ADMIT verified sub={sub} (token presented: {presented})")
         }
-        Admission::Anonymous if !admit_anonymous => eprintln!(
-            "pgck auth-callout: REFUSE unverified (token presented: {presented}); \
-             pgck.admit_anonymous=false"
-        ),
+        Admission::Anonymous if !admit_anonymous => {
+            if cfg.is_none() {
+                // The worst reachable state, named as loudly as a log can: strict
+                // admittance with NO verifier means nobody can EVER verify, so every
+                // connection — every user, every bot, every kernel client — is
+                // refused. Anonymous-but-alive beats deny-all; an operator seeing
+                // this either restores the JWKS delivery or lifts strict mode.
+                eprintln!(
+                    "pgck auth-callout: REFUSE unverified (token presented: {presented}); \
+                     pgck.admit_anonymous=false AND NO JWKS is loaded — no connection can \
+                     verify, so EVERY connection is being refused. Identity delivery is \
+                     broken or unconfigured: restore pgck.oidc_jwks (the document, not a \
+                     URL) or set pgck.admit_anonymous=on to restore the anonymous tier."
+                );
+            } else {
+                eprintln!(
+                    "pgck auth-callout: REFUSE unverified (token presented: {presented}); \
+                     pgck.admit_anonymous=false"
+                );
+            }
+        }
         Admission::Anonymous => eprintln!(
             "pgck auth-callout: ADMIT anonymous (token presented: {presented}); \
              subscribe-only, no publish"

@@ -151,6 +151,22 @@ pub(crate) fn oidc_auth_config() -> Option<&'static crate::jwt_verify::AuthConfi
             let jwks = PGCK_OIDC_JWKS.get()?.to_string_lossy().into_owned();
             let issuer = PGCK_OIDC_ISSUER.get()?.to_string_lossy().into_owned();
             let audience = PGCK_OIDC_AUDIENCE.get()?.to_string_lossy().into_owned();
+            // The #22 contract, named at the moment it is violated: this GUC carries
+            // the JWKS DOCUMENT, never its URL. pgCK has no egress in the live path
+            // by design, so the delivery side pulls the document at init and
+            // pre-populates it — pre-populated, no egress is ever required. A URL
+            // here parses as not-JSON and identity silently stays anonymous, so say
+            // exactly what happened and whose fix it is.
+            if jwks.trim_start().starts_with("http://") || jwks.trim_start().starts_with("https://")
+            {
+                log!(
+                    "pgck: pgck.oidc_jwks carries a URL, not the JWKS document — pgCK never \
+                     fetches (no egress in the live path). The DELIVERY side must pull the \
+                     document at init and pre-populate this GUC with the JSON. Tokens NOT \
+                     verified (anonymous) until it does."
+                );
+                return None;
+            }
             match crate::jwt_verify::AuthConfig::from_parts(&jwks, &issuer, &audience) {
                 Ok(cfg) => {
                     log!("pgck: OIDC auth-config loaded — tokens verified in-memory against the configured realm JWK");
