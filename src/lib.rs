@@ -430,6 +430,17 @@ pub extern "C-unwind" fn pgck_bridge_main(_arg: pg_sys::Datum) {
 
     log!("pgck: bridge worker starting (database={db})");
     while BackgroundWorker::wait_latch(Some(TICK_INTERVAL)) {
+        // SIGHUP wakes the latch (attach_signal_handlers above) but does NOT
+        // reload config — a bgworker must do that itself, and this loop never
+        // did. So every Sighup-context GUC (pgck.admit_anonymous, pgck.kernels)
+        // was in truth restart-bound in the worker: a backend saw the new value
+        // while the responder kept minting from the boot-time one. Measured on
+        // the bench (ALTER SYSTEM + pg_reload_conf -> backend pgCK,Dictionary,
+        // worker still pgCK). Process the config file, then tick — the tick's
+        // policy-cache refresh picks the new values up.
+        if BackgroundWorker::sighup_received() {
+            unsafe { pg_sys::ProcessConfigFile(pg_sys::GucContext::PGC_SIGHUP) };
+        }
         bgworker::tick();
     }
     log!("pgck: bridge worker exiting");
