@@ -2140,6 +2140,40 @@ BEGIN
 END;
 $function$
 ;
+CREATE OR REPLACE FUNCTION ckp._dispatch_safe(p_verb text, p_payload jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_out jsonb;
+BEGIN
+  v_out := ckp.dispatch(p_verb, p_payload);
+  RETURN v_out;
+EXCEPTION
+  WHEN OTHERS THEN
+    -- The refusal is the RESULT. Carry the clause the gate named, plus SQLSTATE
+    -- so a caller can tell a shape refusal from a transport fault, and keep the
+    -- verb so a Trace-Id correlation still resolves. Never re-raise: re-raising
+    -- is what killed the worker.
+    RETURN jsonb_build_object(
+      'ok',      false,
+      'refused', true,
+      'verb',    p_verb,
+      'sqlstate', SQLSTATE,
+      'error',   SQLERRM
+    );
+END;
+$function$;
+
+COMMENT ON FUNCTION ckp._dispatch_safe(text, jsonb) IS
+  'Transport-safe wrapper over ckp.dispatch. A gate refusal is returned as data '
+  '({ok:false, refused:true, sqlstate, error}) instead of raising, because an '
+  'unhandled RAISE inside the bgworker SPI call unwinds as a pgrx panic and '
+  'terminates the worker — taking the auth-callout responder with it and closing '
+  'the door for every client (measured 2026-08-11, pgck-bridge exit code 1).';
+
 CREATE OR REPLACE FUNCTION ckp.dispatch(p_verb text, p_payload jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
