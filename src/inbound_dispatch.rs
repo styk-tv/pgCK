@@ -110,12 +110,12 @@ fn dispatch_one(action: &InboundAction) -> String {
             }
             let table = client.update(
                 // _dispatch_safe, NOT dispatch: a RAISE inside this SPI call unwinds as a
-            // pgrx PANIC, not a Result::Err, so the `match out` below never runs and
-            // the WORKER DIES — taking the auth-callout responder with it and closing
-            // the door for every client (measured 2026-08-11: pgck-bridge exit code 1
-            // on a NodeKind refusal). The wrapper catches in PL/pgSQL, where the
-            // EXCEPTION block's subtransaction rolls the refusal back cleanly.
-            "SELECT ckp._dispatch_safe($1, $2::jsonb)::text",
+                // pgrx PANIC, not a Result::Err, so the `match out` below never runs and
+                // the WORKER DIES — taking the auth-callout responder with it and closing
+                // the door for every client (measured 2026-08-11: pgck-bridge exit code 1
+                // on a NodeKind refusal). The wrapper catches in PL/pgSQL, where the
+                // EXCEPTION block's subtransaction rolls the refusal back cleanly.
+                "SELECT ckp._dispatch_safe($1, $2::jsonb)::text",
                 Some(1),
                 &[verb.clone().into(), payload.clone().into()],
             )?;

@@ -565,8 +565,10 @@ mod tests {
         assert_eq!(r.result_subject, "result.kernel.CK-dev.instance.query");
 
         let sub = "some-verified-sub"; // synthetic — never a captured identity
-        let r = route_inbound(&format!("input.kernel.CK-dev.id.{sub}.action.instance.create"))
-            .expect("routes");
+        let r = route_inbound(&format!(
+            "input.kernel.CK-dev.id.{sub}.action.instance.create"
+        ))
+        .expect("routes");
         assert_eq!(r.kernel, "CK-dev");
         assert_eq!(r.identity.as_deref(), Some(sub));
         assert_eq!(r.result_subject, "result.kernel.CK-dev.instance.create");
