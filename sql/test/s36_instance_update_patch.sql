@@ -21,7 +21,7 @@ END $$;
 
 -- (2.1) update with BOTH title AND priority (number) AND lifecycle_state — all must apply.
 DO $$
-DECLARE res jsonb; b jsonb; N text := 'https://conceptkernel.org/ontology/v3.7/'; tid text := current_setting('s36.tid');
+DECLARE res jsonb; b jsonb; N text := 'urn:ckp:board/'; tid text := current_setting('s36.tid');
 BEGIN
   SET LOCAL ROLE ck_participant;
   res := ckp.dispatch('instance.update', jsonb_build_object('id', tid, 'title','renamed', 'priority', 1, 'lifecycle_state','active'));
@@ -49,7 +49,7 @@ END $$;
 
 -- a string priority from a different client is preserved AS a string (type fidelity both ways).
 DO $$
-DECLARE res jsonb; b jsonb; N text := 'https://conceptkernel.org/ontology/v3.7/'; tid text := current_setting('s36.tid');
+DECLARE res jsonb; b jsonb; N text := 'urn:ckp:board/'; tid text := current_setting('s36.tid');
 BEGIN
   SET LOCAL ROLE ck_participant;
   res := ckp.dispatch('instance.update', jsonb_build_object('id', tid, 'priority', '3'));

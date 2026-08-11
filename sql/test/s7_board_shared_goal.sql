@@ -26,10 +26,10 @@ SET ckp.project = 's7-test';
 DO $$
 DECLARE
   v_body jsonb := jsonb_build_object(
-    'type', 'https://conceptkernel.org/ontology/v3.7/Goal',
-    'https://conceptkernel.org/ontology/v3.7/goal_id', 'v3.8-pgxn-release',
-    'https://conceptkernel.org/ontology/v3.7/title',  'Ship CKP v3.8 to PGXN',
-    'https://conceptkernel.org/ontology/v3.7/created_at', '2026-05-28T00:00:00Z'
+    'type', 'urn:ckp:board/Goal',
+    'urn:ckp:board/goal_id', 'v3.8-pgxn-release',
+    'urn:ckp:board/title',  'Ship CKP v3.8 to PGXN',
+    'urn:ckp:board/created_at', '2026-05-28T00:00:00Z'
   );
 BEGIN
   PERFORM ckp.seal('S7-G', v_body);
@@ -46,15 +46,15 @@ BEGIN
   FOREACH v_kernel IN ARRAY v_kernels LOOP
     v_idx := v_idx + 1;
     v_body := jsonb_build_object(
-      'type', 'https://conceptkernel.org/ontology/v3.7/Task',
-      'https://conceptkernel.org/ontology/v3.7/task_id', 'S7-T-' || v_idx,
-      'https://conceptkernel.org/ontology/v3.7/title', 'land contribution for ' || v_kernel,
-      'https://conceptkernel.org/ontology/v3.7/part_of_goal', 'v3.8-pgxn-release',
-      'https://conceptkernel.org/ontology/v3.7/target_kernel', v_kernel,
-      'https://conceptkernel.org/ontology/v3.7/lifecycle_state', 'pending',
-      'https://conceptkernel.org/ontology/v3.7/priority', v_idx,
-      'https://conceptkernel.org/ontology/v3.7/queue_seq', v_idx,
-      'https://conceptkernel.org/ontology/v3.7/created_at', '2026-05-28T00:00:00Z'
+      'type', 'urn:ckp:board/Task',
+      'urn:ckp:board/task_id', 'S7-T-' || v_idx,
+      'urn:ckp:board/title', 'land contribution for ' || v_kernel,
+      'urn:ckp:board/part_of_goal', 'v3.8-pgxn-release',
+      'urn:ckp:board/target_kernel', v_kernel,
+      'urn:ckp:board/lifecycle_state', 'pending',
+      'urn:ckp:board/priority', v_idx,
+      'urn:ckp:board/queue_seq', v_idx,
+      'urn:ckp:board/created_at', '2026-05-28T00:00:00Z'
     );
     PERFORM ckp.seal('S7-T-' || v_idx, v_body);
   END LOOP;

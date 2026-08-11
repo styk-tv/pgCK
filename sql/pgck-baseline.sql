@@ -724,15 +724,15 @@ BEGIN
   IF p_type IS NULL OR position(':' in p_type) = 0 THEN
     RETURN false;   -- no resolvable type is not an admitted type
   END IF;
-  -- TRANSITIONAL ALLOWANCE (pgCK#46): the legacy board path (task.create,
-  -- notify) still EMITS v3.7-namespaced instance types (Task, Goal, Message)
-  -- while their shapes are v3.11 — so those types are targeted by no shape and
-  -- would refuse here. That is the #46 residue, not an invented URN; tolerate
-  -- it until #46 re-points the body construction, at which point the board
-  -- path becomes non-vacuously validated and this allowance is deleted.
-  IF p_type LIKE 'https://conceptkernel.org/ontology/v3.7/%' THEN
-    RETURN true;
-  END IF;
+  -- 0.4.42: the #46 TRANSITIONAL ALLOWANCE IS DELETED, and its own exit condition
+  -- is now met. It read "tolerate it until #46 re-points the body construction, at
+  -- which point the board path becomes non-vacuously validated". Both halves landed
+  -- in one act: ckp.dispatch's namespace constant N moved off …/ontology/v3.7/ to
+  -- urn:ckp:board/, and urn:ckp:board/{Task,Goal,Edge,Message} now carry shapes in
+  -- the project kernel graph. While it stood, R2 was open on the write path — seal
+  -- consults this function, so a v3.7 type reached the SHACL gate, was targeted by
+  -- no shape, took a VACUOUS conforms:true and sealed. An undeclared type is now
+  -- refused whatever namespace it carries.
   -- Admitted = the type is DECLARED (a shape targets it, or it is a declared
   -- class) anywhere the kernel loaded: the composed core+ck surface OR the
   -- project board. Reads the same surfaces the gate/self-test consult — never
@@ -1115,7 +1115,7 @@ CREATE OR REPLACE FUNCTION ckp._query(p_verb text, p_payload jsonb)
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  N      text := 'https://conceptkernel.org/ontology/v3.7/';
+  N      text := 'urn:ckp:board/';
   p_type text := p_payload->>'type';
   p_kern text := p_payload->>'kernel';
   p_n    int  := COALESCE((p_payload->>'n')::int, (p_payload->>'limit')::int,
@@ -1631,7 +1631,7 @@ BEGIN
            ELSE 3 END AS rnk
     FROM (
       SELECT id, COALESCE(body->>'rdfs:label',
-                          body->>'https://conceptkernel.org/ontology/v3.7/title',
+                          body->>'urn:ckp:board/title',
                           body->>'title') AS lbl
       FROM ckp.instances
     ) s
@@ -1663,7 +1663,7 @@ DECLARE
   -- was the last reader of payload sub (measured: s58's instance.create
   -- case sealed participant:attacker before this fix).
   v_sub     text := current_setting('ckp.requester', true);
-  N         text := 'https://conceptkernel.org/ontology/v3.7/';       -- v3.7 core NS (gate + task.create)
+  N         text := 'urn:ckp:board/';       -- v3.7 core NS (gate + task.create)
   v_core    text[] := ARRAY['lifecycle_state'];                       -- recognized core keys → core NS
   v_local   text;
   v_ns      text;
@@ -1715,7 +1715,7 @@ BEGIN
   END LOOP;
 
   v_body := v_body || jsonb_build_object(
-    'https://conceptkernel.org/ontology/v3.7/created_at',
+    'urn:ckp:board/created_at',
     to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'));
   IF v_sub IS NOT NULL THEN
     -- created_by from the VERIFIED requester (same shape as task.create), and
@@ -2181,7 +2181,7 @@ CREATE OR REPLACE FUNCTION ckp.dispatch(p_verb text, p_payload jsonb)
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  N      text := 'https://conceptkernel.org/ontology/v3.7/';
+  N      text := 'urn:ckp:board/';
   RL     text := 'http://www.w3.org/2000/01/rdf-schema#label';
   req    jsonb := p_payload->'req';
   res    jsonb;
@@ -2565,8 +2565,8 @@ BEGIN
     -- F4 (msg.by): stamp the server-attributed sender `by` so peers (kernels, web bots, users) see
     -- who-said-what WITHOUT the client asserting it. `created_by` derives from the VERIFIED
     -- ckp.requester (F-A), never a client field — so `by` is un-forgeable.
-    || CASE WHEN v_body ? 'https://conceptkernel.org/ontology/v3.7/created_by'
-            THEN jsonb_build_object('by', v_body->>'https://conceptkernel.org/ontology/v3.7/created_by')
+    || CASE WHEN v_body ? 'urn:ckp:board/created_by'
+            THEN jsonb_build_object('by', v_body->>'urn:ckp:board/created_by')
             ELSE '{}'::jsonb END
   );
 
@@ -2606,7 +2606,7 @@ DECLARE
   v_tgt    text := ckp._resolve_ref(p_tgt);
   v_pred   text := CASE WHEN position(':' in COALESCE(p_pred,'')) > 0
                         THEN p_pred                                     -- already an IRI: as-is
-                        ELSE 'https://conceptkernel.org/ontology/v3.7/' || p_pred END;  -- short -> v3.7 IRI
+                        ELSE 'urn:ckp:board/' || p_pred END;  -- short -> v3.7 IRI
   v_g      bigint;
 BEGIN
   -- materialize only when both endpoints resolved to clean absolute IRIs (all three injection-gated).
@@ -2674,7 +2674,7 @@ CREATE OR REPLACE FUNCTION ckp.project_instance_label()
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  N      text := 'https://conceptkernel.org/ontology/v3.7/';
+  N      text := 'urn:ckp:board/';
   RL     text := 'http://www.w3.org/2000/01/rdf-schema#label';
   v_type text := NEW.body->>'type';
   v_id   text := COALESCE(NEW.body->>'@id', 'urn:ckp:instance:'||NEW.id);
@@ -2741,9 +2741,9 @@ BEGIN
 
   -- Build the Turtle that represents this instance's link triples.
   IF v_short_type = 'Task' THEN
-    v_id      := p_body->>'https://conceptkernel.org/ontology/v3.7/task_id';
-    v_goal_id := p_body->>'https://conceptkernel.org/ontology/v3.7/part_of_goal';
-    v_kernel  := p_body->>'https://conceptkernel.org/ontology/v3.7/target_kernel';
+    v_id      := p_body->>'urn:ckp:board/task_id';
+    v_goal_id := p_body->>'urn:ckp:board/part_of_goal';
+    v_kernel  := p_body->>'urn:ckp:board/target_kernel';
 
     -- Bodies missing any required link field reach the SHACL gate below
     -- with an empty/partial scratch graph — the gate catches them and
@@ -2768,8 +2768,8 @@ BEGIN
     v_ttl := v_ttl || ' .';
 
   ELSIF v_short_type = 'Goal' THEN
-    v_id    := p_body->>'https://conceptkernel.org/ontology/v3.7/goal_id';
-    v_label := p_body->>'https://conceptkernel.org/ontology/v3.7/title';
+    v_id    := p_body->>'urn:ckp:board/goal_id';
+    v_label := p_body->>'urn:ckp:board/title';
 
     v_subject := 'ckp://Goal#' || ckp.urn_normalise(COALESCE(v_id, p_instance_id));
 
@@ -3660,7 +3660,7 @@ CREATE OR REPLACE FUNCTION ckp.transition(p_payload jsonb)
 AS $function$
 DECLARE
   C        text := 'https://conceptkernel.org/ontology/v3.11/core#';
-  N        text := 'https://conceptkernel.org/ontology/v3.7/';
+  N        text := 'urn:ckp:board/';
   v_id     text := p_payload->>'id';
   v_to     text := p_payload->>'to_state';
   v_state_re text := '^[A-Za-z][A-Za-z0-9_-]*$';

@@ -113,19 +113,17 @@ R="$(PART "SELECT ckp.dispatch('instance.create','{\"type\":\"https://conceptker
 [ "$R" = "true" ] || fail "(ask 2c) dispatch as ck_participant returned ok=$R"
 echo "s34: governed dispatch as ck_participant ok:true (v3.11 type, gated) ✓"
 
-# (4) the legacy board verb still works for the participant after boot.
-# NOTE (0.4.40): this passes ONLY because _type_admitted still carries the #46
-# TRANSITIONAL ALLOWANCE, which waves every …/ontology/v3.7/% type through.
-# ckp.seal consults that function, so task.create's …/v3.7/Task is targeted by
-# no shape, takes a VACUOUS conforms:true and seals. Deleting the allowance was
-# measured to close R2 on the write path — and to invalidate 30 board-verb call
-# sites across 8 tests, because the board verb is those tests' write vehicle.
-# The allowance's own exit condition (#46 re-points the body construction) is
-# NOT met and cannot be met by re-pointing: Task and Goal do not exist in v3.11.
-# Filed as the R2 ticket; this assertion is the thing that will flip when it lands.
-R="$(PART "SELECT ckp.dispatch('task.create','{\"task\":{\"target_kernel\":\"s34\",\"title\":\"board task\",\"goal\":\"v0.4.2\"}}'::jsonb)->>'ok'")"
-[ "$R" = "true" ] || fail "legacy task.create as participant returned ok=$R after boot"
-echo "s34: legacy task.create as participant ok:true (via the #46 allowance) ✓"
+# (4) 0.4.42 — the board is DOMAIN vocabulary now, so a fresh install that has
+# booted but loaded NO KERNEL cannot create board tasks: urn:ckp:board/Task is
+# declared by examples/example.kernel.ttl, which ckp.load_kernel puts into
+# urn:ckp:<project>/kernel/ck. No kernel, no shape, no admitted type — R2 refuses
+# it fail-closed. This is the assertion that flipped when the #46 transitional
+# allowance was deleted: it previously demanded ok:true, which only ever held
+# because every …/ontology/v3.7/% type was waved past the admitted-type check and
+# then took a VACUOUS conforms:true from a gate that targeted nothing.
+R="$(PART "SELECT ckp.dispatch('task.create','{\"task\":{\"target_kernel\":\"s34\",\"title\":\"board task\",\"goal\":\"v0.4.2\"}}'::jsonb)->>'ok'")" || R="errored"
+[ "$R" != "true" ] || fail "board task.create SEALED on a fresh install with no kernel loaded — fail-closed breached"
+echo "s34: board verb refused with no kernel loaded (ok=$R) — R2 holds on a virgin substrate ✓"
 
 # (5) the floor HOLDS for the same real login: no table reach, no pgrdf reach
 if PART "SELECT count(*) FROM ckp.instances" >/dev/null 2>&1; then

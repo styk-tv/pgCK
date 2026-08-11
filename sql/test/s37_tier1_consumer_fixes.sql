@@ -23,7 +23,7 @@ END $$;
 
 -- (b) transition planned → in_progress → done, and the task's OWN lifecycle field updates.
 DO $$
-DECLARE res jsonb; N text := 'https://conceptkernel.org/ontology/v3.7/'; tid text := current_setting('s37.tid');
+DECLARE res jsonb; N text := 'urn:ckp:board/'; tid text := current_setting('s37.tid');
 BEGIN
   SET LOCAL ROLE ck_participant;
   res := ckp.dispatch('instance.transition', jsonb_build_object('id', tid, 'to_state','in_progress'));

@@ -19,7 +19,7 @@ SELECT pgrdf.parse_turtle(
 DO $$
 DECLARE res jsonb;
 BEGIN
-  PERFORM ckp.seal('s56-1','{"type":"urn:t:Thing","https://conceptkernel.org/ontology/v3.7/lifecycle_state":"pending"}'::jsonb);
+  PERFORM ckp.seal('s56-1','{"type":"urn:t:Thing","urn:ckp:board/lifecycle_state":"pending"}'::jsonb);
   PERFORM set_config('ckp.project','demo',true);
   res := ckp.transition('{"id":"s56-1","to_state":"sealed"}'::jsonb);
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's56 FAIL: matching-project transition should succeed, got %', res; END IF;
@@ -30,7 +30,7 @@ END $$;
 DO $$
 DECLARE res jsonb;
 BEGIN
-  PERFORM ckp.seal('s56-2','{"type":"urn:t:Thing","https://conceptkernel.org/ontology/v3.7/lifecycle_state":"pending"}'::jsonb);
+  PERFORM ckp.seal('s56-2','{"type":"urn:t:Thing","urn:ckp:board/lifecycle_state":"pending"}'::jsonb);
   PERFORM set_config('ckp.project','some-other-project',true);
   res := ckp.transition('{"id":"s56-2","to_state":"sealed"}'::jsonb);
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's56 FAIL: mismatched-project transition should STILL succeed (project-robust map), got %', res; END IF;
@@ -41,7 +41,7 @@ END $$;
 DO $$
 DECLARE res jsonb;
 BEGIN
-  PERFORM ckp.seal('s56-3','{"type":"urn:t:Thing","https://conceptkernel.org/ontology/v3.7/lifecycle_state":"pending"}'::jsonb);
+  PERFORM ckp.seal('s56-3','{"type":"urn:t:Thing","urn:ckp:board/lifecycle_state":"pending"}'::jsonb);
   PERFORM set_config('ckp.project','demo',true);
   res := ckp.transition('{"id":"s56-3","to_state":"deployed"}'::jsonb);
   IF (res->>'error') IS DISTINCT FROM 'invalid_transition' THEN RAISE EXCEPTION 's56 FAIL: illegal transition must be denied, got %', res; END IF;

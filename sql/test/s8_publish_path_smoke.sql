@@ -40,10 +40,10 @@ SELECT count(*) AS pre_count FROM ckp.outbox WHERE subject LIKE 'event.kernel.pg
 DO $$
 DECLARE
   v_body jsonb := jsonb_build_object(
-    'type', 'https://conceptkernel.org/ontology/v3.7/Goal',
-    'https://conceptkernel.org/ontology/v3.7/goal_id', 's8-goal',
-    'https://conceptkernel.org/ontology/v3.7/title',  's8 smoke goal',
-    'https://conceptkernel.org/ontology/v3.7/created_at', '2026-05-29T00:00:00Z'
+    'type', 'urn:ckp:board/Goal',
+    'urn:ckp:board/goal_id', 's8-goal',
+    'urn:ckp:board/title',  's8 smoke goal',
+    'urn:ckp:board/created_at', '2026-05-29T00:00:00Z'
   );
 BEGIN
   PERFORM ckp.seal('S8-G', v_body);
@@ -53,15 +53,15 @@ END $$;
 DO $$
 DECLARE
   v_body jsonb := jsonb_build_object(
-    'type', 'https://conceptkernel.org/ontology/v3.7/Task',
-    'https://conceptkernel.org/ontology/v3.7/task_id', 'S8-T-1',
-    'https://conceptkernel.org/ontology/v3.7/title', 's8 smoke task',
-    'https://conceptkernel.org/ontology/v3.7/part_of_goal', 's8-goal',
-    'https://conceptkernel.org/ontology/v3.7/target_kernel', 'pgCK',
-    'https://conceptkernel.org/ontology/v3.7/lifecycle_state', 'pending',
-    'https://conceptkernel.org/ontology/v3.7/priority', 1,
-    'https://conceptkernel.org/ontology/v3.7/queue_seq', 1,
-    'https://conceptkernel.org/ontology/v3.7/created_at', '2026-05-29T00:00:00Z'
+    'type', 'urn:ckp:board/Task',
+    'urn:ckp:board/task_id', 'S8-T-1',
+    'urn:ckp:board/title', 's8 smoke task',
+    'urn:ckp:board/part_of_goal', 's8-goal',
+    'urn:ckp:board/target_kernel', 'pgCK',
+    'urn:ckp:board/lifecycle_state', 'pending',
+    'urn:ckp:board/priority', 1,
+    'urn:ckp:board/queue_seq', 1,
+    'urn:ckp:board/created_at', '2026-05-29T00:00:00Z'
   );
 BEGIN
   PERFORM ckp.seal('S8-T-1', v_body);
@@ -119,10 +119,10 @@ BEGIN
   END IF;
 
   -- Also assert compute_publish_subject() for the known type URIs.
-  IF ckp.compute_publish_subject('https://conceptkernel.org/ontology/v3.7/Task') <> 'event.kernel.pgCK.Task.sealed' THEN
+  IF ckp.compute_publish_subject('urn:ckp:board/Task') <> 'event.kernel.pgCK.Task.sealed' THEN
     RAISE EXCEPTION 's8 FAIL: compute_publish_subject(Task) wrong';
   END IF;
-  IF ckp.compute_publish_subject('https://conceptkernel.org/ontology/v3.7/Goal') <> 'event.kernel.pgCK.Goal.sealed' THEN
+  IF ckp.compute_publish_subject('urn:ckp:board/Goal') <> 'event.kernel.pgCK.Goal.sealed' THEN
     RAISE EXCEPTION 's8 FAIL: compute_publish_subject(Goal) wrong';
   END IF;
   IF ckp.compute_publish_subject(NULL) <> 'event.kernel.pgCK.Instance.sealed' THEN

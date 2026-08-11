@@ -10,15 +10,15 @@ DECLARE
   v_before bigint;
   v_after  bigint;
   v_body   jsonb := jsonb_build_object(
-    'type', 'https://conceptkernel.org/ontology/v3.7/Task',
-    'https://conceptkernel.org/ontology/v3.7/task_id', 'S5-T-0001',
-    'https://conceptkernel.org/ontology/v3.7/title', 's5 seal project_links',
-    'https://conceptkernel.org/ontology/v3.7/part_of_goal', 's5-goal',
-    'https://conceptkernel.org/ontology/v3.7/target_kernel', 'pgCK',
-    'https://conceptkernel.org/ontology/v3.7/lifecycle_state', 'pending',
-    'https://conceptkernel.org/ontology/v3.7/priority', 1,
-    'https://conceptkernel.org/ontology/v3.7/queue_seq', 1,
-    'https://conceptkernel.org/ontology/v3.7/created_at', '2026-05-28T16:00:00Z'
+    'type', 'urn:ckp:board/Task',
+    'urn:ckp:board/task_id', 'S5-T-0001',
+    'urn:ckp:board/title', 's5 seal project_links',
+    'urn:ckp:board/part_of_goal', 's5-goal',
+    'urn:ckp:board/target_kernel', 'pgCK',
+    'urn:ckp:board/lifecycle_state', 'pending',
+    'urn:ckp:board/priority', 1,
+    'urn:ckp:board/queue_seq', 1,
+    'urn:ckp:board/created_at', '2026-05-28T16:00:00Z'
   );
 BEGIN
   PERFORM pgrdf.clear_graph(v_g);
