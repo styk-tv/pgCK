@@ -95,51 +95,34 @@ $dump_042$;
 CREATE OR REPLACE FUNCTION ckp.shapes_self_test(p_project text DEFAULT 'demo')
 RETURNS TABLE (shape_class text, target_class text, present boolean)
 LANGUAGE plpgsql
-SECURITY DEFINER SET search_path = ckp, public, pg_temp
+SECURITY DEFINER
+SET search_path TO 'ckp','public','pg_temp'
 AS $sst$
 DECLARE
-  v_board_iri text := format('urn:ckp:%s/kernel/board', p_project);
-  v_board_g   bigint := pgrdf.graph_id(v_board_iri);
-  v_q         text;
-  v_row       record;
-  v_ask       text;
-  v_missing   text[] := ARRAY[]::text[];
+  v_comp_iri text := format('urn:ckp:%s/shapes/composed', p_project);
+  v_iri      text;
+  v_row      record;
+  v_n        int := 0;
 BEGIN
-  IF v_board_g IS NULL THEN
-    -- v0.4.2: no board ontology imported for this project — nothing loaded, nothing
-    -- stale to guard. The gate arms itself when ckp.import_module() lands the shapes.
-    RAISE NOTICE 'ckp.shapes_self_test: board graph % not imported yet — self-test skipped (valid silence; import task/goal modules to arm the board gate)', v_board_iri;
-    RETURN;
-  END IF;
-
+  -- 0.4.40: the ('ckp:TaskShape','ckp:Task') enumeration is RETIRED. This copy
+  -- runs LAST on a fresh install (pgck_install_completeness), so leaving it here
+  -- silently overwrote the baseline's corrected body — measured: CREATE EXTENSION
+  -- kept demanding TaskShape while the upgrade route had already stopped.
+  -- Hardcoded shape names are a second enforcement surface (SPEC.CKP.v3.11 §4.4).
+  -- What survives is the one property a SHACL validator cannot report about
+  -- itself: that it validated against NOTHING. Non-mutating by design.
+  v_iri := CASE WHEN pgrdf.graph_id(v_comp_iri) IS NOT NULL
+                THEN v_comp_iri ELSE 'urn:ckp:core' END;
   FOR v_row IN
-    SELECT * FROM (VALUES
-      ('ckp:TaskShape', 'ckp:Task'),
-      ('ckp:GoalShape', 'ckp:Goal')
-    ) AS expected(shape, target)
+    SELECT j->>'s' AS s, j->>'tc' AS tc
+    FROM pgrdf.sparql(format(
+      'PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT ?s ?tc FROM <%s> WHERE { ?s rdf:type sh:NodeShape ; sh:targetClass ?tc }', v_iri)) j
   LOOP
-    v_q := format(
-      'PREFIX ckp: <https://conceptkernel.org/ontology/v3.11/core#>
-       PREFIX sh:  <http://www.w3.org/ns/shacl#>
-       PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-       ASK FROM <%s>
-       WHERE { ?s rdf:type sh:NodeShape ; sh:targetClass %s }',
-      v_board_iri, v_row.target);
-
-    shape_class  := v_row.shape;
-    target_class := v_row.target;
-    SELECT j->>'_ask' INTO v_ask FROM pgrdf.sparql(v_q) j LIMIT 1;
-    present := COALESCE(v_ask = 'true', false);
-    IF NOT present THEN
-      v_missing := array_append(v_missing, v_row.shape);
-    END IF;
-    RETURN NEXT;
+    shape_class := v_row.s; target_class := v_row.tc; present := true;
+    v_n := v_n + 1; RETURN NEXT;
   END LOOP;
-
-  IF array_length(v_missing, 1) > 0 THEN
-    RAISE EXCEPTION
-      'ckp.shapes_self_test: missing % shape(s) in %; check /ontology mount is current',
-      v_missing, v_board_iri;
+  IF v_n = 0 THEN
+    RAISE EXCEPTION 'ckp.shapes_self_test: % targets NO class - the surface is VACUOUS. A validation against it would report conforms:true having evaluated nothing. Check the ontology mount and that ckp.boot() ran.', v_iri;
   END IF;
 END;
 $sst$;

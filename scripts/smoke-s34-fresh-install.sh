@@ -85,8 +85,19 @@ echo "s34: pre-boot governed write refused — fail-closed, not vacuous ✓"
 # Still zero MANUAL prep in the consumer sense — no grants, no bootstrap_kernel,
 # no ALTER OWNER; boot is the first-start step every consumer image runs.
 SU "CALL ckp.boot();" >/dev/null
-SU "CALL ckp.import_module('task','demo'); CALL ckp.import_module('goal','demo');" >/dev/null
-echo "s34: boot + import_module from shipped /ontology layout ✓"
+echo "s34: boot from the shipped v3.11 /ontology layout ✓"
+
+# 0.4.40: the board pair is RETIRED, so this step now asserts the REFUSAL rather
+# than the import. ckp:Task and ckp:Goal do not exist in the v3.11 root, and a
+# module reaches a surface only through a sealed ckp:Adoption naming its digest.
+# A refusal is a result: it must name the retirement, not report a missing file.
+IMP_OUT="$(SU "CALL ckp.import_module('task','demo');" </dev/null 2>&1 || true)"
+case "$IMP_OUT" in
+  *"RETIRED, not missing"*) : ;;
+  *"could not open file"*)  fail "import_module('task') failed on a MISSING FILE — the retirement must be named, not discovered by absence" ;;
+  *)                        fail "import_module('task') did not refuse with the retirement reason; got: $IMP_OUT" ;;
+esac
+echo "s34: retired board module refuses WITH A REASON ✓"
 
 # (2c) THE KEYSTONE — governed 2-arg dispatch as a REAL ck_participant login,
 # now against an ARMED gate.
@@ -95,10 +106,13 @@ R="$(PART "SELECT ckp.dispatch('instance.create','{\"task\":{\"target_kernel\":\
 [ "$R" = "true" ] || fail "(ask 2c) dispatch as ck_participant returned ok=$R"
 echo "s34: governed dispatch as ck_participant ok:true ✓"
 
-# (4) the full legacy board verb still works for the participant after boot
-R="$(PART "SELECT ckp.dispatch('task.create','{\"task\":{\"target_kernel\":\"s34\",\"title\":\"board task\",\"goal\":\"v0.4.2\"}}'::jsonb)->>'ok'")"
-[ "$R" = "true" ] || fail "legacy task.create as participant returned ok=$R after boot"
-echo "s34: legacy task.create as participant ok:true ✓"
+# (4) 0.4.40: the legacy board verb mints an UNDECLARED v3.7 type, so a fresh
+# v3.11 install must refuse it fail-closed rather than seal it. This is R2 —
+# the seal refuses a type the kernel does not declare — measured on the one verb
+# that still carries the v3.7 namespace constant (#46).
+R="$(PART "SELECT ckp.dispatch('task.create','{\"task\":{\"target_kernel\":\"s34\",\"title\":\"board task\",\"goal\":\"v0.4.2\"}}'::jsonb)->>'ok'")" || R="errored"
+[ "$R" != "true" ] || fail "legacy task.create SEALED an undeclared v3.7 type on a v3.11 surface — fail-closed breached"
+echo "s34: legacy board verb refused on a v3.11 surface (ok=$R) ✓"
 
 # (5) the floor HOLDS for the same real login: no table reach, no pgrdf reach
 if PART "SELECT count(*) FROM ckp.instances" >/dev/null 2>&1; then

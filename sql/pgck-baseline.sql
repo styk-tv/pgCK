@@ -475,11 +475,10 @@ CREATE OR REPLACE PROCEDURE ckp.import_module(IN p_module text, IN p_project tex
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $procedure$
 DECLARE
-  -- The five v3.8 modules are RETIRED (see header): affordance, delegation and
-  -- proof are superseded by the root's own declarations; delivery and validate
-  -- were cut by ruling. Only the board pair remains known, and it must still pass
-  -- the namespace guard below.
-  v_known_modules text[] := ARRAY['task', 'goal'];
+  -- EMPTY BY RULING. affordance/delegation/proof are declared by the v3.11 root
+  -- itself; delivery/validate were cut; task/goal do not exist in v3.11 at all.
+  v_known_modules text[] := ARRAY[]::text[];
+  v_retired       text[] := ARRAY['affordance','delegation','proof','delivery','validate','task','goal'];
   v_core_ns text := 'https://conceptkernel.org/ontology/v3.11/core#';
   v_path text;
   v_iri  text := format('urn:ckp:%s/kernel/board', p_project);
@@ -487,39 +486,40 @@ DECLARE
   v_ttl  text;
   v_minted text;
 BEGIN
-  IF NOT (p_module = ANY (v_known_modules)) THEN
-    RAISE EXCEPTION 'ckp.import_module: unknown module %; known: %. The v3.8 modules '
-      '(affordance, delegation, delivery, proof, validate) are RETIRED — their terms are '
-      'either declared by the v3.11 root itself or were cut by ruling.', p_module, v_known_modules;
+  IF p_module = ANY (v_retired) THEN
+    RAISE EXCEPTION E'ckp.import_module: module "%" is RETIRED, not missing.\n'
+      'task and goal do not exist in the v3.11 root — measured against the loaded '
+      'core (digest e5f7d1e5…): ckp:Goal and ckp:Task are declared by nothing. The '
+      'board vocabulary is the adopted wave module: use wave:Ticket, wave:Pass and '
+      'wave:Index. affordance, delegation and proof are declared by the root itself; '
+      'delivery and validate were cut by ruling. A module reaches a surface only '
+      'through a sealed ckp:Adoption naming its digest — never by reading % .',
+      p_module, format('%s/%s.ttl', p_root, p_module);
   END IF;
 
+  IF NOT (p_module = ANY (v_known_modules)) THEN
+    RAISE EXCEPTION 'ckp.import_module: unknown module %; the known set is EMPTY by ruling. '
+      'Every module in force is adopted by digest (ckp:Adoption), not imported from a mount.', p_module;
+  END IF;
+
+  -- Unreachable while the known set is empty; retained so re-opening the door
+  -- cannot skip R7. An extension MUST NOT mint terms into the core namespace.
   v_path := format('%s/%s.ttl', p_root, p_module);
   v_ttl  := pg_read_file(v_path);
-
-  -- R7, NORMATIVE, enforced at the door: an extension MUST NOT mint terms into the
-  -- core namespace. Checked on the FILE TEXT before a single triple is parsed, so a
-  -- violating module can never reach a project board graph. E3 — seven
-  -- undeclared predicates live in the core namespace — is the defect this prevents.
   SELECT string_agg(DISTINCT m[1], ', ')
     INTO v_minted
-  FROM regexp_matches(v_ttl, '(?:^|[^A-Za-z0-9_])(ckp:[A-Za-z_][A-Za-z0-9_]*)\s+a\s+(?:rdfs:Class|owl:Class|owl:ObjectProperty|owl:DatatypeProperty|sh:NodeShape)', 'g') m;
+  FROM regexp_matches(v_ttl, '(?:^|[^A-Za-z0-9_])(ckp:[A-Za-z_][A-Za-z0-9_]*)\s+a\s+(?:rdfs:Class|owl:Class|owl:ObjectProperty|owl:DatatypeProperty)', 'g') AS m;
   IF v_minted IS NOT NULL THEN
     RAISE EXCEPTION E'ckp.import_module: module "%" mints term(s) into the CORE namespace (%): %\n'
-      'R7 is normative — an extension MUST NOT mint terms into the core namespace, because a '
-      'project surface would then carry declarations the published root does not make, and its '
-      'digest claim would be false. Re-issue the module under domain naming '
-      '(urn:ckp:<project>/type|prop|shape/<Name>) or its own module namespace, then adopt it '
-      'by digest like any other module.', p_module, v_core_ns, v_minted;
+      'R7 is normative — re-issue under domain naming and adopt it by digest.',
+      p_module, v_core_ns, v_minted;
   END IF;
-
-  -- One board graph per project; allocate once (pgrdf.add_graph is get-or-create on IRI).
   SELECT pgrdf.add_graph(v_iri) INTO v_g;
   PERFORM pgrdf.parse_turtle(v_ttl, v_g, v_iri || '#');
   PERFORM pgrdf.materialize(v_g);
   RAISE NOTICE 'ckp.import_module: % imported into %', p_module, v_iri;
 END;
-$procedure$
-;
+$procedure$;
 
 CREATE OR REPLACE PROCEDURE ckp.load_kernel(IN p_path text, IN p_project text DEFAULT 'demo'::text)
  LANGUAGE plpgsql
@@ -535,26 +535,15 @@ BEGIN
   v_ttl := pg_read_file(p_path);
   PERFORM pgrdf.parse_turtle(v_ttl, v_k, 'urn:ckp:kernel#');
   PERFORM pgrdf.materialize(v_k);
-  -- Ring repair (#48, same pattern as ckp.boot): the kernel graph's quad
-  -- table was just created owned by the CALLING superuser; the first seal's
-  -- definer path (_composed_shapes -> pgrdf.copy_graph) reads it as
-  -- ck_substrate. Measured on the s4 gate's fresh volume: 'permission denied
-  -- for table _pgrdf_quads_g2'. Re-assert the substrate floor over pgrdf.
+  -- Ring repair (#48, same pattern as ckp.boot): the kernel graph's quad table
+  -- was just created owned by the CALLING superuser; the first seal's definer
+  -- path reads it as ck_substrate. Re-assert the substrate floor over pgrdf.
   GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
   GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
-
-  -- CKB-3: ambient board graph for the project — task + goal modules.
-  -- Best-effort: a missing ontology file (e.g. stale container mount) raises;
-  -- callers that need a hard guarantee should set up the mount before load.
-  BEGIN
-    CALL ckp.import_module('task', p_project);
-    CALL ckp.import_module('goal', p_project);
-  EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'ckp.load_kernel: board module import failed (continuing): %', SQLERRM;
-  END;
+  -- No ambient board graph. task/goal are retired (see import_module above); the
+  -- board is the adopted wave module, which arrives by Adoption, not by import.
 END;
-$procedure$
-;
+$procedure$;
 
 CREATE OR REPLACE FUNCTION ckp._body_to_ttl(p_body jsonb, p_subj text)
  RETURNS text
@@ -3529,52 +3518,39 @@ CREATE OR REPLACE FUNCTION ckp.shapes_self_test(p_project text DEFAULT 'demo'::t
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  v_board_iri text := format('urn:ckp:%s/kernel/board', p_project);
-  v_board_g   bigint := pgrdf.graph_id(v_board_iri);
-  v_q         text;
-  v_row       record;
-  v_ask       text;
-  v_missing   text[] := ARRAY[]::text[];
+  v_comp_iri text := format('urn:ckp:%s/shapes/composed', p_project);
+  v_iri      text;
+  v_row      record;
+  v_n        int := 0;
 BEGIN
-  IF v_board_g IS NULL THEN
-    -- v0.4.2: no board ontology imported for this project — nothing loaded, nothing
-    -- stale to guard. The gate arms itself when ckp.import_module() lands the shapes.
-    RAISE NOTICE 'ckp.shapes_self_test: board graph % not imported yet — self-test skipped (valid silence; import task/goal modules to arm the board gate)', v_board_iri;
-    RETURN;
-  END IF;
+  -- Prefer the project's composed surface; fall back to the ε0 core so a
+  -- project that has not composed yet is still checked for vacuity.
+  v_iri := CASE WHEN pgrdf.graph_id(v_comp_iri) IS NOT NULL
+                THEN v_comp_iri ELSE 'urn:ckp:core' END;
 
   FOR v_row IN
-    SELECT * FROM (VALUES
-      ('ckp:TaskShape', 'ckp:Task'),
-      ('ckp:GoalShape', 'ckp:Goal')
-    ) AS expected(shape, target)
-  LOOP
-    v_q := format(
-      'PREFIX ckp: <https://conceptkernel.org/ontology/v3.11/core#>
-       PREFIX sh:  <http://www.w3.org/ns/shacl#>
+    SELECT j->>'s' AS s, j->>'tc' AS tc
+    FROM pgrdf.sparql(format(
+      'PREFIX sh: <http://www.w3.org/ns/shacl#>
        PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-       ASK FROM <%s>
-       WHERE { ?s rdf:type sh:NodeShape ; sh:targetClass %s }',
-      v_board_iri, v_row.target);
-
-    shape_class  := v_row.shape;
-    target_class := v_row.target;
-    SELECT j->>'_ask' INTO v_ask FROM pgrdf.sparql(v_q) j LIMIT 1;
-    present := COALESCE(v_ask = 'true', false);
-    IF NOT present THEN
-      v_missing := array_append(v_missing, v_row.shape);
-    END IF;
+       SELECT ?s ?tc FROM <%s>
+       WHERE { ?s rdf:type sh:NodeShape ; sh:targetClass ?tc }', v_iri)) j
+  LOOP
+    shape_class  := v_row.s;
+    target_class := v_row.tc;
+    present      := true;
+    v_n := v_n + 1;
     RETURN NEXT;
   END LOOP;
 
-  IF array_length(v_missing, 1) > 0 THEN
+  IF v_n = 0 THEN
     RAISE EXCEPTION
-      'ckp.shapes_self_test: missing % shape(s) in %; check /ontology mount is current',
-      v_missing, v_board_iri;
+      'ckp.shapes_self_test: % targets NO class — the surface is VACUOUS. '
+      'A validation against it would report conforms:true having evaluated '
+      'nothing. Check the ontology mount and that ckp.boot() ran.', v_iri;
   END IF;
 END;
-$function$
-;
+$function$;
 
 CREATE OR REPLACE FUNCTION ckp.snapshot(p_payload jsonb)
  RETURNS jsonb

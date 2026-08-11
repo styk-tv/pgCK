@@ -146,3 +146,69 @@ BEGIN
   -- board is the adopted wave module, which arrives by Adoption, not by import.
 END;
 $procedure$;
+
+-- ---------------------------------------------------------------------------
+-- 4. shapes_self_test stops being a second enforcement surface.
+--
+-- It enumerated ('ckp:TaskShape','ckp:Task') and ('ckp:GoalShape','ckp:Goal')
+-- in a hand-written array and RAISEd when they were absent from a per-project
+-- board graph. That is a procedural lookup outside the validator — the pattern
+-- SPEC.CKP.v3.11 §4.4 already forbids for the admitted-type set ("a second
+-- enforcement surface — the defect class this contract exists to end"), one
+-- level over. It was invisible only while the names it hardcoded happened to
+-- exist; retiring the v3.7 board made it unsatisfiable, which is how it was
+-- found. Updating the list to wave:TicketShape would relocate the defect, not
+-- remove it: the next adopted module would need a third edit to a function that
+-- should never know a shape's name.
+--
+-- What was legitimate inside it survives, because a SHACL validator genuinely
+-- cannot tell you it validated against NOTHING — zero targeting shapes returns
+-- conforms:true, indistinguishable from a real pass (lex:sym-passes-vacuously,
+-- measured live this pass). So the check becomes exactly that property, stated
+-- name-free: the surface must target at least one class.
+--
+-- Deliberately NON-MUTATING: it reads the composed graph if one exists and
+-- falls back to the ε0 core, and does NOT call ckp._composed_shapes, which
+-- TRUNCATEs and rebuilds. A self-test that writes cannot be run by the
+-- out-of-band verifier clause 4 requires.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION ckp.shapes_self_test(p_project text DEFAULT 'demo'::text)
+ RETURNS TABLE(shape_class text, target_class text, present boolean)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_comp_iri text := format('urn:ckp:%s/shapes/composed', p_project);
+  v_iri      text;
+  v_row      record;
+  v_n        int := 0;
+BEGIN
+  -- Prefer the project's composed surface; fall back to the ε0 core so a
+  -- project that has not composed yet is still checked for vacuity.
+  v_iri := CASE WHEN pgrdf.graph_id(v_comp_iri) IS NOT NULL
+                THEN v_comp_iri ELSE 'urn:ckp:core' END;
+
+  FOR v_row IN
+    SELECT j->>'s' AS s, j->>'tc' AS tc
+    FROM pgrdf.sparql(format(
+      'PREFIX sh: <http://www.w3.org/ns/shacl#>
+       PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+       SELECT ?s ?tc FROM <%s>
+       WHERE { ?s rdf:type sh:NodeShape ; sh:targetClass ?tc }', v_iri)) j
+  LOOP
+    shape_class  := v_row.s;
+    target_class := v_row.tc;
+    present      := true;
+    v_n := v_n + 1;
+    RETURN NEXT;
+  END LOOP;
+
+  IF v_n = 0 THEN
+    RAISE EXCEPTION
+      'ckp.shapes_self_test: % targets NO class — the surface is VACUOUS. '
+      'A validation against it would report conforms:true having evaluated '
+      'nothing. Check the ontology mount and that ckp.boot() ran.', v_iri;
+  END IF;
+END;
+$function$;
