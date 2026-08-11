@@ -20,7 +20,12 @@ use std::sync::{Mutex, OnceLock};
 
 /// One inbound governed action awaiting dispatch on the bgworker thread.
 pub struct InboundAction {
-    /// The governed verb, parsed from `input.kernel.pgCK.action.<verb>`.
+    /// The kernel segment the caller addressed, from `input.kernel.<K>.…`. Set as
+    /// `ckp.project` for the dispatch transaction so the seal is gated by the
+    /// caller's own composed surface. Without it every write fell to the
+    /// `DEFAULT 'demo'` in `ckp.dispatch` and sealed ungated (PASS-27).
+    pub kernel: String,
+    /// The governed verb, parsed from `input.kernel.<K>.action.<verb>`.
     pub verb: String,
     /// The message body — the `ckp.dispatch` payload (a JSON object).
     pub payload: Vec<u8>,
@@ -74,6 +79,7 @@ fn dispatch_one(action: &InboundAction) -> String {
     let verb = action.verb.clone();
     let payload = String::from_utf8_lossy(&action.payload).to_string();
     let identity = action.identity.clone();
+    let kernel = action.kernel.clone();
 
     let out: Result<Option<String>, pgrx::spi::Error> = BackgroundWorker::transaction(|| {
         Spi::connect_mut(|client| {
@@ -86,6 +92,20 @@ fn dispatch_one(action: &InboundAction) -> String {
                     "SELECT set_config('ckp.requester', $1, true)",
                     None,
                     &[sub.clone().into()],
+                )?;
+            }
+            // The kernel the caller addressed, LOCAL to this txn exactly as the
+            // requester is. `ckp.dispatch` reads
+            // `COALESCE(current_setting('ckp.project', true), 'demo')` — the SQL
+            // side was always parameterised and simply never told, so every seal
+            // through the door was gated by demo's surface instead of the
+            // caller's. Broker-enforced: the segment survives only because the
+            // callout granted publish on it.
+            if !kernel.is_empty() {
+                client.update(
+                    "SELECT set_config('ckp.project', $1, true)",
+                    None,
+                    &[kernel.clone().into()],
                 )?;
             }
             let table = client.update(
