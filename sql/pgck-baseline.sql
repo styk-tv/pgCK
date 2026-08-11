@@ -383,7 +383,7 @@ END;
 $procedure$
 ;
 
-CREATE OR REPLACE PROCEDURE ckp.boot(IN p_core_ttl_path text DEFAULT '/ontology/core.ttl'::text)
+CREATE OR REPLACE PROCEDURE ckp.boot(IN p_core_ttl_path text DEFAULT '/ontology/v3.11/core.ttl'::text)
  LANGUAGE plpgsql
 AS $procedure$
 DECLARE v_core INT; v_ttl TEXT; v_shapes INT;
