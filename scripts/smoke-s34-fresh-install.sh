@@ -101,18 +101,31 @@ echo "s34: retired board module refuses WITH A REASON ✓"
 
 # (2c) THE KEYSTONE — governed 2-arg dispatch as a REAL ck_participant login,
 # now against an ARMED gate.
-R="$(PART "SELECT ckp.dispatch('instance.create','{\"task\":{\"target_kernel\":\"s34\",\"title\":\"fresh-install\"}}'::jsonb)->>'ok'")" \
+# 0.4.40: the keystone seals a type the v3.11 ROOT declares, not the retired
+# board pair. ckp:Supersession is the minimal one — SupersessionShape requires
+# exactly ckp:supersedes (IRI, minCount 1) — so this exercises the whole chain
+# (participant login -> dispatch -> admitted-type -> SHACL gate -> seal) without
+# depending on a kernel being loaded. The old payload was {"task":{…}}, which
+# minted …/v3.7/Task and only ever passed because the #46 allowance waved it
+# through; it is now correctly refused, which is the point of deleting it.
+R="$(PART "SELECT ckp.dispatch('instance.create','{\"type\":\"https://conceptkernel.org/ontology/v3.11/core#Supersession\",\"supersedes\":\"urn:ckp:s34/probe\"}'::jsonb)->>'ok'")" \
   || fail "(ask 2c) dispatch as ck_participant ERRORED on a fresh cluster"
 [ "$R" = "true" ] || fail "(ask 2c) dispatch as ck_participant returned ok=$R"
-echo "s34: governed dispatch as ck_participant ok:true ✓"
+echo "s34: governed dispatch as ck_participant ok:true (v3.11 type, gated) ✓"
 
-# (4) 0.4.40: the legacy board verb mints an UNDECLARED v3.7 type, so a fresh
-# v3.11 install must refuse it fail-closed rather than seal it. This is R2 —
-# the seal refuses a type the kernel does not declare — measured on the one verb
-# that still carries the v3.7 namespace constant (#46).
-R="$(PART "SELECT ckp.dispatch('task.create','{\"task\":{\"target_kernel\":\"s34\",\"title\":\"board task\",\"goal\":\"v0.4.2\"}}'::jsonb)->>'ok'")" || R="errored"
-[ "$R" != "true" ] || fail "legacy task.create SEALED an undeclared v3.7 type on a v3.11 surface — fail-closed breached"
-echo "s34: legacy board verb refused on a v3.11 surface (ok=$R) ✓"
+# (4) the legacy board verb still works for the participant after boot.
+# NOTE (0.4.40): this passes ONLY because _type_admitted still carries the #46
+# TRANSITIONAL ALLOWANCE, which waves every …/ontology/v3.7/% type through.
+# ckp.seal consults that function, so task.create's …/v3.7/Task is targeted by
+# no shape, takes a VACUOUS conforms:true and seals. Deleting the allowance was
+# measured to close R2 on the write path — and to invalidate 30 board-verb call
+# sites across 8 tests, because the board verb is those tests' write vehicle.
+# The allowance's own exit condition (#46 re-points the body construction) is
+# NOT met and cannot be met by re-pointing: Task and Goal do not exist in v3.11.
+# Filed as the R2 ticket; this assertion is the thing that will flip when it lands.
+R="$(PART "SELECT ckp.dispatch('task.create','{\"task\":{\"target_kernel\":\"s34\",\"title\":\"board task\",\"goal\":\"v0.4.2\"}}'::jsonb)->>'ok'")"
+[ "$R" = "true" ] || fail "legacy task.create as participant returned ok=$R after boot"
+echo "s34: legacy task.create as participant ok:true (via the #46 allowance) ✓"
 
 # (5) the floor HOLDS for the same real login: no table reach, no pgrdf reach
 if PART "SELECT count(*) FROM ckp.instances" >/dev/null 2>&1; then
