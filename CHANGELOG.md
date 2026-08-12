@@ -2,6 +2,66 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.49 - 2026-08-12
+
+**Kernel creation works through the door, every function resolves its own kernel, and events name who
+produced them.** The first cumulatively verifiable release since v0.4.24 — twenty-five versions had
+accumulated without a checkpoint where the claims could be re-run. Nearly every defect closed here was
+the same shape: one fact named in two places, agreeing only by accident, and resolving toward the
+permissive side when it diverged.
+
+- **A concept kernel can be created through the door** (`kernel.germinate`). It seals a Project and a
+  Kernel with three organs and counted dependencies 0/1/2, with `ckp:ownedBy` stamped from the verified
+  connection — a client may declare its own STRUCTURE, never who owns it. Three defects had made this
+  impossible: `ckp.validate` aimed its scratch graph at the same id band pgrdf allocates data graphs
+  from (59 live graphs sat at ordinary container pids, the core ontology at `1000000221`);
+  `_body_to_ttl` dropped arrays in the overload `seal` actually calls, so `ckp:Kernel` — which requires
+  three organs — was unsealable; and the sealed body and the graph disagreed about where organs live.
+- **`ckp.dispatch` resolved every caller's affordances under one fixed name** (`registry_lookup('pgck',
+  …)`), so a verb a kernel registered, voted through and applied was invisible to its own owner. It
+  looked correct only because the seed and the registrars were hard-coded to the SAME literal — writer
+  and reader wrong in the same direction, which is symmetry, not agreement. **No `ckp` function names a
+  kernel any more:** the plan readers, the plan registrars, the epoch bump and thirteen inline project
+  resolutions (in two spellings that disagreed on the empty string) now resolve the caller, with the
+  seeded floor as an explicit fallback.
+- **Identity has one source.** `ckp.seal` resolved the participant from the payload while germination
+  stamped `ownedBy` from `ckp.requester`, so a single seal carried two identities — owned by a verified
+  participant, created by `anon:<nonce>`. The verified connection now wins; a conflicting payload sub is
+  ignored, never merged. This closes forgery through the door, where only the relay sets the GUC.
+- **Events reach their kernel, and carry a sender.** `compute_publish_subject` hard-coded the kernel
+  segment, so every kernel's events landed on one subject and a subscriber to its own kernel received
+  nothing — a publish to a subject nobody listens on succeeds, and is indistinguishable from silence.
+  The kernel is now derived from the sealed `producedBy` stamp. The `by` header keyed on a v3.8-era
+  board property that 5 of 78 instances carry; it reads the core `createdBy` first, so a peer can tell
+  who said what. `out_topic` is populated at registration with the subject the relay already publishes
+  replies to.
+- **`validate` predicts `seal`.** `ckp.validate_instance` validated against the kernel graph — 30
+  triples, zero `sh:targetClass` — instead of the composed surface (1258 triples, 27 targets), so every
+  dry-run verdict was structurally vacuous. Shapes graph, property map and serializer overload now all
+  match `seal`.
+- **A governed change that projects nothing is refused at propose.** P0-E checked that the *op* had a
+  projector but never that the *detail* carried anything, so an `add_affordance` with an empty detail
+  sealed `applied`, bumped the epoch, registered nothing and returned `ok:true` with no error anywhere.
+  `add_class` likewise accepted `detail.properties[]` and dropped them, governing into existence a type
+  that admits instances nothing judges.
+- **Integrity checks are governed affordances.** `integrity.organs` and `integrity.naming` were
+  proposed, voted and applied through the governance plane, compiled into `ckp.plans` keyed to their
+  epoch, and are callable through the one door — a self-check whose verdict is sealed rather than run
+  by remembering to.
+- **`s63_kernel_resolution`** asserts the four claims that had no test: a kernel resolves the verb it
+  registered, does NOT resolve another kernel's, still reaches the seeded floor, and the substrate seeds
+  its own surface under a canonical name (lowercase, one transport segment — NATS subjects are
+  case-sensitive).
+- **Ontology** — `ontology/` holds v3.11 alone; core, wave and lexicon match their pass-stamped
+  `.sha256` sidecars byte for byte.
+
+**Known gaps, not closed here.** CI does not run the SQL suite — all 43 tests run locally only. Nothing
+exercises the migration chain: both gates install from the baseline, which is how 0.4.47 shipped the
+wrong `dispatch` overload and left `compute_publish_subject` stale on a deployed substrate. NATS
+delivery is unproven — the outbox row is correctly addressed; arrival is untested. A seal-time refusal
+for writes no shape would judge is written and parked, pending a pass over test fixtures that seal
+unshaped types.
+
 ## v0.4.24 - 2026-07-19
 
 **pgCK-owned NATS admittance is live — the auth-callout responder + subject-scoped identity close the
