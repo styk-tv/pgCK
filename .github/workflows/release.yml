@@ -61,7 +61,7 @@ jobs:
       #     ├── lib/pgck.so
       #     ├── share/extension/pgck.control
       #     ├── share/extension/pgck--<ver>.sql
-      #     ├── ontology/*.ttl        (v0.4.2: shipped fixtures — mount at /ontology)
+      #     ├── ontology/v3.11/{core.ttl,modules/*.ttl}  (mount at /ontology)
       #     ├── LICENSE
       #     └── SHA256SUMS
       - name: Repack to INSTALL-spec layout
@@ -78,7 +78,19 @@ jobs:
           # v0.4.2 (install-cascade ask 3): ship the ontology modules WITH the package.
           # ckp.boot()/ckp.import_module() default to /ontology — consumers mount or
           # copy this directory there (same as they mount lib/ + share/).
-          cp ontology/*.ttl "${OUT}/ontology/"
+          #
+          # STRUCTURE-PRESERVING, and it must be: 0.4.40 moved the modules to
+          # ontology/v3.11/ and ckp.boot() now defaults to /ontology/v3.11/core.ttl.
+          # This step still copied flat ontology/*.ttl, which no longer matches
+          # anything -- all four build jobs failed on `cp: cannot stat`. Flattening
+          # would have been worse than failing: the copy would succeed and boot
+          # would then look for a path the package does not contain.
+          #
+          # The .sha256 sidecars ship too: they are what makes a consumer able to
+          # check the module it received against the digest a pass stamped.
+          cp -R ontology/v3.11 "${OUT}/ontology/"
+          test -f "${OUT}/ontology/v3.11/core.ttl"                  # fail loudly, not silently
+          test -f "${OUT}/ontology/v3.11/modules/wave.ttl"
           cp LICENSE "${OUT}/"
           ( cd "${OUT}" && find . -type f ! -name SHA256SUMS -print0 | xargs -0 sha256sum > SHA256SUMS )
           tar czf "${OUT}.tar.gz" "${OUT}"
@@ -123,7 +135,7 @@ jobs:
             lib/pgck.so:application/vnd.styk.pgck.so \
             share/extension/pgck.control:application/vnd.styk.pgck.control \
             share/extension/pgck--${VER}.sql:application/vnd.styk.pgck.sql \
-            $(for t in ontology/*.ttl; do printf '%s:application/vnd.styk.pgck.ontology.ttl ' "$t"; done)
+            $(find ontology -name '*.ttl' | sort | while read -r t; do printf '%s:application/vnd.styk.pgck.ontology.ttl ' "$t"; done)
           # Capture the manifest digest so the attestation step can target it.
           DIGEST=$(oras manifest fetch --descriptor "${REPO}:${TAG}" | jq -r .digest)
           echo "repo=${REPO}" >> "$GITHUB_OUTPUT"

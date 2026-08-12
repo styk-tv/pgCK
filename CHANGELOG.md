@@ -2,7 +2,21 @@
 
 All notable changes to `pgCK` are logged here.
 
-## v0.4.49 - 2026-08-12
+## v0.4.50 - 2026-08-12
+
+**Release packaging follows the v3.11 ontology layout.** `v0.4.49` is a burned tag: all four build jobs
+failed at *Repack to INSTALL-spec layout* with `cp: cannot stat 'ontology/*.ttl'`, because 0.4.40 moved
+the modules to `ontology/v3.11/` and `ckp.boot()` now defaults to `/ontology/v3.11/core.ttl` while
+`release.yml` still packaged a flat directory. The copy is structure-preserving and asserts the files
+exist rather than trusting `cp`; the `.sha256` sidecars ship too, so a consumer can check a module
+against the digest a pass stamped. No substrate change — the contents below are unchanged from the
+burned tag.
+
+Worth recording where this hid: the release workflow runs **only on a tag**, so it sits outside
+`smoke-s4`, `smoke-s34` *and* `ci.yml`. Same defect class as the rest of this release — one fact named
+in two places, one never updated — in the one place nothing was looking.
+
+## v0.4.49 (burned — build failed, never released) - 2026-08-12
 
 **Kernel creation works through the door, every function resolves its own kernel, and events name who
 produced them.** The first cumulatively verifiable release since v0.4.24 — twenty-five versions had

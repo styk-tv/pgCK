@@ -1,0 +1,20 @@
+-- pgck 0.4.50 — no substrate change; the release PACKAGING was wrong.
+--
+-- v0.4.49 is a burned tag. All four build jobs failed at "Repack to INSTALL-spec
+-- layout" with
+--     cp: cannot stat 'ontology/*.ttl': No such file or directory
+-- because 0.4.40 moved the modules to ontology/v3.11/ and ckp.boot() now defaults
+-- to /ontology/v3.11/core.ttl, while release.yml still packaged a flat
+-- ontology/*.ttl.
+--
+-- Same class as the defects 0.4.43-0.4.49 closed -- one fact (the ontology
+-- layout) named in two places, one of them never updated -- but in the one place
+-- neither gate nor CI looks: the release workflow runs only on a tag, so it is
+-- outside smoke-s4, smoke-s34 AND ci.yml.
+--
+-- Flattening the copy would have been worse than failing: it would succeed, and
+-- boot would then look for a path the package does not contain. The packaging is
+-- structure-preserving and asserts the two files exist rather than trusting cp.
+--
+-- This migration exists so the upgrade chain stays contiguous. It changes nothing.
+DO $$ BEGIN NULL; END $$;
