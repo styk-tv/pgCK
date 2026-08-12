@@ -40,7 +40,7 @@ DO $$
 DECLARE res jsonb; failed text;
 BEGIN
   INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane, delegate)
-    VALUES ('pgCK','tool.example','input.kernel.pgCK.action.tool.example','instance', true)
+    VALUES ('pgck','tool.example','input.kernel.pgck.action.tool.example','instance', true)
     ON CONFLICT (kernel, verb) DO UPDATE SET delegate = true;
   SET LOCAL ROLE ck_participant;
   BEGIN res := ckp.dispatch('tool.example', '{}'::jsonb);

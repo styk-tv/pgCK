@@ -38,7 +38,7 @@ END $$;
 -- Seal four Tasks, one per contributing kernel.
 DO $$
 DECLARE
-  v_kernels text[] := ARRAY['pgCK', 'pgRDF', 'CK.Lib.Js', 'oci-germination'];
+  v_kernels text[] := ARRAY['pgck', 'pgRDF', 'CK.Lib.Js', 'oci-germination'];
   v_kernel  text;
   v_idx     int := 0;
   v_body    jsonb;

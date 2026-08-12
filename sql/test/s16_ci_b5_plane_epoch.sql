@@ -30,7 +30,7 @@ DECLARE
   ttl text := '@prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 <urn:ckp:aff:s16-ok> a ckp:Affordance ;
-  ckp:inTopic "input.kernel.pgCK.action.s16" ;
+  ckp:inTopic "input.kernel.pgck.action.s16" ;
   ckp:plane "instance" ;
   ckp:epoch "1"^^xsd:integer ;
   ckp:derivedBy <urn:ckp:pgCK/kernel/ck> .';
@@ -48,7 +48,7 @@ DECLARE
   v_core int := (SELECT v::int FROM ckp.config WHERE k='core_graph_id');
   ttl text := '@prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
 <urn:ckp:aff:s16-bad> a ckp:Affordance ;
-  ckp:inTopic "input.kernel.pgCK.action.s16bad" ;
+  ckp:inTopic "input.kernel.pgck.action.s16bad" ;
   ckp:plane "bogus" .';
 BEGIN
   IF ckp.validate(ttl, v_core) THEN

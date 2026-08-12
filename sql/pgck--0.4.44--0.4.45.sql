@@ -908,3 +908,116 @@ DELETE FROM ckp.kernel_epoch e
    AND EXISTS (SELECT 1 FROM ckp.kernel_epoch o WHERE o.kernel = 'pgCK');
 
 UPDATE ckp.kernel_epoch SET kernel = 'pgck' WHERE kernel = 'pgCK';
+
+
+-- ---------------------------------------------------------------------------
+-- validate must gate on the SAME surface as seal, or it predicts nothing.
+--
+-- ckp.validate_instance validated a candidate against <urn:ckp:<proj>/kernel/ck>
+-- -- the kernel graph, which holds a Kernel and three organs and NO shapes.
+-- Measured on pgck.localhost: 30 triples, 0 sh:targetClass, against a composed
+-- surface of 1258 triples and 27 targets. No focus node could ever be selected,
+-- so every verdict was vacuous; the only reason that surfaced as an error rather
+-- than a confident conforms:true is the no-target guard inside pgrdf.validate.
+--
+-- It even computed ckp._composed_shapes() for the admitted-type check and then
+-- discarded it with the DECLARE block's scope.
+--
+-- Three axes diverged from seal, all fixed here:
+--   shapes graph  kernel/ck            -> _composed_shapes()
+--   property map  kernel/ck            -> <proj>/shapes/composed
+--   serializer    _body_to_ttl/2       -> _body_to_ttl/3 (datatypes from shapes)
+--
+-- Until now "validate PREDICTS seal" (pgCK#27) held only for the admitted-type
+-- half, which is the half that already had its own explicit check.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION ckp.validate_instance(p_payload jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_body    jsonb := COALESCE(p_payload->'body', p_payload);
+  v_type    text := v_body->>'type';
+  v_proj    text := COALESCE(NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  v_subj    text := 'urn:ckp:validate:'||pg_backend_pid();
+  v_ns      text;
+  v_propmap jsonb;
+  v_resolved jsonb;
+  v_key text; v_val jsonb; v_kiri text;
+  v_scratch bigint;
+  v_comp    int;
+  v_ttl     text;
+  v_report  jsonb;
+BEGIN
+  IF v_type IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'type_required');
+  END IF;
+
+  -- P0-D mechanism 2 parity (pgCK#27): validate PREDICTS seal. seal refuses an
+  -- undeclared type before the SHACL gate; validate must report the same, or
+  -- validate <=> seal is a slogan. An undeclared type reports conforms=false
+  -- with a violation naming it — never the vacuous conforms=true that let
+  -- invented types look valid.
+  v_comp := ckp._composed_shapes(v_proj);
+  BEGIN
+    IF NOT ckp._type_admitted(v_type, v_proj, v_comp) THEN
+      RETURN jsonb_build_object('ok', true, 'type', v_type, 'conforms', false,
+        'violations', jsonb_build_array(jsonb_build_object(
+          'focusNode', v_type, 'resultMessage', 'type is not admitted — no shape targets it and it is declared by no class',
+          'sourceConstraintComponent', 'ckp:AdmittedTypeConstraint')),
+        'report', jsonb_build_object('conforms', false));
+    END IF;
+  END;
+
+  -- Resolve the body's short keys to declared property IRIs (mirror ckp.create_typed) so validate
+  -- accepts the same {type, …fields} shape as instance.create. Already-IRI keys pass through.
+  v_ns := CASE WHEN v_type ~ '[/#]' THEN regexp_replace(v_type, '[^/#]*$', '') ELSE '' END;
+  SELECT COALESCE(jsonb_object_agg(regexp_replace(path, '^.*[/#]', ''), path), '{}'::jsonb)
+    INTO v_propmap
+  FROM (
+    SELECT DISTINCT j->>'path' AS path
+    FROM pgrdf.sparql(format($q$
+      PREFIX sh: <http://www.w3.org/ns/shacl#>
+      SELECT ?path WHERE { GRAPH <urn:ckp:%s/shapes/composed> {
+        ?s sh:targetClass <%s> ; sh:property ?p . ?p sh:path ?path } }
+    $q$, v_proj, v_type)) AS j WHERE j->>'path' IS NOT NULL
+  ) p;
+  v_resolved := jsonb_build_object('type', v_type);
+  FOR v_key, v_val IN SELECT key, value FROM jsonb_each(v_body) LOOP
+    CONTINUE WHEN v_key IN ('type', '@id', 'sub');
+    IF position(':' in v_key) > 0 THEN v_kiri := v_key;
+    ELSIF v_propmap ? v_key THEN v_kiri := v_propmap->>v_key;
+    ELSE v_kiri := v_ns || v_key; END IF;
+    v_resolved := v_resolved || jsonb_build_object(v_kiri, v_val);
+  END LOOP;
+
+  -- project the resolved candidate body to RDF in a scratch graph.
+  v_ttl := ckp._body_to_ttl(v_resolved, v_subj, v_comp);
+  v_scratch := pgrdf.add_graph('urn:ckp:validate:'||pg_backend_pid());
+  PERFORM pgrdf.clear_graph(v_scratch);
+  BEGIN
+    PERFORM pgrdf.parse_turtle(v_ttl, v_scratch, 'urn:ckp:validate#');
+  EXCEPTION WHEN OTHERS THEN
+    PERFORM pgrdf.clear_graph(v_scratch);
+    RETURN jsonb_build_object('ok', false, 'error', 'project_error', 'detail', SQLERRM);
+  END;
+
+  -- Full native W3C SHACL Core report against the COMPOSED SURFACE -- the graph
+  -- ckp.seal actually gates on. This validated against <urn:ckp:%s/kernel/ck>,
+  -- which holds a Kernel and three organs and NO shapes: measured on the bench,
+  -- 30 triples and 0 sh:targetClass, versus a composed surface of 1258 triples
+  -- and 27 targets. Nothing could ever be selected, and the only thing standing
+  -- between that and a vacuous conforms:true is the no-target guard.
+  -- "validate PREDICTS seal" (pgCK#27) was a slogan on all three axes -- shapes
+  -- graph, property map, serializer overload. All three now match seal.
+  v_report := pgrdf.validate(v_scratch, v_comp, 'native');
+  PERFORM pgrdf.clear_graph(v_scratch);
+
+  RETURN jsonb_build_object('ok', true, 'type', v_type,
+    'conforms',   COALESCE((v_report->>'conforms')::boolean, false),
+    'violations', COALESCE(v_report->'results', '[]'::jsonb),
+    'report',     v_report);
+END;
+$function$;

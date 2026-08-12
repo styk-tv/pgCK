@@ -61,9 +61,9 @@ DECLARE
   v_body jsonb := jsonb_build_object(
     'type', 'https://conceptkernel.org/ontology/v3.11/core#Affordance',
     'https://conceptkernel.org/ontology/v3.11/core#inTopic',
-      'input.kernel.pgCK.action.display.broadcast',
+      'input.kernel.pgck.action.display.broadcast',
     'https://conceptkernel.org/ontology/v3.11/core#outTopic',
-      'event.kernel.pgCK.Display.theme'
+      'event.kernel.pgck.Display.theme'
   );
 BEGIN
   PERFORM ckp.seal('s10-aff-ok', v_body);
@@ -79,7 +79,7 @@ DECLARE
   v_body jsonb := jsonb_build_object(
     'type', 'https://conceptkernel.org/ontology/v3.11/core#Affordance',
     'https://conceptkernel.org/ontology/v3.11/core#outTopic',
-      'event.kernel.pgCK.Display.theme'
+      'event.kernel.pgck.Display.theme'
   );
   v_caught text;
 BEGIN

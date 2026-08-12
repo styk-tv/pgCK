@@ -14,7 +14,7 @@ DECLARE
     'urn:ckp:board/task_id', 'S5-T-0001',
     'urn:ckp:board/title', 's5 seal project_links',
     'urn:ckp:board/part_of_goal', 's5-goal',
-    'urn:ckp:board/target_kernel', 'pgCK',
+    'urn:ckp:board/target_kernel', 'pgck',
     'urn:ckp:board/lifecycle_state', 'pending',
     'urn:ckp:board/priority', 1,
     'urn:ckp:board/queue_seq', 1,

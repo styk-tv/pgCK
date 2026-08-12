@@ -2,7 +2,7 @@
 --
 -- Acceptance (per _WIP/TASKS.PGCK.S4-BUNDLED-NATS.v0.1 step 6):
 --   After sealing a Task via ckp.seal(), exactly one ckp.outbox row
---   appears with subject = 'event.kernel.pgCK.Task.sealed', headers
+--   appears with subject = 'event.kernel.pgck.Task.sealed', headers
 --   containing Ck-Seq matching the ledger.seq of the seal, payload
 --   matching the body bytes.
 --
@@ -34,7 +34,7 @@ SET ckp.project = 's8-test';
 -- Capture the pre-seal outbox baseline so we can assert exactly one
 -- row was added by this seal (vs leftover state from earlier tests
 -- against the same project).
-SELECT count(*) AS pre_count FROM ckp.outbox WHERE subject LIKE 'event.kernel.pgCK.%' \gset
+SELECT count(*) AS pre_count FROM ckp.outbox WHERE subject LIKE 'event.kernel.pgck.%' \gset
 
 -- Seal the shared Goal first so the Task can reference it.
 DO $$
@@ -57,7 +57,7 @@ DECLARE
     'urn:ckp:board/task_id', 'S8-T-1',
     'urn:ckp:board/title', 's8 smoke task',
     'urn:ckp:board/part_of_goal', 's8-goal',
-    'urn:ckp:board/target_kernel', 'pgCK',
+    'urn:ckp:board/target_kernel', 'pgck',
     'urn:ckp:board/lifecycle_state', 'pending',
     'urn:ckp:board/priority', 1,
     'urn:ckp:board/queue_seq', 1,
@@ -80,7 +80,7 @@ DECLARE
 BEGIN
   -- Two seals (Goal + Task) → two rows added.
   SELECT count(*) - :pre_count INTO v_added_count
-  FROM ckp.outbox WHERE subject LIKE 'event.kernel.pgCK.%';
+  FROM ckp.outbox WHERE subject LIKE 'event.kernel.pgck.%';
   IF v_added_count <> 2 THEN
     RAISE EXCEPTION 's8 FAIL: expected 2 new outbox rows (Goal + Task), got %', v_added_count;
   END IF;
@@ -89,7 +89,7 @@ BEGIN
   SELECT seq, subject, headers->>'Ck-Seq', headers->>'Content-Type', octet_length(payload), ledger_seq
   INTO v_task_seq, v_task_subject, v_task_ck_seq, v_task_content_type, v_task_payload_len, v_ledger_seq
   FROM ckp.outbox
-  WHERE subject = 'event.kernel.pgCK.Task.sealed'
+  WHERE subject = 'event.kernel.pgck.Task.sealed'
     AND payload::text LIKE '%S8-T-1%'
   ORDER BY seq DESC
   LIMIT 1;
@@ -98,8 +98,8 @@ BEGIN
     RAISE EXCEPTION 's8 FAIL: no outbox row found for the Task seal';
   END IF;
 
-  IF v_task_subject <> 'event.kernel.pgCK.Task.sealed' THEN
-    RAISE EXCEPTION 's8 FAIL: subject is %, expected event.kernel.pgCK.Task.sealed', v_task_subject;
+  IF v_task_subject <> 'event.kernel.pgck.Task.sealed' THEN
+    RAISE EXCEPTION 's8 FAIL: subject is %, expected event.kernel.pgck.Task.sealed', v_task_subject;
   END IF;
 
   IF v_task_content_type <> 'application/json' THEN
@@ -119,16 +119,16 @@ BEGIN
   END IF;
 
   -- Also assert compute_publish_subject() for the known type URIs.
-  IF ckp.compute_publish_subject('urn:ckp:board/Task') <> 'event.kernel.pgCK.Task.sealed' THEN
+  IF ckp.compute_publish_subject('urn:ckp:board/Task') <> 'event.kernel.pgck.Task.sealed' THEN
     RAISE EXCEPTION 's8 FAIL: compute_publish_subject(Task) wrong';
   END IF;
-  IF ckp.compute_publish_subject('urn:ckp:board/Goal') <> 'event.kernel.pgCK.Goal.sealed' THEN
+  IF ckp.compute_publish_subject('urn:ckp:board/Goal') <> 'event.kernel.pgck.Goal.sealed' THEN
     RAISE EXCEPTION 's8 FAIL: compute_publish_subject(Goal) wrong';
   END IF;
-  IF ckp.compute_publish_subject(NULL) <> 'event.kernel.pgCK.Instance.sealed' THEN
+  IF ckp.compute_publish_subject(NULL) <> 'event.kernel.pgck.Instance.sealed' THEN
     RAISE EXCEPTION 's8 FAIL: compute_publish_subject(NULL) wrong';
   END IF;
-  IF ckp.compute_publish_subject('not-a-uri') <> 'event.kernel.pgCK.not-a-uri.sealed' THEN
+  IF ckp.compute_publish_subject('not-a-uri') <> 'event.kernel.pgck.not-a-uri.sealed' THEN
     RAISE EXCEPTION 's8 FAIL: compute_publish_subject(no-slash) wrong';
   END IF;
 END $$;

@@ -14,9 +14,9 @@
 DO $$
 DECLARE n int;
 BEGIN
-  n := ckp.compile_plans('pgCK');
+  n := ckp.compile_plans('pgck');
   IF n < 2 THEN RAISE EXCEPTION 's22 FAIL: compile_plans returned % (< 2)', n; END IF;
-  IF (SELECT count(*) FROM ckp.plans WHERE kernel='pgCK' AND verb IN ('instance.get','instance.count') AND epoch=1) <> 2 THEN
+  IF (SELECT count(*) FROM ckp.plans WHERE kernel='pgck' AND verb IN ('instance.get','instance.count') AND epoch=1) <> 2 THEN
     RAISE EXCEPTION 's22 FAIL: expected 2 plans at epoch 1';
   END IF;
 END $$;
@@ -29,7 +29,7 @@ INSERT INTO ckp.instances(id, body) VALUES ('urn:ckp:s22:t1', '{"rdfs:label":"S2
 DO $$
 DECLARE res jsonb;
 BEGIN
-  res := ckp.plan_exec('pgCK', 'instance.get', '{"id":"urn:ckp:s22:t1"}'::jsonb);
+  res := ckp.plan_exec('pgck', 'instance.get', '{"id":"urn:ckp:s22:t1"}'::jsonb);
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's22 FAIL: instance.get not ok: %', res; END IF;
   IF jsonb_array_length(res->'rows') <> 1 THEN RAISE EXCEPTION 's22 FAIL: instance.get returned % rows (want 1)', jsonb_array_length(res->'rows'); END IF;
   IF res->'rows'->0->'body'->>'rdfs:label' <> 'S22' THEN RAISE EXCEPTION 's22 FAIL: wrong row body: %', res; END IF;
@@ -39,7 +39,7 @@ END $$;
 DO $$
 DECLARE res jsonb;
 BEGIN
-  res := ckp.plan_exec('pgCK', 'instance.get', jsonb_build_object('id', 'x'' OR ''1''=''1'));
+  res := ckp.plan_exec('pgck', 'instance.get', jsonb_build_object('id', 'x'' OR ''1''=''1'));
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's22 FAIL: injection probe errored: %', res; END IF;
   IF jsonb_array_length(res->'rows') <> 0 THEN
     RAISE EXCEPTION 's22 FAIL: injection id returned % rows — NOT parameter-bound (table dumped!)', jsonb_array_length(res->'rows');
@@ -50,7 +50,7 @@ END $$;
 DO $$
 DECLARE res jsonb;
 BEGIN
-  res := ckp.plan_exec('pgCK', 'instance.count', '{}'::jsonb);
+  res := ckp.plan_exec('pgck', 'instance.count', '{}'::jsonb);
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's22 FAIL: instance.count not ok: %', res; END IF;
   IF (res->'rows'->0->>'n')::int < 1 THEN RAISE EXCEPTION 's22 FAIL: instance.count n < 1: %', res; END IF;
 END $$;
@@ -59,9 +59,9 @@ END $$;
 DO $$
 DECLARE v_before int; v_after int;
 BEGIN
-  v_before := (SELECT count(*) FROM ckp.plans WHERE kernel='pgCK');
-  PERFORM ckp.compile_plans('pgCK');
-  v_after := (SELECT count(*) FROM ckp.plans WHERE kernel='pgCK');
+  v_before := (SELECT count(*) FROM ckp.plans WHERE kernel='pgck');
+  PERFORM ckp.compile_plans('pgck');
+  v_after := (SELECT count(*) FROM ckp.plans WHERE kernel='pgck');
   IF v_after <> v_before THEN RAISE EXCEPTION 's22 FAIL: recompile changed plan count %→% (not idempotent)', v_before, v_after; END IF;
 END $$;
 

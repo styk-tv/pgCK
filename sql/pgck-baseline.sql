@@ -4140,7 +4140,7 @@ DECLARE
   v_resolved jsonb;
   v_key text; v_val jsonb; v_kiri text;
   v_scratch bigint;
-  v_kernel  bigint;
+  v_comp    int;
   v_ttl     text;
   v_report  jsonb;
 BEGIN
@@ -4153,9 +4153,9 @@ BEGIN
   -- validate <=> seal is a slogan. An undeclared type reports conforms=false
   -- with a violation naming it — never the vacuous conforms=true that let
   -- invented types look valid.
-  DECLARE v_comp0 int := ckp._composed_shapes(v_proj);
+  v_comp := ckp._composed_shapes(v_proj);
   BEGIN
-    IF NOT ckp._type_admitted(v_type, v_proj, v_comp0) THEN
+    IF NOT ckp._type_admitted(v_type, v_proj, v_comp) THEN
       RETURN jsonb_build_object('ok', true, 'type', v_type, 'conforms', false,
         'violations', jsonb_build_array(jsonb_build_object(
           'focusNode', v_type, 'resultMessage', 'type is not admitted — no shape targets it and it is declared by no class',
@@ -4173,7 +4173,7 @@ BEGIN
     SELECT DISTINCT j->>'path' AS path
     FROM pgrdf.sparql(format($q$
       PREFIX sh: <http://www.w3.org/ns/shacl#>
-      SELECT ?path WHERE { GRAPH <urn:ckp:%s/kernel/ck> {
+      SELECT ?path WHERE { GRAPH <urn:ckp:%s/shapes/composed> {
         ?s sh:targetClass <%s> ; sh:property ?p . ?p sh:path ?path } }
     $q$, v_proj, v_type)) AS j WHERE j->>'path' IS NOT NULL
   ) p;
@@ -4187,7 +4187,7 @@ BEGIN
   END LOOP;
 
   -- project the resolved candidate body to RDF in a scratch graph.
-  v_ttl := ckp._body_to_ttl(v_resolved, v_subj);
+  v_ttl := ckp._body_to_ttl(v_resolved, v_subj, v_comp);
   v_scratch := pgrdf.add_graph('urn:ckp:validate:'||pg_backend_pid());
   PERFORM pgrdf.clear_graph(v_scratch);
   BEGIN
@@ -4197,9 +4197,15 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'error', 'project_error', 'detail', SQLERRM);
   END;
 
-  -- full native W3C SHACL Core report against the kernel shapes.
-  v_kernel := pgrdf.add_graph(format('urn:ckp:%s/kernel/ck', v_proj));
-  v_report := pgrdf.validate(v_scratch, v_kernel, 'native');
+  -- Full native W3C SHACL Core report against the COMPOSED SURFACE -- the graph
+  -- ckp.seal actually gates on. This validated against <urn:ckp:%s/kernel/ck>,
+  -- which holds a Kernel and three organs and NO shapes: measured on the bench,
+  -- 30 triples and 0 sh:targetClass, versus a composed surface of 1258 triples
+  -- and 27 targets. Nothing could ever be selected, and the only thing standing
+  -- between that and a vacuous conforms:true is the no-target guard.
+  -- "validate PREDICTS seal" (pgCK#27) was a slogan on all three axes -- shapes
+  -- graph, property map, serializer overload. All three now match seal.
+  v_report := pgrdf.validate(v_scratch, v_comp, 'native');
   PERFORM pgrdf.clear_graph(v_scratch);
 
   RETURN jsonb_build_object('ok', true, 'type', v_type,
