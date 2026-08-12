@@ -306,30 +306,30 @@ INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane) VALUES
   -- Registered here because it is a built-in (plpgsql), not a sealed SPARQL plan —
   -- and sealed as a ckp:Affordance on the bench so it is declared as well as
   -- dispatchable, rather than growing the gap B1 measured (pgCK#56).
-  ('pgCK','surface.check',       'input.kernel.pgCK.action.surface.check',       'instance'),
-  ('pgCK','integrity.check',     'input.kernel.pgCK.action.integrity.check',     'instance'),
-  ('pgCK','authority.mine',      'input.kernel.pgCK.action.authority.mine',      'instance'),
-  ('pgCK','instance.create',      'input.kernel.pgCK.action.instance.create',      'instance'),
-  ('pgCK','instance.update',      'input.kernel.pgCK.action.instance.update',      'instance'),
-  ('pgCK','instance.link',        'input.kernel.pgCK.action.instance.link',        'instance'),
-  ('pgCK','instance.query',       'input.kernel.pgCK.action.instance.query',       'instance'),
-  ('pgCK','instance.get',         'input.kernel.pgCK.action.instance.get',         'instance'),
-  ('pgCK','instance.verify',      'input.kernel.pgCK.action.instance.verify',      'instance'),
-  ('pgCK','instance.snapshot',    'input.kernel.pgCK.action.instance.snapshot',    'instance'),
-  ('pgCK','instance.provenance',  'input.kernel.pgCK.action.instance.provenance',  'instance'),
-  ('pgCK','instance.validate',    'input.kernel.pgCK.action.instance.validate',    'instance'),
-  ('pgCK','instance.reach',       'input.kernel.pgCK.action.instance.reach',       'instance'),
-  ('pgCK','instance.transition',  'input.kernel.pgCK.action.instance.transition',  'instance'),
-  ('pgCK','instance.retire',      'input.kernel.pgCK.action.instance.retire',      'instance'),
-  ('pgCK','concept.match',        'input.kernel.pgCK.action.concept.match',        'instance'),
-  ('pgCK','instance.explain',     'input.kernel.pgCK.action.instance.explain',     'instance'),
-  ('pgCK','affordances',          'input.kernel.pgCK.action.affordances',          'instance'),
-  ('pgCK','kernels.list',         'input.kernel.pgCK.action.kernels.list',         'instance'),
-  ('pgCK','participant.join',     'input.kernel.pgCK.action.participant.join',     'instance'),
-  ('pgCK','notify',               'input.kernel.pgCK.action.notify',               'instance'),
-  ('pgCK','kernel.propose_change','input.kernel.pgCK.action.kernel.propose_change','governance'),
-  ('pgCK','kernel.vote',          'input.kernel.pgCK.action.kernel.vote',          'governance'),
-  ('pgCK','kernel.apply',         'input.kernel.pgCK.action.kernel.apply',         'governance')
+  ('pgck','surface.check',       'input.kernel.pgck.action.surface.check',       'instance'),
+  ('pgck','integrity.check',     'input.kernel.pgck.action.integrity.check',     'instance'),
+  ('pgck','authority.mine',      'input.kernel.pgck.action.authority.mine',      'instance'),
+  ('pgck','instance.create',      'input.kernel.pgck.action.instance.create',      'instance'),
+  ('pgck','instance.update',      'input.kernel.pgck.action.instance.update',      'instance'),
+  ('pgck','instance.link',        'input.kernel.pgck.action.instance.link',        'instance'),
+  ('pgck','instance.query',       'input.kernel.pgck.action.instance.query',       'instance'),
+  ('pgck','instance.get',         'input.kernel.pgck.action.instance.get',         'instance'),
+  ('pgck','instance.verify',      'input.kernel.pgck.action.instance.verify',      'instance'),
+  ('pgck','instance.snapshot',    'input.kernel.pgck.action.instance.snapshot',    'instance'),
+  ('pgck','instance.provenance',  'input.kernel.pgck.action.instance.provenance',  'instance'),
+  ('pgck','instance.validate',    'input.kernel.pgck.action.instance.validate',    'instance'),
+  ('pgck','instance.reach',       'input.kernel.pgck.action.instance.reach',       'instance'),
+  ('pgck','instance.transition',  'input.kernel.pgck.action.instance.transition',  'instance'),
+  ('pgck','instance.retire',      'input.kernel.pgck.action.instance.retire',      'instance'),
+  ('pgck','concept.match',        'input.kernel.pgck.action.concept.match',        'instance'),
+  ('pgck','instance.explain',     'input.kernel.pgck.action.instance.explain',     'instance'),
+  ('pgck','affordances',          'input.kernel.pgck.action.affordances',          'instance'),
+  ('pgck','kernels.list',         'input.kernel.pgck.action.kernels.list',         'instance'),
+  ('pgck','participant.join',     'input.kernel.pgck.action.participant.join',     'instance'),
+  ('pgck','notify',               'input.kernel.pgck.action.notify',               'instance'),
+  ('pgck','kernel.propose_change','input.kernel.pgck.action.kernel.propose_change','governance'),
+  ('pgck','kernel.vote',          'input.kernel.pgck.action.kernel.vote',          'governance'),
+  ('pgck','kernel.apply',         'input.kernel.pgck.action.kernel.apply',         'governance')
 ON CONFLICT (kernel, verb) DO NOTHING;
 
 -- Fifth member (#48): the governed concept.match plan — the ONLY static
@@ -339,7 +339,7 @@ ON CONFLICT (kernel, verb) DO NOTHING;
 -- Chain semantics kept (DO UPDATE): every install re-asserted the epoch-1
 -- plan text; governed recompiles land at higher epochs.
 INSERT INTO ckp.plans(kernel, verb, epoch, plan)
-VALUES ('pgCK', 'concept.match', 1, jsonb_build_object(
+VALUES ('pgck', 'concept.match', 1, jsonb_build_object(
   'kind', 'sparql',
   'params', jsonb_build_array('term'),
   'statement',
@@ -1446,7 +1446,7 @@ BEGIN
   --     commit. "Show me the Materialization that produced this epoch, and
   --     re-derive the surface at that epoch" is answerable from the seals.
   DECLARE
-    v_from   int := COALESCE((SELECT epoch FROM ckp.kernel_epoch WHERE kernel = 'pgCK'), 1);
+    v_from   int := COALESCE((SELECT epoch FROM ckp.kernel_epoch WHERE kernel = 'pgck'), 1);
     v_comp_e int;
     v_srcd   text;
     v_surfd  text;
@@ -1454,7 +1454,7 @@ BEGIN
     v_eiri   text;
     v_miri   text;
   BEGIN
-    v_epoch := ckp.bump_epoch('pgCK');           -- recompiles plans + clears cache (same txn)
+    v_epoch := ckp.bump_epoch('pgck');           -- recompiles plans + clears cache (same txn)
     v_comp_e := ckp._composed_shapes(v_proj);    -- rebuild the enforcement surface from the new shapes
     v_srcd  := ckp._surface_digest(pgrdf.add_graph(v_kiri));   -- the governed source shapes
     v_surfd := ckp._surface_digest(v_comp_e);                  -- the enforcement surface produced
@@ -1549,7 +1549,7 @@ END;
 $function$
 ;
 
-CREATE OR REPLACE FUNCTION ckp.bump_epoch(p_kernel text DEFAULT 'pgCK'::text)
+CREATE OR REPLACE FUNCTION ckp.bump_epoch(p_kernel text DEFAULT 'pgck'::text)
  RETURNS integer
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -1566,7 +1566,7 @@ END;
 $function$
 ;
 
-CREATE OR REPLACE FUNCTION ckp.compile_plans(p_kernel text DEFAULT 'pgCK'::text)
+CREATE OR REPLACE FUNCTION ckp.compile_plans(p_kernel text DEFAULT 'pgck'::text)
  RETURNS integer
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -1605,7 +1605,7 @@ CREATE OR REPLACE FUNCTION ckp.compute_publish_subject(p_type_uri text)
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
   SELECT format(
-    'event.kernel.pgCK.%s.sealed',
+    'event.kernel.pgck.%s.sealed',
     COALESCE(
       NULLIF(regexp_replace(COALESCE(p_type_uri, ''), '^.*[/#]', ''), ''),
       'Instance'
@@ -1635,7 +1635,7 @@ BEGIN
 
   -- the GOVERNED query: latest-epoch concept.match plan.
   SELECT plan INTO v_plan FROM ckp.plans
-   WHERE kernel = 'pgCK' AND verb = 'concept.match' ORDER BY epoch DESC LIMIT 1;
+   WHERE kernel = 'pgck' AND verb = 'concept.match' ORDER BY epoch DESC LIMIT 1;
 
   IF v_plan IS NOT NULL AND v_plan->>'kind' = 'sparql' THEN
     -- BIND (not reject): escape the term for the SPARQL string literal so any term is contained —
@@ -2235,10 +2235,22 @@ BEGIN
   -- The transport segment is one NATS token. A dotted name can never be granted
   -- (configured_kernels drops it), so germinating one would build a kernel nobody
   -- can ever reach. Refuse at the door with the slug it should use.
+  -- p_project is ONE transport segment, not an IRI. The metacharacter test alone
+  -- let ':' and '/' through, so a caller passing the project URN
+  -- ('urn:ckp:project:ck-lib-js') germinated a graph named
+  -- <urn:ckp:urn:ckp:project:ck-lib-js/kernel/ck> -- structurally valid, and
+  -- reachable by nobody. Measured on the bench: 22 asserted triples in exactly
+  -- that graph. Require a bare segment; the metacharacter case keeps its own
+  -- message because the slug is actionable there.
   IF p_project ~ '[.*> \t\r\n]' THEN
     RETURN jsonb_build_object('ok', false, 'refused', true,
       'error', format('kernel id %L carries a NATS subject metacharacter, so it can never be granted. Use %L.',
                       p_project, ckp._slug(p_project)));
+  END IF;
+  IF p_project !~ '^[a-z0-9]+(-[a-z0-9]+)*$' THEN
+    RETURN jsonb_build_object('ok', false, 'refused', true,
+      'error', format('kernel id %L is not canonical. A project name is lowercase, dashes optional, one transport segment -- use %L.',
+                      p_project, ckp._slug(regexp_replace(p_project, '^.*[:/]', ''))));
   END IF;
   -- IDENTITY IS SERVER-DERIVED. No verified connection, no owner, no germination —
   -- fail closed rather than mint an unowned project or invent an owner.
@@ -2332,7 +2344,7 @@ BEGIN
   -- resolve the legacy handler name (alias window) so the CASE below is unchanged and v0.3.0
   -- web2 keeps working.
   v_canon := ckp.verb_canon(p_verb);
-  v_aff   := ckp.registry_lookup('pgCK', v_canon);
+  v_aff   := ckp.registry_lookup('pgck', v_canon);
   IF v_aff IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'error', 'unknown_affordance', 'verb', p_verb)
       || jsonb_build_object('req', req);
@@ -3339,13 +3351,13 @@ BEGIN
 
   -- COMPILE: the sealed {formula, scope} becomes the plan for (kernel, verb, epoch).
   INSERT INTO ckp.plans(kernel, verb, epoch, plan)
-  VALUES ('pgCK', v_verb, p_epoch,
+  VALUES ('pgck', v_verb, p_epoch,
           jsonb_build_object('kind', 'derived', 'formula', v_formula, 'scope', v_scope))
   ON CONFLICT (kernel, verb, epoch) DO UPDATE SET plan = EXCLUDED.plan, compiled_at = now();
 
   -- REGISTER: dispatch resolves the verb via plane='derived'.
   INSERT INTO ckp.affordance_registry(kernel, verb, in_topic, plane, epoch)
-  VALUES ('pgCK', v_verb, 'input.kernel.pgCK.action.'||v_verb, 'derived', p_epoch)
+  VALUES ('pgck', v_verb, 'input.kernel.pgck.action.'||v_verb, 'derived', p_epoch)
   ON CONFLICT (kernel, verb) DO UPDATE SET plane = 'derived', epoch = EXCLUDED.epoch, refreshed_at = now();
 
   RETURN v_verb;
@@ -3379,13 +3391,13 @@ BEGIN
 
   -- COMPILE: the sealed query becomes the plan for (kernel, verb, epoch). §5.3 made real.
   INSERT INTO ckp.plans(kernel, verb, epoch, plan)
-  VALUES ('pgCK', v_verb, p_epoch,
+  VALUES ('pgck', v_verb, p_epoch,
           jsonb_build_object('kind', 'sparql', 'statement', v_query, 'params', v_params))
   ON CONFLICT (kernel, verb, epoch) DO UPDATE SET plan = EXCLUDED.plan, compiled_at = now();
 
   -- REGISTER: dispatch resolves the verb via plane='query'.
   INSERT INTO ckp.affordance_registry(kernel, verb, in_topic, plane, epoch)
-  VALUES ('pgCK', v_verb, 'input.kernel.pgCK.action.'||v_verb, 'query', p_epoch)
+  VALUES ('pgck', v_verb, 'input.kernel.pgck.action.'||v_verb, 'query', p_epoch)
   ON CONFLICT (kernel, verb) DO UPDATE SET plane = 'query', epoch = EXCLUDED.epoch, refreshed_at = now();
 
   RETURN v_verb;
@@ -3536,7 +3548,7 @@ DECLARE
   wm_ph     bigint;
 BEGIN
   SELECT plan, epoch INTO v_plan, v_epoch FROM ckp.plans
-    WHERE kernel = 'pgCK' AND verb = p_verb ORDER BY epoch DESC LIMIT 1;
+    WHERE kernel = 'pgck' AND verb = p_verb ORDER BY epoch DESC LIMIT 1;
   IF v_plan IS NULL OR v_plan->>'kind' <> 'derived' THEN
     RETURN jsonb_build_object('ok', false, 'error', 'unknown_derived_affordance', 'verb', p_verb); END IF;
   IF v_concept IS NULL THEN
@@ -3580,7 +3592,7 @@ DECLARE
 BEGIN
   -- latest-epoch plan for this governed verb (a stale epoch is simply superseded).
   SELECT plan INTO v_plan FROM ckp.plans
-   WHERE kernel = 'pgCK' AND verb = p_verb ORDER BY epoch DESC LIMIT 1;
+   WHERE kernel = 'pgck' AND verb = p_verb ORDER BY epoch DESC LIMIT 1;
   IF v_plan IS NULL OR v_plan->>'kind' <> 'sparql' THEN
     RETURN jsonb_build_object('ok', false, 'error', 'unknown_query_affordance', 'verb', p_verb); END IF;
 
