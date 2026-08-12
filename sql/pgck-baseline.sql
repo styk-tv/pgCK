@@ -299,27 +299,37 @@ ON CONFLICT (k) DO NOTHING;
 -- Cumulative chain end-state; governed query/derived affordances stay
 -- runtime-registered by their compilers, never seeded here.
 INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane) VALUES
-  ('pgCK','instance.create',      'input.kernel.pgCK.action.instance.create',      'instance'),
-  ('pgCK','instance.update',      'input.kernel.pgCK.action.instance.update',      'instance'),
-  ('pgCK','instance.link',        'input.kernel.pgCK.action.instance.link',        'instance'),
-  ('pgCK','instance.query',       'input.kernel.pgCK.action.instance.query',       'instance'),
-  ('pgCK','instance.get',         'input.kernel.pgCK.action.instance.get',         'instance'),
-  ('pgCK','instance.verify',      'input.kernel.pgCK.action.instance.verify',      'instance'),
-  ('pgCK','instance.snapshot',    'input.kernel.pgCK.action.instance.snapshot',    'instance'),
-  ('pgCK','instance.provenance',  'input.kernel.pgCK.action.instance.provenance',  'instance'),
-  ('pgCK','instance.validate',    'input.kernel.pgCK.action.instance.validate',    'instance'),
-  ('pgCK','instance.reach',       'input.kernel.pgCK.action.instance.reach',       'instance'),
-  ('pgCK','instance.transition',  'input.kernel.pgCK.action.instance.transition',  'instance'),
-  ('pgCK','instance.retire',      'input.kernel.pgCK.action.instance.retire',      'instance'),
-  ('pgCK','concept.match',        'input.kernel.pgCK.action.concept.match',        'instance'),
-  ('pgCK','instance.explain',     'input.kernel.pgCK.action.instance.explain',     'instance'),
-  ('pgCK','affordances',          'input.kernel.pgCK.action.affordances',          'instance'),
-  ('pgCK','kernels.list',         'input.kernel.pgCK.action.kernels.list',         'instance'),
-  ('pgCK','participant.join',     'input.kernel.pgCK.action.participant.join',     'instance'),
-  ('pgCK','notify',               'input.kernel.pgCK.action.notify',               'instance'),
-  ('pgCK','kernel.propose_change','input.kernel.pgCK.action.kernel.propose_change','governance'),
-  ('pgCK','kernel.vote',          'input.kernel.pgCK.action.kernel.vote',          'governance'),
-  ('pgCK','kernel.apply',         'input.kernel.pgCK.action.kernel.apply',         'governance')
+  -- B4: the substrate's own integrity check. plane='instance' is the ROUTING
+  -- truth (the registry's plane column selects the handler: 'query'/'derived' mean
+  -- a compiled plan, 'instance' means the built-in CASE) — NOT the root's semantic
+  -- plane, which the column conflates with routing. Recorded as a #56-adjacent finding.
+  -- Registered here because it is a built-in (plpgsql), not a sealed SPARQL plan —
+  -- and sealed as a ckp:Affordance on the bench so it is declared as well as
+  -- dispatchable, rather than growing the gap B1 measured (pgCK#56).
+  ('pgck','surface.check',       'input.kernel.pgck.action.surface.check',       'instance'),
+  ('pgck','integrity.check',     'input.kernel.pgck.action.integrity.check',     'instance'),
+  ('pgck','authority.mine',      'input.kernel.pgck.action.authority.mine',      'instance'),
+  ('pgck','instance.create',      'input.kernel.pgck.action.instance.create',      'instance'),
+  ('pgck','instance.update',      'input.kernel.pgck.action.instance.update',      'instance'),
+  ('pgck','instance.link',        'input.kernel.pgck.action.instance.link',        'instance'),
+  ('pgck','instance.query',       'input.kernel.pgck.action.instance.query',       'instance'),
+  ('pgck','instance.get',         'input.kernel.pgck.action.instance.get',         'instance'),
+  ('pgck','instance.verify',      'input.kernel.pgck.action.instance.verify',      'instance'),
+  ('pgck','instance.snapshot',    'input.kernel.pgck.action.instance.snapshot',    'instance'),
+  ('pgck','instance.provenance',  'input.kernel.pgck.action.instance.provenance',  'instance'),
+  ('pgck','instance.validate',    'input.kernel.pgck.action.instance.validate',    'instance'),
+  ('pgck','instance.reach',       'input.kernel.pgck.action.instance.reach',       'instance'),
+  ('pgck','instance.transition',  'input.kernel.pgck.action.instance.transition',  'instance'),
+  ('pgck','instance.retire',      'input.kernel.pgck.action.instance.retire',      'instance'),
+  ('pgck','concept.match',        'input.kernel.pgck.action.concept.match',        'instance'),
+  ('pgck','instance.explain',     'input.kernel.pgck.action.instance.explain',     'instance'),
+  ('pgck','affordances',          'input.kernel.pgck.action.affordances',          'instance'),
+  ('pgck','kernels.list',         'input.kernel.pgck.action.kernels.list',         'instance'),
+  ('pgck','participant.join',     'input.kernel.pgck.action.participant.join',     'instance'),
+  ('pgck','notify',               'input.kernel.pgck.action.notify',               'instance'),
+  ('pgck','kernel.propose_change','input.kernel.pgck.action.kernel.propose_change','governance'),
+  ('pgck','kernel.vote',          'input.kernel.pgck.action.kernel.vote',          'governance'),
+  ('pgck','kernel.apply',         'input.kernel.pgck.action.kernel.apply',         'governance')
 ON CONFLICT (kernel, verb) DO NOTHING;
 
 -- Fifth member (#48): the governed concept.match plan — the ONLY static
@@ -329,7 +339,7 @@ ON CONFLICT (kernel, verb) DO NOTHING;
 -- Chain semantics kept (DO UPDATE): every install re-asserted the epoch-1
 -- plan text; governed recompiles land at higher epochs.
 INSERT INTO ckp.plans(kernel, verb, epoch, plan)
-VALUES ('pgCK', 'concept.match', 1, jsonb_build_object(
+VALUES ('pgck', 'concept.match', 1, jsonb_build_object(
   'kind', 'sparql',
   'params', jsonb_build_array('term'),
   'statement',
@@ -373,7 +383,7 @@ END;
 $procedure$
 ;
 
-CREATE OR REPLACE PROCEDURE ckp.boot(IN p_core_ttl_path text DEFAULT '/ontology/core.ttl'::text)
+CREATE OR REPLACE PROCEDURE ckp.boot(IN p_core_ttl_path text DEFAULT '/ontology/v3.11/core.ttl'::text)
  LANGUAGE plpgsql
 AS $procedure$
 DECLARE v_core INT; v_ttl TEXT; v_shapes INT;
@@ -465,42 +475,51 @@ CREATE OR REPLACE PROCEDURE ckp.import_module(IN p_module text, IN p_project tex
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $procedure$
 DECLARE
-  v_known_modules text[] := ARRAY[
-    'task', 'goal', 'affordance', 'delegation',
-    'delivery', 'proof', 'validate'
-  ];
+  -- EMPTY BY RULING. affordance/delegation/proof are declared by the v3.11 root
+  -- itself; delivery/validate were cut; task/goal do not exist in v3.11 at all.
+  v_known_modules text[] := ARRAY[]::text[];
+  v_retired       text[] := ARRAY['affordance','delegation','proof','delivery','validate','task','goal'];
+  v_core_ns text := 'https://conceptkernel.org/ontology/v3.11/core#';
   v_path text;
   v_iri  text := format('urn:ckp:%s/kernel/board', p_project);
   v_g    int;
   v_ttl  text;
+  v_minted text;
 BEGIN
-  IF NOT (p_module = ANY (v_known_modules)) THEN
-    RAISE EXCEPTION 'ckp.import_module: unknown module %; known: %', p_module, v_known_modules;
+  IF p_module = ANY (v_retired) THEN
+    RAISE EXCEPTION E'ckp.import_module: module "%" is RETIRED, not missing.\n'
+      'task and goal do not exist in the v3.11 root — measured against the loaded '
+      'core (digest e5f7d1e5…): ckp:Goal and ckp:Task are declared by nothing. The '
+      'board vocabulary is the adopted wave module: use wave:Ticket, wave:Pass and '
+      'wave:Index. affordance, delegation and proof are declared by the root itself; '
+      'delivery and validate were cut by ruling. A module reaches a surface only '
+      'through a sealed ckp:Adoption naming its digest — never by reading % .',
+      p_module, format('%s/%s.ttl', p_root, p_module);
   END IF;
 
+  IF NOT (p_module = ANY (v_known_modules)) THEN
+    RAISE EXCEPTION 'ckp.import_module: unknown module %; the known set is EMPTY by ruling. '
+      'Every module in force is adopted by digest (ckp:Adoption), not imported from a mount.', p_module;
+  END IF;
+
+  -- Unreachable while the known set is empty; retained so re-opening the door
+  -- cannot skip R7. An extension MUST NOT mint terms into the core namespace.
   v_path := format('%s/%s.ttl', p_root, p_module);
-
-  -- One board graph per project; allocate once (pgrdf.add_graph is get-or-create on IRI).
+  v_ttl  := pg_read_file(v_path);
+  SELECT string_agg(DISTINCT m[1], ', ')
+    INTO v_minted
+  FROM regexp_matches(v_ttl, '(?:^|[^A-Za-z0-9_])(ckp:[A-Za-z_][A-Za-z0-9_]*)\s+a\s+(?:rdfs:Class|owl:Class|owl:ObjectProperty|owl:DatatypeProperty)', 'g') AS m;
+  IF v_minted IS NOT NULL THEN
+    RAISE EXCEPTION E'ckp.import_module: module "%" mints term(s) into the CORE namespace (%): %\n'
+      'R7 is normative — re-issue under domain naming and adopt it by digest.',
+      p_module, v_core_ns, v_minted;
+  END IF;
   SELECT pgrdf.add_graph(v_iri) INTO v_g;
-
-  -- Idempotent re-load: parse the module into the board graph. parse_turtle
-  -- with same subjects is additive in pgRDF; for true idempotence the Rust
-  -- side may want to clear the module's own triples first. Leaving as-is in
-  -- the draft until the seal-hook implementation lands.
-  v_ttl := pg_read_file(v_path);
-  PERFORM pgrdf.parse_turtle(v_ttl, v_g, format('urn:ckp:%s/module/%s#', p_project, p_module));
+  PERFORM pgrdf.parse_turtle(v_ttl, v_g, v_iri || '#');
   PERFORM pgrdf.materialize(v_g);
-  -- Ring repair (#48, same pattern as ckp.boot): add_graph created the
-  -- per-graph quad table owned by the CALLING superuser; the ring-1 definer
-  -- set (e.g. _composed_shapes at first seal) reads it as ck_substrate.
-  -- Re-assert the substrate floor over pgrdf so dynamically created graphs
-  -- are covered. (Lasting fix: grant-at-creation inside pgrdf.add_graph —
-  -- the filed engine ask.)
-  GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
-  GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
+  RAISE NOTICE 'ckp.import_module: % imported into %', p_module, v_iri;
 END;
-$procedure$
-;
+$procedure$;
 
 CREATE OR REPLACE PROCEDURE ckp.load_kernel(IN p_path text, IN p_project text DEFAULT 'demo'::text)
  LANGUAGE plpgsql
@@ -516,25 +535,32 @@ BEGIN
   v_ttl := pg_read_file(p_path);
   PERFORM pgrdf.parse_turtle(v_ttl, v_k, 'urn:ckp:kernel#');
   PERFORM pgrdf.materialize(v_k);
-  -- Ring repair (#48, same pattern as ckp.boot): the kernel graph's quad
-  -- table was just created owned by the CALLING superuser; the first seal's
-  -- definer path (_composed_shapes -> pgrdf.copy_graph) reads it as
-  -- ck_substrate. Measured on the s4 gate's fresh volume: 'permission denied
-  -- for table _pgrdf_quads_g2'. Re-assert the substrate floor over pgrdf.
+  -- Ring repair (#48, same pattern as ckp.boot): the kernel graph's quad table
+  -- was just created owned by the CALLING superuser; the first seal's definer
+  -- path reads it as ck_substrate. Re-assert the substrate floor over pgrdf.
   GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
   GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
-
-  -- CKB-3: ambient board graph for the project — task + goal modules.
-  -- Best-effort: a missing ontology file (e.g. stale container mount) raises;
-  -- callers that need a hard guarantee should set up the mount before load.
-  BEGIN
-    CALL ckp.import_module('task', p_project);
-    CALL ckp.import_module('goal', p_project);
-  EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'ckp.load_kernel: board module import failed (continuing): %', SQLERRM;
-  END;
+  -- No ambient board graph. task/goal are retired (see import_module above); the
+  -- board is the adopted wave module, which arrives by Adoption, not by import.
 END;
-$procedure$
+$procedure$;
+
+CREATE OR REPLACE FUNCTION ckp._project()
+ RETURNS text
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+  -- ONE definition of "which project is this". Twelve call sites resolved it
+  -- inline in two spellings that DISAGREED on the empty string: ckp.dispatch
+  -- mapped '' to '', everything else mapped '' to 'demo' -- so an empty GUC
+  -- sent the affordance lookup and the write to different kernels.
+  --
+  -- The 'demo' fallback is itself a real kernel name, which makes it a landing
+  -- site for writes that belong to nobody. It lives HERE now, in one place, so
+  -- it can be made fail-closed in a single edit instead of twelve.
+  SELECT COALESCE(NULLIF(current_setting('ckp.project', true), ''), 'demo');
+$function$
 ;
 
 CREATE OR REPLACE FUNCTION ckp._body_to_ttl(p_body jsonb, p_subj text)
@@ -566,8 +592,25 @@ BEGIN
       ELSE
         v_obj := '"'||replace(replace(replace(s,'\','\\'),'"','\"'),chr(10),'\n')||'"';  -- xsd:string literal
       END IF;
+    ELSIF jsonb_typeof(v_val) = 'array' THEN
+      -- 0.4.43: ARRAYS EXPAND INTO ONE TRIPLE PER ELEMENT. They were silently
+      -- dropped here, so NO sealed instance could carry a multi-valued property —
+      -- which made ckp:Kernel unsealable, because KernelShape requires
+      -- hasOrgan minCount 3. That is the whole reason "pgCK cannot create a concept
+      -- kernel" was true: not a design decision, a serializer gap. Measured:
+      -- germinate refused with MinCount(3) not satisfied while the body carried all
+      -- three organs. Same value rules as the scalar arm, per element.
+      FOR s IN SELECT jsonb_array_elements_text(v_val) LOOP
+        IF s ~ '^[a-z][a-z0-9+.-]*:[^ ]' THEN
+          v_ttl := v_ttl||'<'||p_subj||'> <'||v_key||'> <'||s||'> .'||chr(10);
+        ELSE
+          v_ttl := v_ttl||'<'||p_subj||'> <'||v_key||'> "'||
+                   replace(replace(replace(s,'\\','\\\\'),'"','\\"'),chr(10),'\\n')||'" .'||chr(10);
+        END IF;
+      END LOOP;
+      CONTINUE;
     ELSE
-      CONTINUE;                                                                 -- arrays/objects: not simple values
+      CONTINUE;                                                                 -- objects: not simple values
     END IF;
     v_ttl := v_ttl || '<'||p_subj||'> <'||v_key||'> '||v_obj||' .'||chr(10);
   END LOOP;
@@ -617,6 +660,26 @@ BEGIN
           v_obj := v_obj||'^^<'||v_d||'>';
         END IF;
       END IF;
+    ELSIF jsonb_typeof(v_val) = 'array' THEN
+      -- A multi-valued property emits one triple per element. Without this arm
+      -- arrays were silently dropped, so no sealed instance could carry a
+      -- repeated property -- which made ckp:Kernel unsealable, since it
+      -- requires three organs: germinate refused with hasOrgan MinCount(3)
+      -- while the body carried all three. Same value rules as the scalar arm,
+      -- applied per element. NOTE this is the 3-arg overload, the one ckp.seal
+      -- actually calls; fixing only the 2-arg sibling changes nothing.
+      FOR s IN SELECT jsonb_array_elements_text(v_val) LOOP
+        IF s ~ '^[a-z][a-z0-9+.-]*:[^ ]' AND (v_d IS NULL OR v_d = '') THEN
+          v_ttl := v_ttl || '<'||p_subj||'> <'||v_key||'> <'||s||'> .'||chr(10);
+        ELSE
+          v_obj := '"'||replace(replace(replace(s,'\','\\'),'"','\"'),chr(10),'\n')||'"';
+          IF v_d IS NOT NULL AND v_d <> 'http://www.w3.org/2001/XMLSchema#string' THEN
+            v_obj := v_obj||'^^<'||v_d||'>';
+          END IF;
+          v_ttl := v_ttl || '<'||p_subj||'> <'||v_key||'> '||v_obj||' .'||chr(10);
+        END IF;
+      END LOOP;
+      CONTINUE;
     ELSE CONTINUE;
     END IF;
     v_ttl := v_ttl || '<'||p_subj||'> <'||v_key||'> '||v_obj||' .'||chr(10);
@@ -716,15 +779,15 @@ BEGIN
   IF p_type IS NULL OR position(':' in p_type) = 0 THEN
     RETURN false;   -- no resolvable type is not an admitted type
   END IF;
-  -- TRANSITIONAL ALLOWANCE (pgCK#46): the legacy board path (task.create,
-  -- notify) still EMITS v3.7-namespaced instance types (Task, Goal, Message)
-  -- while their shapes are v3.11 — so those types are targeted by no shape and
-  -- would refuse here. That is the #46 residue, not an invented URN; tolerate
-  -- it until #46 re-points the body construction, at which point the board
-  -- path becomes non-vacuously validated and this allowance is deleted.
-  IF p_type LIKE 'https://conceptkernel.org/ontology/v3.7/%' THEN
-    RETURN true;
-  END IF;
+  -- 0.4.42: the #46 TRANSITIONAL ALLOWANCE IS DELETED, and its own exit condition
+  -- is now met. It read "tolerate it until #46 re-points the body construction, at
+  -- which point the board path becomes non-vacuously validated". Both halves landed
+  -- in one act: ckp.dispatch's namespace constant N moved off …/ontology/v3.7/ to
+  -- urn:ckp:board/, and urn:ckp:board/{Task,Goal,Edge,Message} now carry shapes in
+  -- the project kernel graph. While it stood, R2 was open on the write path — seal
+  -- consults this function, so a v3.7 type reached the SHACL gate, was targeted by
+  -- no shape, took a VACUOUS conforms:true and sealed. An undeclared type is now
+  -- refused whatever namespace it carries.
   -- Admitted = the type is DECLARED (a shape targets it, or it is a declared
   -- class) anywhere the kernel loaded: the composed core+ck surface OR the
   -- project board. Reads the same surfaces the gate/self-test consult — never
@@ -905,8 +968,48 @@ BEGIN
     v_class := COALESCE(v_detail->>'class', v_detail->>'targetClass', p_prop->>(C||'about'));
     IF v_class IS NULL OR v_class !~ v_iri_re THEN
       RAISE EXCEPTION 'add_class: class must be an IRI, got %', v_class; END IF;
+    -- detail.properties[] WAS ACCEPTED AND SILENTLY DROPPED. The op emitted one
+    -- quad (<class> a owl:Class) and reported graph_changed:true, so a caller
+    -- who declared constraints got a class carrying none and no complaint --
+    -- the same family as detail/proposalDetail and the inert epoch. Reported by
+    -- pgCK.MCP against urn:ckp:pgck-mcp/type/ToolProjection: two property
+    -- shapes sent, one quad applied, nothing validatable.
+    --
+    -- Emit the NodeShape too, with the same per-property gate add_property uses.
+    -- A malformed property is REFUSED here, never dropped: silently narrowing a
+    -- shape is un-enforcement nobody sees.
+    v_ts := '';
+    IF jsonb_typeof(v_detail->'properties') = 'array' THEN
+      FOR v_map IN SELECT jsonb_array_elements(v_detail->'properties') LOOP
+        v_path := v_map->>'path';
+        IF v_path IS NULL OR v_path !~ v_iri_re THEN
+          RAISE EXCEPTION 'add_class: property path must be an IRI, got %', v_path; END IF;
+        BEGIN
+          v_min := COALESCE((v_map->>'minCount')::int, 1);
+        EXCEPTION WHEN OTHERS THEN
+          RAISE EXCEPTION 'add_class: property minCount must be an integer, got %', v_map->>'minCount'; END;
+        v_dtype := v_map->>'datatype';
+        v_dt_line := '';
+        IF v_dtype IS NOT NULL THEN
+          IF v_dtype !~ v_iri_re THEN
+            RAISE EXCEPTION 'add_class: property datatype must be an IRI, got %', v_dtype; END IF;
+          v_dt_line := ' ; sh:datatype <'||v_dtype||'>';
+        END IF;
+        v_ts := v_ts||' ; sh:property [ sh:path <'||v_path||'> ; sh:minCount '||v_min::text||v_dt_line||' ]';
+      END LOOP;
+    END IF;
+    IF v_ts = '' THEN
+      -- bare declaration: a building block for a following add_property. NOTE it
+      -- is admitted the moment it lands (_type_admitted accepts `a owl:Class`),
+      -- so until a shape targets it an instance of this type validates
+      -- VACUOUSLY. That window is a doctrine question, not a projector bug.
+      RETURN '@prefix owl: <http://www.w3.org/2002/07/owl#> .'||chr(10)||
+             '<'||v_class||'> a owl:Class .';
+    END IF;
     RETURN '@prefix owl: <http://www.w3.org/2002/07/owl#> .'||chr(10)||
-           '<'||v_class||'> a owl:Class .';
+           '@prefix sh: <http://www.w3.org/ns/shacl#> .'||chr(10)||
+           '<'||v_class||'> a owl:Class .'||chr(10)||
+           '[ a sh:NodeShape ; sh:targetClass <'||v_class||'>'||v_ts||' ] .';
 
   ELSIF v_op = 'set_transition_map' THEN
     v_class := v_detail->>'targetClass';
@@ -1107,7 +1210,7 @@ CREATE OR REPLACE FUNCTION ckp._query(p_verb text, p_payload jsonb)
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  N      text := 'https://conceptkernel.org/ontology/v3.7/';
+  N      text := 'urn:ckp:board/';
   p_type text := p_payload->>'type';
   p_kern text := p_payload->>'kernel';
   p_n    int  := COALESCE((p_payload->>'n')::int, (p_payload->>'limit')::int,
@@ -1345,7 +1448,7 @@ AS $function$
 DECLARE
   C           text := 'https://conceptkernel.org/ontology/v3.11/core#';
   v_about     text := p_payload->>'about';
-  v_proj      text := COALESCE(NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  v_proj      text := ckp._project();
   v_prop      jsonb;
   v_pid       text;
   v_op        text;
@@ -1401,7 +1504,9 @@ BEGIN
   --     commit. "Show me the Materialization that produced this epoch, and
   --     re-derive the surface at that epoch" is answerable from the seals.
   DECLARE
-    v_from   int := COALESCE((SELECT epoch FROM ckp.kernel_epoch WHERE kernel = 'pgCK'), 1);
+    -- this project's epoch, not a fixed kernel's: reading one kernel's epoch
+    -- while bumping another's makes every other kernel restart from 1.
+    v_from   int := COALESCE((SELECT epoch FROM ckp.kernel_epoch WHERE kernel = v_proj), 1);
     v_comp_e int;
     v_srcd   text;
     v_surfd  text;
@@ -1409,7 +1514,10 @@ BEGIN
     v_eiri   text;
     v_miri   text;
   BEGIN
-    v_epoch := ckp.bump_epoch('pgCK');           -- recompiles plans + clears cache (same txn)
+    -- bump THIS project's epoch. Hard-coded, it advanced one kernel's epoch on
+    -- every apply by anyone, so every other kernel's epoch never moved and its
+    -- plans were recompiled under a name it does not own.
+    v_epoch := ckp.bump_epoch(v_proj);           -- recompiles plans + clears cache (same txn)
     v_comp_e := ckp._composed_shapes(v_proj);    -- rebuild the enforcement surface from the new shapes
     v_srcd  := ckp._surface_digest(pgrdf.add_graph(v_kiri));   -- the governed source shapes
     v_surfd := ckp._surface_digest(v_comp_e);                  -- the enforcement surface produced
@@ -1504,7 +1612,7 @@ END;
 $function$
 ;
 
-CREATE OR REPLACE FUNCTION ckp.bump_epoch(p_kernel text DEFAULT 'pgCK'::text)
+CREATE OR REPLACE FUNCTION ckp.bump_epoch(p_kernel text DEFAULT 'pgck'::text)
  RETURNS integer
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -1521,7 +1629,7 @@ END;
 $function$
 ;
 
-CREATE OR REPLACE FUNCTION ckp.compile_plans(p_kernel text DEFAULT 'pgCK'::text)
+CREATE OR REPLACE FUNCTION ckp.compile_plans(p_kernel text DEFAULT 'pgck'::text)
  RETURNS integer
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -1553,14 +1661,25 @@ END;
 $function$
 ;
 
-CREATE OR REPLACE FUNCTION ckp.compute_publish_subject(p_type_uri text)
+CREATE OR REPLACE FUNCTION ckp.compute_publish_subject(p_type_uri text, p_project text DEFAULT NULL)
  RETURNS text
  LANGUAGE sql
- IMMUTABLE SECURITY DEFINER
+ STABLE SECURITY DEFINER
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
+  -- The subject names the kernel that PRODUCED the fact. This was
+  -- 'event.kernel.pgck.%s.sealed' -- a literal -- so every kernel's events
+  -- landed on one subject and a browser subscribed to its own kernel saw
+  -- nothing. Same defect as dispatch resolving every caller under one name
+  -- (0.4.46/47), on the OUTBOUND path, where it is invisible from inside:
+  -- the publish succeeds, it just arrives somewhere nobody is listening.
+  --
+  -- DEFAULT rather than a second overload: three of today's defects were an
+  -- overload pair drifting apart, and one CREATE with a default cannot.
+  -- STABLE, not IMMUTABLE -- it depends on ckp._project() when not told.
   SELECT format(
-    'event.kernel.pgCK.%s.sealed',
+    'event.kernel.%s.%s.sealed',
+    COALESCE(NULLIF(p_project, ''), ckp._project()),
     COALESCE(
       NULLIF(regexp_replace(COALESCE(p_type_uri, ''), '^.*[/#]', ''), ''),
       'Instance'
@@ -1577,7 +1696,7 @@ CREATE OR REPLACE FUNCTION ckp.concept_match(p_payload jsonb)
 AS $function$
 DECLARE
   v_term   text := p_payload->>'term';
-  v_proj   text := COALESCE(NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  v_proj   text := ckp._project();
   v_limit  int  := LEAST(GREATEST(COALESCE((p_payload->>'limit')::int, 10), 1), 100);
   v_term_esc text;
   v_plan   jsonb;
@@ -1589,8 +1708,16 @@ BEGIN
   END IF;
 
   -- the GOVERNED query: latest-epoch concept.match plan.
+  -- PLAN RESOLUTION = your own first, then the substrate floor. A plan the
+  -- calling project registered wins; otherwise fall back to the one seeded at
+  -- install, which belongs to no kernel because install runs before any kernel
+  -- exists. Reading ONLY the floor made every project share one kernel's plans;
+  -- reading ONLY v_proj made the seeded substrate verbs unreachable for
+  -- everyone (smoke-s4 s32). Both halves are needed until the seed itself stops
+  -- naming a kernel.
   SELECT plan INTO v_plan FROM ckp.plans
-   WHERE kernel = 'pgCK' AND verb = 'concept.match' ORDER BY epoch DESC LIMIT 1;
+   WHERE kernel IN (v_proj, 'pgck') AND verb = 'concept.match'
+   ORDER BY (kernel = v_proj) DESC, epoch DESC LIMIT 1;
 
   IF v_plan IS NOT NULL AND v_plan->>'kind' = 'sparql' THEN
     -- BIND (not reject): escape the term for the SPARQL string literal so any term is contained —
@@ -1623,7 +1750,7 @@ BEGIN
            ELSE 3 END AS rnk
     FROM (
       SELECT id, COALESCE(body->>'rdfs:label',
-                          body->>'https://conceptkernel.org/ontology/v3.7/title',
+                          body->>'urn:ckp:board/title',
                           body->>'title') AS lbl
       FROM ckp.instances
     ) s
@@ -1646,7 +1773,7 @@ CREATE OR REPLACE FUNCTION ckp.create_typed(p_payload jsonb)
 AS $function$
 DECLARE
   v_type    text := p_payload->>'type';
-  v_proj    text := COALESCE(NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  v_proj    text := ckp._project();
   -- F-A / P0-C (pgCK#26): identity is SERVER-DERIVED from the verified
   -- connection (the ckp.requester GUC the trusted ingress sets from the
   -- NATS-verified bearer), NEVER the client payload. A payload {sub} is
@@ -1655,7 +1782,7 @@ DECLARE
   -- was the last reader of payload sub (measured: s58's instance.create
   -- case sealed participant:attacker before this fix).
   v_sub     text := current_setting('ckp.requester', true);
-  N         text := 'https://conceptkernel.org/ontology/v3.7/';       -- v3.7 core NS (gate + task.create)
+  N         text := 'urn:ckp:board/';       -- v3.7 core NS (gate + task.create)
   v_core    text[] := ARRAY['lifecycle_state'];                       -- recognized core keys → core NS
   v_local   text;
   v_ns      text;
@@ -1707,7 +1834,7 @@ BEGIN
   END LOOP;
 
   v_body := v_body || jsonb_build_object(
-    'https://conceptkernel.org/ontology/v3.7/created_at',
+    'urn:ckp:board/created_at',
     to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'));
   IF v_sub IS NOT NULL THEN
     -- created_by from the VERIFIED requester (same shape as task.create), and
@@ -1856,6 +1983,422 @@ END;
 $function$
 ;
 
+CREATE OR REPLACE FUNCTION ckp.surface_check(p_project text DEFAULT NULL)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  N        text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_proj   text := COALESCE(p_project, NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  v_kiri   text;
+  v_epoch  int;
+  v_ep_iri text;
+  v_pin_surf text;
+  v_pin_src  text;
+  v_comp   int;
+  v_act_surf text;
+  v_act_src  text;
+  v_kquads int;
+  v_shapes int;
+  v_mods   jsonb := '[]'::jsonb;
+  v_iri    text;
+  v_n      int;
+  v_find   jsonb := '[]'::jsonb;
+BEGIN
+  v_kiri  := 'urn:ckp:'||v_proj||'/kernel/ck';
+  v_epoch := COALESCE((SELECT epoch FROM ckp.kernel_epoch WHERE kernel = v_proj), 0);
+
+  -- What the ledger says the surface was, at the epoch in force.
+  SELECT i.body->>'@id', i.body->>(N||'surfaceDigest')
+    INTO v_ep_iri, v_pin_surf
+  FROM ckp.instances i
+  WHERE i.body->>'type' = N||'Epoch'
+    AND i.body->>(N||'producedBy') = v_kiri
+    AND (i.body->>(N||'epoch'))::int = v_epoch
+  ORDER BY i.ts_created DESC LIMIT 1;
+
+  SELECT i.body->>(N||'sourceDigest') INTO v_pin_src
+  FROM ckp.instances i
+  WHERE i.body->>'type' = N||'Materialization'
+    AND i.body->>(N||'producesEpoch') = v_ep_iri
+  ORDER BY i.ts_created DESC LIMIT 1;
+
+  -- What it is now.
+  v_comp     := ckp._composed_shapes(v_proj);
+  v_act_surf := ckp._surface_digest(v_comp);
+  v_act_src  := ckp._surface_digest(pgrdf.add_graph(v_kiri));
+
+  SELECT count(*) INTO v_kquads
+    FROM pgrdf.sparql(format('SELECT ?s WHERE { GRAPH <%s> { ?s ?p ?o } }', v_kiri));
+  SELECT count(*) INTO v_shapes
+    FROM pgrdf.sparql(format('PREFIX sh:<http://www.w3.org/ns/shacl#> SELECT ?s WHERE { GRAPH <%s> { ?s a sh:NodeShape } }',
+                             (SELECT iri FROM pgrdf._pgrdf_graphs WHERE graph_id = v_comp)));
+
+  -- Every adopted module: present and non-empty, or named as missing.
+  FOREACH v_iri IN ARRAY ckp._adopted_graphs(v_proj) LOOP
+    SELECT count(*) INTO v_n
+      FROM pgrdf.sparql(format('SELECT ?s WHERE { GRAPH <%s> { ?s ?p ?o } }', v_iri));
+    v_mods := v_mods || jsonb_build_array(jsonb_build_object('iri', v_iri, 'quads', v_n, 'present', v_n > 0));
+    IF v_n = 0 THEN
+      v_find := v_find || jsonb_build_array('adopted module is ABSENT or EMPTY: '||v_iri);
+    END IF;
+  END LOOP;
+
+  -- Findings. Each names what was measured, never a guess at the cause.
+  IF v_kquads = 0 THEN
+    v_find := v_find || jsonb_build_array(
+      'kernel graph '||v_kiri||' is EMPTY — the enforcement surface is composed WITHOUT the '||
+      'kernel''s own shapes. This is the 2026-08-10 wipe signature.');
+  END IF;
+  IF v_shapes = 0 THEN
+    v_find := v_find || jsonb_build_array(
+      'composed surface carries ZERO NodeShapes — every gate is vacuous; refuse to trust any conformance result');
+  END IF;
+  IF v_pin_surf IS NULL THEN
+    v_find := v_find || jsonb_build_array(
+      'no sealed ckp:Epoch for epoch '||v_epoch||' — the surface in force names no digest, so drift is undetectable (pre-governance state)');
+  ELSIF v_pin_surf IS DISTINCT FROM v_act_surf THEN
+    v_find := v_find || jsonb_build_array(
+      'SURFACE DRIFT: the composed surface differs from the digest epoch '||v_epoch||' sealed. '||
+      'Either the surface changed outside a governed apply (adoption, a direct graph write, or a wipe), '||
+      'or an apply failed to reseal. Pinned '||left(v_pin_surf,12)||'… actual '||left(v_act_surf,12)||'…');
+  END IF;
+  IF v_pin_src IS NOT NULL AND v_pin_src IS DISTINCT FROM v_act_src THEN
+    v_find := v_find || jsonb_build_array(
+      'SOURCE DRIFT: the kernel graph differs from the sourceDigest its Materialization sealed. '||
+      'Pinned '||left(v_pin_src,12)||'… actual '||left(v_act_src,12)||'…');
+  END IF;
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'kernel', v_proj,
+    'epoch', v_epoch,
+    'epoch_resource', v_ep_iri,
+    'surface', jsonb_build_object('pinned', v_pin_surf, 'actual', v_act_surf,
+                                  'match', v_pin_surf IS NOT DISTINCT FROM v_act_surf),
+    'source',  jsonb_build_object('pinned', v_pin_src,  'actual', v_act_src,
+                                  'match', v_pin_src IS NOT DISTINCT FROM v_act_src),
+    'kernel_graph', jsonb_build_object('iri', v_kiri, 'quads', v_kquads, 'empty', v_kquads = 0),
+    'composed_nodeshapes', v_shapes,
+    'modules', v_mods,
+    'findings', v_find,
+    'healthy', jsonb_array_length(v_find) = 0);
+END;
+$function$
+;
+CREATE OR REPLACE FUNCTION ckp.integrity_check(p_project text DEFAULT NULL)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  N      text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_proj text := COALESCE(p_project, NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  v_comp int;
+  v_giri text;
+  v_find jsonb := '[]'::jsonb;
+  v_total int; v_unattr int; v_vac int; v_vac_new int;
+  r record;
+BEGIN
+  v_comp := ckp._composed_shapes(v_proj);
+  SELECT iri INTO v_giri FROM pgrdf._pgrdf_graphs WHERE graph_id = v_comp;
+
+  SELECT count(*) INTO v_total FROM ckp.instances;
+
+  -- 1. ATTRIBUTION over sealed rows. InstanceShape requires createdBy; a stored
+  -- row without it predates 0.4.33 or bypassed the seal. Named, not assumed.
+  SELECT count(*) INTO v_unattr FROM ckp.instances
+   WHERE NOT (body ? (N||'createdBy'));
+  IF v_unattr > 0 THEN
+    v_find := v_find || jsonb_build_array(
+      v_unattr||' sealed row(s) carry no ckp:createdBy — unattributable work (pre-0.4.33 seals)');
+  END IF;
+
+  -- 2. VACUOUS SEALS. conformsToShape is omitted rather than invented when no
+  -- shape targeted the candidate, so its absence IS the vacuity signal.
+  -- Pre-governance rows (sealedAtEpoch 0) are SCARS: sealed before the root was in
+  -- force, unfixable by construction (nothing is ever unsealed), and legitimate
+  -- history under the S5 ruling — fence, never backfill. They are reported under
+  -- `historical`, NOT as findings: a check that can never go green trains its
+  -- reader to ignore it, which is how a real defect gets missed. A vacuous seal at
+  -- epoch >= 1 is a live defect and IS a finding.
+  SELECT count(*) INTO v_vac FROM ckp.instances
+   WHERE NOT (body ? (N||'conformsToShape'))
+     AND COALESCE((body->>(N||'sealedAtEpoch'))::int, 0) = 0;
+  SELECT count(*) INTO v_vac_new FROM ckp.instances
+   WHERE NOT (body ? (N||'conformsToShape'))
+     AND COALESCE((body->>(N||'sealedAtEpoch'))::int, 0) > 0;
+  IF v_vac_new > 0 THEN
+    v_find := v_find || jsonb_build_array(
+      v_vac_new||' row(s) sealed AT epoch >= 1 carry no ckp:conformsToShape — they passed a gate '||
+      'that targeted nothing. Post-adoption vacuity is a defect, not history.');
+  END IF;
+
+  -- 3. G-1 PROPER: cross-node references the gate cannot check. Each is reported
+  -- with its subject so the finding is actionable, never a bare count.
+  FOR r IN
+    SELECT i.id, i.body->>(N||'derivedBy') AS ref FROM ckp.instances i
+     WHERE i.body->>'type' = N||'Affordance' AND i.body ? (N||'derivedBy')
+       AND NOT EXISTS (SELECT 1 FROM ckp.instances m
+                        WHERE m.body->>'type' = N||'Materialization'
+                          AND m.body->>'@id' = i.body->>(N||'derivedBy'))
+       AND NOT EXISTS (SELECT 1 FROM ckp.instances s
+                        WHERE s.body->>'type' = N||'Supersession'
+                          AND s.body->>(N||'supersedes') = i.body->>'@id')
+  LOOP
+    v_find := v_find || jsonb_build_array(
+      'DANGLING derivedBy: affordance '||r.id||' names '||r.ref||' — no sealed Materialization. '||
+      'The root says a hand-registered action cannot hide; body locality means the gate cannot enforce it.');
+  END LOOP;
+
+  FOR r IN
+    SELECT i.id, i.body->>(N||'inShape') AS ref FROM ckp.instances i
+     WHERE i.body->>'type' = N||'Affordance' AND i.body ? (N||'inShape')
+       AND ckp._affordance_schema(i.body->>(N||'inShape'), v_comp) IS NULL
+       -- withdrawal is a sealed act (Supersession), never a delete: a superseded
+       -- affordance is out of force and must not keep raising.
+       AND NOT EXISTS (SELECT 1 FROM ckp.instances s
+                        WHERE s.body->>'type' = N||'Supersession'
+                          AND s.body->>(N||'supersedes') = i.body->>'@id')
+  LOOP
+    v_find := v_find || jsonb_build_array(
+      'UNRESOLVABLE inShape: affordance '||r.id||' names '||r.ref||' — not in the composed surface, '||
+      'so no input contract can be derived for it.');
+  END LOOP;
+
+  FOR r IN
+    SELECT i.id, i.body->>(N||'adopts') AS ref FROM ckp.instances i
+     WHERE i.body->>'type' = N||'Adoption' AND i.body ? (N||'adopts')
+       AND NOT EXISTS (SELECT 1 FROM ckp.instances m
+                        WHERE m.body->>'type' = N||'Module'
+                          AND m.body->>'@id' = i.body->>(N||'adopts'))
+  LOOP
+    v_find := v_find || jsonb_build_array(
+      'ADOPTION without a sealed Module: '||r.id||' adopts '||r.ref||' — the digest it claims to '||
+      'pin is not on the ledger.');
+  END LOOP;
+
+  -- 4. The §4.5 worked examples: a Grant must target an Organ, a Membership must
+  -- hold a Role. Zero rows today; the check exists so the first wrong one is seen.
+  FOR r IN
+    SELECT i.id, i.body->>(N||'permTarget') AS ref FROM ckp.instances i
+     WHERE i.body->>'type' = N||'Grant' AND i.body ? (N||'permTarget')
+       AND NOT EXISTS (SELECT 1 FROM ckp.instances o
+                        WHERE o.body->>'@id' = i.body->>(N||'permTarget')
+                          AND o.body->>'type' IN (N||'Organ', N||'CK', N||'TOOL', N||'DATA'))
+  LOOP
+    v_find := v_find || jsonb_build_array('GRANT targets a non-Organ: '||r.id||' -> '||r.ref);
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'ok', true, 'kernel', v_proj,
+    'sealed_rows', v_total,
+    'unattributed', v_unattr,
+    'historical', jsonb_build_object('pre_governance_vacuous_seals', v_vac,
+      'note', 'sealed before the root was in force; unfixable and legitimate — fence, never backfill'),
+    'vacuous_seals_live', v_vac_new,
+    'findings', v_find,
+    'healthy', jsonb_array_length(v_find) = 0);
+END;
+$function$
+;
+CREATE OR REPLACE FUNCTION ckp.authority_of(p_participant text DEFAULT NULL)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  N     text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_who text := COALESCE(p_participant, NULLIF(current_setting('ckp.requester', true), ''));
+  v_anon boolean := v_who IS NULL;
+  v_mem jsonb; v_grants jsonb;
+BEGIN
+  -- Anonymous is a TIER, not an identity: nothing durable accretes to it
+  -- (persona spec PR1), so it has no chain to traverse and saying so is the
+  -- answer — not an empty list that reads like "checked and found none".
+  IF v_anon THEN
+    RETURN jsonb_build_object('ok', true, 'identity', NULL, 'tier', 'anonymous',
+      'memberships', '[]'::jsonb, 'grants', '[]'::jsonb,
+      'note', 'anonymous tier: no verified identity, so no authority chain exists to resolve. '||
+              'Transport grants (events-only, no publish) are minted at admission and are not '||
+              'readable here — see SPEC.PGCK.IDENTITY-PATH.');
+  END IF;
+
+  SELECT jsonb_agg(jsonb_build_object('membership', m.body->>'@id',
+                                      'memberOf',  m.body->>(N||'memberOf'),
+                                      'holdsRole', m.body->>(N||'holdsRole')))
+    INTO v_mem
+  FROM ckp.instances m
+  WHERE m.body->>'type' = N||'Membership' AND m.body->>(N||'memberIs') = v_who;
+
+  SELECT jsonb_agg(jsonb_build_object('grant', g.body->>'@id',
+                                      'permTarget', g.body->>(N||'permTarget'),
+                                      'permission', g.body->>(N||'permission')))
+    INTO v_grants
+  FROM ckp.instances g
+  WHERE g.body->>'type' = N||'Grant'
+    AND g.body->>(N||'grantedVia') IN (
+      SELECT r.body->>'@id' FROM ckp.instances r
+       WHERE r.body->>'type' = N||'Role'
+         AND r.body->>'@id' IN (SELECT m.body->>(N||'holdsRole') FROM ckp.instances m
+                                 WHERE m.body->>'type' = N||'Membership'
+                                   AND m.body->>(N||'memberIs') = v_who));
+
+  RETURN jsonb_build_object('ok', true, 'identity', v_who, 'tier', 'verified',
+    'memberships', COALESCE(v_mem, '[]'::jsonb),
+    'grants', COALESCE(v_grants, '[]'::jsonb),
+    'note', CASE WHEN v_mem IS NULL
+      THEN 'no sealed Membership for this identity — the authority chain is EMPTY, which is '||
+           'not the same as unchecked. Dispatch is currently governed by the transport tier '||
+           'and the role floor, not by this chain.'
+      ELSE NULL END);
+END;
+$function$
+;
+CREATE OR REPLACE FUNCTION ckp._dispatch_safe(p_verb text, p_payload jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_out jsonb;
+BEGIN
+  v_out := ckp.dispatch(p_verb, p_payload);
+  RETURN v_out;
+EXCEPTION
+  WHEN OTHERS THEN
+    -- The refusal is the RESULT. Carry the clause the gate named, plus SQLSTATE
+    -- so a caller can tell a shape refusal from a transport fault, and keep the
+    -- verb so a Trace-Id correlation still resolves. Never re-raise: re-raising
+    -- is what killed the worker.
+    RETURN jsonb_build_object(
+      'ok',      false,
+      'refused', true,
+      'verb',    p_verb,
+      'sqlstate', SQLSTATE,
+      'error',   SQLERRM
+    );
+END;
+$function$;
+
+COMMENT ON FUNCTION ckp._dispatch_safe(text, jsonb) IS
+  'Transport-safe wrapper over ckp.dispatch. A gate refusal is returned as data '
+  '({ok:false, refused:true, sqlstate, error}) instead of raising, because an '
+  'unhandled RAISE inside the bgworker SPI call unwinds as a pgrx panic and '
+  'terminates the worker — taking the auth-callout responder with it and closing '
+  'the door for every client (measured 2026-08-11, pgck-bridge exit code 1).';
+
+CREATE OR REPLACE FUNCTION ckp.germinate_kernel(p_project text, p_label text DEFAULT NULL,
+                                                p_kind text DEFAULT 'personal')
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_sub   text := NULLIF(current_setting('ckp.requester', true), '');
+  v_owner text;
+  v_label text := COALESCE(p_label, p_project);
+  v_iri   text := format('urn:ckp:%s/kernel/ck', p_project);
+  v_g     int;
+  v_ttl   text;
+  v_base  text := format('urn:ckp:%s', p_project);
+  v_kid   text := format('urn:ckp:%s/kernel', p_project);
+  v_pid   text := format('urn:ckp:project:%s', p_project);
+BEGIN
+  IF p_project IS NULL OR btrim(p_project) = '' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'project required');
+  END IF;
+  -- The transport segment is one NATS token. A dotted name can never be granted
+  -- (configured_kernels drops it), so germinating one would build a kernel nobody
+  -- can ever reach. Refuse at the door with the slug it should use.
+  -- p_project is ONE transport segment, not an IRI. The metacharacter test alone
+  -- let ':' and '/' through, so a caller passing the project URN
+  -- ('urn:ckp:project:ck-lib-js') germinated a graph named
+  -- <urn:ckp:urn:ckp:project:ck-lib-js/kernel/ck> -- structurally valid, and
+  -- reachable by nobody. Measured on the bench: 22 asserted triples in exactly
+  -- that graph. Require a bare segment; the metacharacter case keeps its own
+  -- message because the slug is actionable there.
+  IF p_project ~ '[.*> \t\r\n]' THEN
+    RETURN jsonb_build_object('ok', false, 'refused', true,
+      'error', format('kernel id %L carries a NATS subject metacharacter, so it can never be granted. Use %L.',
+                      p_project, ckp._slug(p_project)));
+  END IF;
+  IF p_project !~ '^[a-z0-9]+(-[a-z0-9]+)*$' THEN
+    RETURN jsonb_build_object('ok', false, 'refused', true,
+      'error', format('kernel id %L is not canonical. A project name is lowercase, dashes optional, one transport segment -- use %L.',
+                      p_project, ckp._slug(regexp_replace(p_project, '^.*[:/]', ''))));
+  END IF;
+  -- IDENTITY IS SERVER-DERIVED. No verified connection, no owner, no germination —
+  -- fail closed rather than mint an unowned project or invent an owner.
+  IF v_sub IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'refused', true,
+      'error', 'germination requires a verified identity: ckp.ownedBy is stamped from the connection, never supplied. Anonymous callers cannot own a project.');
+  END IF;
+  v_owner := 'urn:ckp:participant:' || ckp._slug(v_sub);
+
+  -- 1. the structure — Kernel + three organs, counted dependencies, gated authorities
+  v_g := pgrdf.add_graph(v_iri);
+  PERFORM pgrdf.clear_graph(v_g);
+  v_ttl := format($ttl$
+@prefix ckp:  <https://conceptkernel.org/ontology/v3.11/core#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<%1$s/kernel> a ckp:Kernel ; rdfs:label %2$L ; ckp:epoch 0 ;
+  ckp:inProject <%3$s> ;
+  ckp:hasOrgan <%1$s/organ/ck> , <%1$s/organ/tool> , <%1$s/organ/data> .
+<%1$s/organ/ck>   a ckp:Organ , ckp:CK   ; ckp:organKind "ck"   ; ckp:writeAuthority "governed-only" .
+<%1$s/organ/tool> a ckp:Organ , ckp:TOOL ; ckp:organKind "tool" ; ckp:writeAuthority "readonly-on-ontology" ;
+  ckp:dependsOn <%1$s/organ/ck> .
+<%1$s/organ/data> a ckp:Organ , ckp:DATA ; ckp:organKind "data" ; ckp:writeAuthority "readwrite" ;
+  ckp:dependsOn <%1$s/organ/ck> , <%1$s/organ/tool> .
+$ttl$, v_base, v_label, v_pid);
+  PERFORM pgrdf.parse_turtle(v_ttl, v_g, v_iri || '#');
+  PERFORM pgrdf.materialize(v_g);
+  GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+  GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
+
+  -- 2. the Project — ownedBy STAMPED, never supplied. This is the triple a client
+  --    cannot write and the reason germination is a governed verb at all.
+  PERFORM ckp.seal(v_pid, jsonb_build_object(
+    'type', 'https://conceptkernel.org/ontology/v3.11/core#Project',
+    '@id',  v_pid,
+    'http://www.w3.org/2000/01/rdf-schema#label', v_label,
+    'https://conceptkernel.org/ontology/v3.11/core#projectKind', p_kind,
+    'https://conceptkernel.org/ontology/v3.11/core#ownedBy', v_owner));
+
+  -- 3. the Kernel as a SEALED, ATTRIBUTED fact — so the kernel exists in the ledger
+  --    and not only as quads a stranger could have written.
+  PERFORM ckp.seal(v_kid, jsonb_build_object(
+    'type', 'https://conceptkernel.org/ontology/v3.11/core#Kernel',
+    '@id',  v_kid,
+    'http://www.w3.org/2000/01/rdf-schema#label', v_label,
+    'https://conceptkernel.org/ontology/v3.11/core#epoch', 0,
+    'https://conceptkernel.org/ontology/v3.11/core#inProject', v_pid,
+    'https://conceptkernel.org/ontology/v3.11/core#hasOrgan',
+      -- The organs live at <base>/organ/*, NOT <base>/kernel/organ/*. Both the
+      -- graph above and pgCK's own kernel use the former; deriving these from
+      -- v_kid (which already ends in /kernel) sealed a Kernel whose hasOrgan
+      -- pointed at three resources that do not exist. KernelShape only counts
+      -- them and checks nodeKind, so the gate passed and the drift was silent.
+      jsonb_build_array(v_base||'/organ/ck', v_base||'/organ/tool', v_base||'/organ/data')));
+
+  RETURN jsonb_build_object('ok', true, 'kernel', v_kid, 'graph', v_iri,
+                            'project', v_pid, 'ownedBy', v_owner, 'organs', 3);
+END;
+$function$;
+
+COMMENT ON FUNCTION ckp.germinate_kernel(text, text, text) IS
+  'Governed germination. A client declares its STRUCTURE (Kernel + three organs); the '
+  'substrate stamps WHO OWNS IT (ckp:ownedBy) from the verified connection, exactly as '
+  'ckp:createdBy is derived — never from the payload. Refuses anonymously, and refuses a '
+  'kernel id carrying a NATS subject metacharacter because such a kernel could never be '
+  'granted. Replaces the pgRDF route, which lands correct structure that belongs to nobody.';
+
 CREATE OR REPLACE FUNCTION ckp.dispatch(p_verb text, p_payload jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -1863,11 +2406,11 @@ CREATE OR REPLACE FUNCTION ckp.dispatch(p_verb text, p_payload jsonb)
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  N      text := 'https://conceptkernel.org/ontology/v3.7/';
+  N      text := 'urn:ckp:board/';
   RL     text := 'http://www.w3.org/2000/01/rdf-schema#label';
   req    jsonb := p_payload->'req';
   res    jsonb;
-  v_proj text := COALESCE(current_setting('ckp.project', true), 'demo');
+  v_proj text := ckp._project();
   v_idk  text := COALESCE(current_setting('ckp.identity_key', true), 'pgck-localhost');
   v_canon  text;   -- CI-B-2: canonical instance.* name (registry lookup key)
   v_aff    jsonb;  -- CI-B-1: the sealed affordance row (the registry IS the routing authority)
@@ -1883,7 +2426,14 @@ BEGIN
   -- resolve the legacy handler name (alias window) so the CASE below is unchanged and v0.3.0
   -- web2 keeps working.
   v_canon := ckp.verb_canon(p_verb);
-  v_aff   := ckp.registry_lookup('pgCK', v_canon);
+  -- Resolve against the CALLING project, not a fixed kernel. This asked
+  -- registry_lookup('pgck', ...) for every caller, so a verb registered by any
+  -- other kernel was invisible and every non-pgck workspace got
+  -- unknown_affordance. It looked correct only because the seed and the
+  -- registrars were hard-coded to the same literal -- writer and reader wrong
+  -- in the same direction. (smoke-s4 s41: registered under 's41-test',
+  -- resolved under 'pgck'.)
+  v_aff   := ckp.registry_lookup(v_proj, v_canon);
   IF v_aff IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'error', 'unknown_affordance', 'verb', p_verb)
       || jsonb_build_object('req', req);
@@ -1957,13 +2507,29 @@ BEGIN
     res := ckp._query(v_legacy, p_payload);
 
   -- ---- discovery -------------------------------------------------------
+  -- B4: the surface in force, checked against the digests its epoch sealed.
+  -- A READ, never a gate — a false positive here would take the substrate down,
+  -- and legitimate drift exists. Findings name what was measured; empty = pass.
+  WHEN 'surface.check' THEN
+    res := ckp.surface_check(v_proj);
+
+  -- B3: the store-level G-1 audit — the cross-node integrity body locality puts
+  -- beyond the instance gate (§4.5). B1a: authority resolved by traversal, with
+  -- an empty chain reported AS empty (persona spec §3).
+  WHEN 'integrity.check' THEN
+    res := ckp.integrity_check(v_proj);
+
+  WHEN 'authority.mine' THEN
+    res := ckp.authority_of(NULL);
+
   WHEN 'affordances' THEN
-    res := jsonb_build_object('ok', true, 'affordances', COALESCE((
-      SELECT jsonb_agg(jsonb_build_object('name', j->>'a', 'in', j->>'it', 'out', j->>'ot'))
-      FROM pgrdf.sparql($q$ PREFIX ckp:<https://conceptkernel.org/ontology/v3.11/core#>
-        SELECT ?a ?it ?ot WHERE { GRAPH ?g { ?a a ckp:Affordance .
-          OPTIONAL { ?a ckp:inTopic ?it } OPTIONAL { ?a ckp:outTopic ?ot } } } ORDER BY ?a $q$) AS j
-    ), '[]'::jsonb));
+    -- B1 (pgCK#56): derived from SEALED ckp:Affordance instances of THIS kernel,
+    -- carrying inShape resolved into a real input contract, retirement honoured,
+    -- and the registry/sealed drift reported under `unsealed` rather than merged.
+    -- Was: an unfiltered SPARQL scan of a graph nobody writes, which returned []
+    -- for a substrate holding sealed affordances — reads as "no grants", means
+    -- "nothing declared".
+    res := ckp.affordances_of(v_proj);
 
   WHEN 'kernels.list' THEN
     res := jsonb_build_object('ok', true, 'kernels', COALESCE((
@@ -1989,6 +2555,16 @@ BEGIN
   WHEN 'participant.join' THEN
     res := jsonb_build_object('ok', true, 'sub', p_payload->>'name',
       'urn', 'urn:ckp:participant:'||ckp._slug(p_payload->>'name'));
+
+  -- 0.4.43: germination as a GOVERNED act. kernel.create seals a board Goal and
+  -- creates no kernel; the pgRDF route creates a correct kernel that belongs to
+  -- nobody. This is the one that does both: client declares structure, substrate
+  -- stamps ckp:ownedBy from the verified connection.
+  WHEN 'kernel.germinate' THEN
+    res := ckp.germinate_kernel(
+             COALESCE(p_payload->>'project', p_payload->>'name'),
+             p_payload->>'label',
+             COALESCE(p_payload->>'projectKind', 'personal'));
 
   WHEN 'kernel.create' THEN
     DECLARE nm text := p_payload->>'name'; gid text;
@@ -2211,6 +2787,7 @@ CREATE OR REPLACE FUNCTION ckp.ledger_to_outbox()
 AS $function$
 DECLARE
   v_body JSONB;
+  v_proj TEXT;
 BEGIN
   SELECT body INTO v_body FROM ckp.instances WHERE id = NEW.instance_id;
   IF v_body IS NULL THEN
@@ -2219,10 +2796,20 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- The producing kernel comes from the SEALED producedBy stamp
+  -- (urn:ckp:<project>/kernel/ck) -- substrate-derived and unforgeable -- not
+  -- from session state, which by trigger time may belong to another caller.
+  v_proj := NULLIF(regexp_replace(
+              COALESCE(v_body->>'https://conceptkernel.org/ontology/v3.11/core#producedBy',''),
+              '^urn:ckp:(.*)/kernel/ck$', '\1'), '');
+  IF v_proj IS NULL OR v_proj = v_body->>'https://conceptkernel.org/ontology/v3.11/core#producedBy' THEN
+    v_proj := ckp._project();
+  END IF;
+
   INSERT INTO ckp.outbox(ledger_seq, subject, payload, headers)
   VALUES (
     NEW.seq,
-    ckp.compute_publish_subject(v_body->>'type'),
+    ckp.compute_publish_subject(v_body->>'type', v_proj),
     convert_to(v_body::text, 'UTF8'),
     jsonb_build_object(
       'Ck-Seq',        NEW.seq::text,
@@ -2231,8 +2818,15 @@ BEGIN
     -- F4 (msg.by): stamp the server-attributed sender `by` so peers (kernels, web bots, users) see
     -- who-said-what WITHOUT the client asserting it. `created_by` derives from the VERIFIED
     -- ckp.requester (F-A), never a client field — so `by` is un-forgeable.
-    || CASE WHEN v_body ? 'https://conceptkernel.org/ontology/v3.7/created_by'
-            THEN jsonb_build_object('by', v_body->>'https://conceptkernel.org/ontology/v3.7/created_by')
+    -- `by` reads the DERIVED core stamp first. It keyed only on the v3.8-era
+    -- board property, which 5 instances carry against 73 with core createdBy --
+    -- so after the 0.4.44 identity work the header was absent on virtually
+    -- everything, and a subscriber could not tell who said what. Board form
+    -- kept as the legacy fallback.
+    || CASE WHEN v_body ? 'https://conceptkernel.org/ontology/v3.11/core#createdBy'
+            THEN jsonb_build_object('by', v_body->>'https://conceptkernel.org/ontology/v3.11/core#createdBy')
+            WHEN v_body ? 'urn:ckp:board/created_by'
+            THEN jsonb_build_object('by', v_body->>'urn:ckp:board/created_by')
             ELSE '{}'::jsonb END
   );
 
@@ -2272,7 +2866,7 @@ DECLARE
   v_tgt    text := ckp._resolve_ref(p_tgt);
   v_pred   text := CASE WHEN position(':' in COALESCE(p_pred,'')) > 0
                         THEN p_pred                                     -- already an IRI: as-is
-                        ELSE 'https://conceptkernel.org/ontology/v3.7/' || p_pred END;  -- short -> v3.7 IRI
+                        ELSE 'urn:ckp:board/' || p_pred END;  -- short -> v3.7 IRI
   v_g      bigint;
 BEGIN
   -- materialize only when both endpoints resolved to clean absolute IRIs (all three injection-gated).
@@ -2340,12 +2934,12 @@ CREATE OR REPLACE FUNCTION ckp.project_instance_label()
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  N      text := 'https://conceptkernel.org/ontology/v3.7/';
+  N      text := 'urn:ckp:board/';
   RL     text := 'http://www.w3.org/2000/01/rdf-schema#label';
   v_type text := NEW.body->>'type';
   v_id   text := COALESCE(NEW.body->>'@id', 'urn:ckp:instance:'||NEW.id);
   v_lbl  text;
-  v_proj text := COALESCE(NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  v_proj text := ckp._project();
   v_g    bigint;
 BEGIN
   v_lbl := COALESCE(NEW.body->>RL, NEW.body->>'rdfs:label',
@@ -2407,9 +3001,9 @@ BEGIN
 
   -- Build the Turtle that represents this instance's link triples.
   IF v_short_type = 'Task' THEN
-    v_id      := p_body->>'https://conceptkernel.org/ontology/v3.7/task_id';
-    v_goal_id := p_body->>'https://conceptkernel.org/ontology/v3.7/part_of_goal';
-    v_kernel  := p_body->>'https://conceptkernel.org/ontology/v3.7/target_kernel';
+    v_id      := p_body->>'urn:ckp:board/task_id';
+    v_goal_id := p_body->>'urn:ckp:board/part_of_goal';
+    v_kernel  := p_body->>'urn:ckp:board/target_kernel';
 
     -- Bodies missing any required link field reach the SHACL gate below
     -- with an empty/partial scratch graph — the gate catches them and
@@ -2434,8 +3028,8 @@ BEGIN
     v_ttl := v_ttl || ' .';
 
   ELSIF v_short_type = 'Goal' THEN
-    v_id    := p_body->>'https://conceptkernel.org/ontology/v3.7/goal_id';
-    v_label := p_body->>'https://conceptkernel.org/ontology/v3.7/title';
+    v_id    := p_body->>'urn:ckp:board/goal_id';
+    v_label := p_body->>'urn:ckp:board/title';
 
     v_subject := 'ckp://Goal#' || ckp.urn_normalise(COALESCE(v_id, p_instance_id));
 
@@ -2512,7 +3106,14 @@ DECLARE
   -- not editing the list.
   v_ops    text[] := ARRAY['add_class','add_property','set_transition_map','add_affordance'];
   v_op     text := p_payload->>'op';
-  v_about  text := COALESCE(p_payload->>'about', p_kernel_urn);
+  -- ckp.dispatch calls this with v_proj -- the bare project SEGMENT ('pgck'),
+  -- not a URN, despite the parameter name. Defaulting `about` to it produced a
+  -- literal where ProposalShape demands sh:IRI, so EVERY proposal that omitted
+  -- `about` was refused. Build the kernel IRI when a bare segment arrives.
+  v_about  text := COALESCE(p_payload->>'about',
+                            CASE WHEN position(':' in p_kernel_urn) > 0 THEN p_kernel_urn
+                                 ELSE 'urn:ckp:'||p_kernel_urn||'/kernel/ck' END);
+  v_detail jsonb;
   v_quorum int;
   v_pid    text;
   v_body   jsonb;
@@ -2520,6 +3121,19 @@ DECLARE
   v_report jsonb;
 BEGIN
   -- 1. INJECTION-SAFE FIELD GATE (mirrors ProposalShape; makes step 2's TTL construction safe).
+  -- P0-E, SECOND HALF. That the OP has a projector is not enough: the DETAIL must
+  -- carry something to project. add_affordance with an empty detail sealed as
+  -- `applied`, bumped the epoch, registered nothing, and returned ok:true with
+  -- graph_changed:false and no error anywhere -- measured on pgck, epoch 5 is
+  -- exactly that inert applied. Refuse at propose, which is what P0-E promised.
+  IF v_op = 'add_affordance' THEN
+    v_detail := COALESCE(p_payload->'detail', p_payload->'proposalDetail', '{}'::jsonb);
+    IF NOT (v_detail ? 'verb') OR NOT (v_detail ? 'query') THEN
+      RETURN jsonb_build_object('ok', false, 'error', 'detail_projects_nothing', 'op', v_op,
+        'hint', 'add_affordance needs detail.verb and detail.query; without them apply bumps the epoch and registers nothing (P0-E)',
+        'got', v_detail);
+    END IF;
+  END IF;
   IF v_op IS NULL OR NOT (v_op = ANY(v_ops)) THEN
     RETURN jsonb_build_object('ok', false, 'error', 'op_has_no_projector', 'op', v_op,
                               'hint', 'a governed op is refused at propose unless it can project a change (P0-E, pgCK#28)',
@@ -2561,7 +3175,10 @@ BEGIN
     C||'proposalState',  'pending',
     C||'proposalOp',     v_op,
     C||'requiresQuorum', v_quorum::text,
-    'proposalDetail',    COALESCE(p_payload->'detail', '{}'::jsonb)
+    -- accept BOTH spellings: the door historically took 'detail' while the
+    -- sealed key is 'proposalDetail', so a caller using the name it reads back
+    -- silently got {}.
+    'proposalDetail',    COALESCE(p_payload->'detail', p_payload->'proposalDetail', '{}'::jsonb)
   );
   PERFORM ckp.seal(v_pid, v_body);
 
@@ -2579,7 +3196,7 @@ CREATE OR REPLACE FUNCTION ckp.query(p_payload jsonb)
 AS $function$
 DECLARE
   v_type    text := p_payload->>'type';
-  v_proj    text := COALESCE(NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  v_proj    text := ckp._project();
   v_ops     jsonb := '{"eq":"=","neq":"<>","lt":"<","lte":"<=","gt":">","gte":">=","contains":"LIKE"}'::jsonb;
   v_key_re  text := '^[A-Za-z][A-Za-z0-9:#/._-]*$';   -- the unshaped-fallback key gate
   v_propmap jsonb;          -- declared localname -> full path IRI ({} when the type is unshaped)
@@ -2693,7 +3310,7 @@ DECLARE
   v_from     text := p_payload->>'from';
   v_from_iri text;
   v_via      text := p_payload->>'via';
-  v_proj     text := COALESCE(NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  v_proj     text := ckp._project();
   v_iri_re   text := '^[A-Za-z][A-Za-z0-9+.:#/_-]*$';
   v_max      int  := COALESCE(NULLIF(current_setting('pgrdf.path_max_depth', true),'')::int, 0);
   v_declared jsonb;
@@ -2735,6 +3352,113 @@ END;
 $function$
 ;
 
+CREATE OR REPLACE FUNCTION ckp._affordance_schema(p_shape_iri text, p_comp integer)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_giri text;
+  v_props jsonb;
+BEGIN
+  IF p_shape_iri IS NULL OR p_comp IS NULL THEN RETURN NULL; END IF;
+  SELECT iri INTO v_giri FROM pgrdf._pgrdf_graphs WHERE graph_id = p_comp;
+  IF v_giri IS NULL THEN RETURN NULL; END IF;
+
+  SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+           'path',     j->>'path',
+           'name',     regexp_replace(j->>'path', '^.*[#/]', ''),
+           'datatype', j->>'dt',
+           'required', CASE WHEN COALESCE((j->>'mn')::int, 0) >= 1 THEN true ELSE NULL END,
+           'maxCount', (j->>'mx')::int,
+           'nodeKind', regexp_replace(COALESCE(j->>'nk',''), '^.*[#/]', ''),
+           'pattern',  j->>'pat'
+         )) ORDER BY j->>'path')
+    INTO v_props
+  FROM pgrdf.sparql(format($q$
+    PREFIX sh: <http://www.w3.org/ns/shacl#>
+    SELECT ?path ?dt ?mn ?mx ?nk ?pat WHERE { GRAPH <%s> {
+      <%s> sh:property ?p . ?p sh:path ?path .
+      OPTIONAL { ?p sh:datatype ?dt } OPTIONAL { ?p sh:minCount ?mn }
+      OPTIONAL { ?p sh:maxCount ?mx } OPTIONAL { ?p sh:nodeKind ?nk }
+      OPTIONAL { ?p sh:pattern ?pat } } }$q$, v_giri, p_shape_iri)) j;
+
+  -- Unresolvable => NULL, never an empty contract. A shape that resolves to
+  -- nothing and a shape that is not there must not read the same.
+  IF v_props IS NULL THEN RETURN NULL; END IF;
+  RETURN jsonb_build_object('shape', p_shape_iri, 'properties', v_props);
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp.affordances_of(p_project text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  N       text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_kern  text := 'urn:ckp:'||p_project||'/kernel/ck';
+  v_epoch int  := COALESCE((SELECT epoch FROM ckp.kernel_epoch WHERE kernel = p_project), 0);
+  v_comp  int;
+  v_list  jsonb;
+  v_unsealed jsonb;
+BEGIN
+  v_comp := ckp._composed_shapes(p_project);
+
+  SELECT jsonb_agg(a ORDER BY a->>'name') INTO v_list FROM (
+    SELECT jsonb_strip_nulls(jsonb_build_object(
+      'name',    regexp_replace(i.body->>(N||'inTopic'), '^input\.kernel\.[^.]+\.action\.', ''),
+      'iri',     i.body->>'@id',
+      'in',      i.body->>(N||'inTopic'),
+      'out',     i.body->>(N||'outTopic'),
+      'plane',   i.body->>(N||'plane'),
+      'delegate', (i.body->>(N||'delegate'))::boolean,
+      'inShape', i.body->>(N||'inShape'),
+      -- inShape resolved into a real input contract, or null + a marker. §4.5:
+      -- report what was found; never invent a contract for a dangling IRI.
+      'schema',  ckp._affordance_schema(i.body->>(N||'inShape'), v_comp),
+      'schema_resolved',
+                 CASE WHEN i.body ? (N||'inShape')
+                      THEN ckp._affordance_schema(i.body->>(N||'inShape'), v_comp) IS NOT NULL
+                      ELSE NULL END,
+      -- provenance for the affordance ITSELF (root: derivedBy minCount 1)
+      'derivedBy', i.body->>(N||'derivedBy'),
+      'sealedAtEpoch', (i.body->>(N||'sealedAtEpoch'))::int
+    )) AS a
+    FROM ckp.instances i
+    WHERE i.body->>'type' = N||'Affordance'
+      -- kernel filter: producedBy is the substrate-stamped kernel, unforgeable
+      AND i.body->>(N||'producedBy') = v_kern
+      -- retirement honoured: retired AT or BEFORE the current epoch is gone
+      AND (NOT (i.body ? (N||'retiredAtEpoch'))
+           OR (i.body->>(N||'retiredAtEpoch'))::int > v_epoch)
+  ) s;
+
+  -- The #56 split, made VISIBLE: verbs dispatch resolves that no sealed
+  -- Affordance declares. Reported, never merged — a union would hide exactly
+  -- the hand-registered action the root says cannot hide.
+  SELECT jsonb_agg(r.verb ORDER BY r.verb) INTO v_unsealed
+  FROM ckp.affordance_registry r
+  WHERE r.kernel = p_project
+    AND NOT EXISTS (
+      SELECT 1 FROM ckp.instances i
+      WHERE i.body->>'type' = N||'Affordance'
+        AND i.body->>(N||'producedBy') = v_kern
+        AND regexp_replace(i.body->>(N||'inTopic'), '^input\.kernel\.[^.]+\.action\.', '') = r.verb);
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'kernel', p_project,
+    'epoch', v_epoch,
+    'affordances', COALESCE(v_list, '[]'::jsonb),
+    'unsealed', COALESCE(v_unsealed, '[]'::jsonb));
+END;
+$function$
+;
+
 CREATE OR REPLACE FUNCTION ckp.register_derived_affordance(p_prop jsonb, p_project text, p_epoch integer)
  RETURNS text
  LANGUAGE plpgsql
@@ -2757,14 +3481,21 @@ BEGIN
 
   -- COMPILE: the sealed {formula, scope} becomes the plan for (kernel, verb, epoch).
   INSERT INTO ckp.plans(kernel, verb, epoch, plan)
-  VALUES ('pgCK', v_verb, p_epoch,
+  VALUES (p_project, v_verb, p_epoch,
           jsonb_build_object('kind', 'derived', 'formula', v_formula, 'scope', v_scope))
   ON CONFLICT (kernel, verb, epoch) DO UPDATE SET plan = EXCLUDED.plan, compiled_at = now();
 
   -- REGISTER: dispatch resolves the verb via plane='derived'.
-  INSERT INTO ckp.affordance_registry(kernel, verb, in_topic, plane, epoch)
-  VALUES ('pgCK', v_verb, 'input.kernel.pgCK.action.'||v_verb, 'derived', p_epoch)
-  ON CONFLICT (kernel, verb) DO UPDATE SET plane = 'derived', epoch = EXCLUDED.epoch, refreshed_at = now();
+  -- out_topic DECLARES where the caller will receive the result. It was left
+  -- NULL on every row (0 of 30 measured), so a subscriber had no way to know
+  -- what to listen to. This is not a new channel: src/nats_client.rs already
+  -- publishes replies to result.kernel.<kernel>.<verb>. Registration now
+  -- states the truth the transport already implements.
+  INSERT INTO ckp.affordance_registry(kernel, verb, in_topic, out_topic, plane, epoch)
+  VALUES (p_project, v_verb, 'input.kernel.'||p_project||'.action.'||v_verb,
+          'result.kernel.'||p_project||'.'||v_verb, 'derived', p_epoch)
+  ON CONFLICT (kernel, verb) DO UPDATE SET plane = 'derived', epoch = EXCLUDED.epoch,
+    out_topic = EXCLUDED.out_topic, refreshed_at = now();
 
   RETURN v_verb;
 END;
@@ -2797,14 +3528,21 @@ BEGIN
 
   -- COMPILE: the sealed query becomes the plan for (kernel, verb, epoch). §5.3 made real.
   INSERT INTO ckp.plans(kernel, verb, epoch, plan)
-  VALUES ('pgCK', v_verb, p_epoch,
+  VALUES (p_project, v_verb, p_epoch,
           jsonb_build_object('kind', 'sparql', 'statement', v_query, 'params', v_params))
   ON CONFLICT (kernel, verb, epoch) DO UPDATE SET plan = EXCLUDED.plan, compiled_at = now();
 
   -- REGISTER: dispatch resolves the verb via plane='query'.
-  INSERT INTO ckp.affordance_registry(kernel, verb, in_topic, plane, epoch)
-  VALUES ('pgCK', v_verb, 'input.kernel.pgCK.action.'||v_verb, 'query', p_epoch)
-  ON CONFLICT (kernel, verb) DO UPDATE SET plane = 'query', epoch = EXCLUDED.epoch, refreshed_at = now();
+  -- out_topic DECLARES where the caller will receive the result. It was left
+  -- NULL on every row (0 of 30 measured), so a subscriber had no way to know
+  -- what to listen to. This is not a new channel: src/nats_client.rs already
+  -- publishes replies to result.kernel.<kernel>.<verb>. Registration now
+  -- states the truth the transport already implements.
+  INSERT INTO ckp.affordance_registry(kernel, verb, in_topic, out_topic, plane, epoch)
+  VALUES (p_project, v_verb, 'input.kernel.'||p_project||'.action.'||v_verb,
+          'result.kernel.'||p_project||'.'||v_verb, 'query', p_epoch)
+  ON CONFLICT (kernel, verb) DO UPDATE SET plane = 'query', epoch = EXCLUDED.epoch,
+    out_topic = EXCLUDED.out_topic, refreshed_at = now();
 
   RETURN v_verb;
 END;
@@ -2817,8 +3555,30 @@ CREATE OR REPLACE FUNCTION ckp.registry_lookup(p_kernel text, p_verb text)
  STABLE SECURITY DEFINER
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
+  -- EMPTY MEANS NONE. A kernel is authorized for the verbs its OWN registry
+  -- rows name. It is never authorized for another kernel's, and never for
+  -- EVERYTHING on the grounds that it has none -- degrading an empty surface
+  -- to the full surface is fail-open authorization (d-28-sah-1). All 26 seeded
+  -- rows name kernel pgCK, so every other workspace resolves to zero rows,
+  -- which is a true answer meaning none.
+  --
+  -- ONE bootstrap exception, the narrowest that still permits creation: a
+  -- kernel that does not exist yet cannot own a registry row, so without this
+  -- no kernel could ever be created through the door. kernel.germinate is the
+  -- only verb reachable with no surface -- it refuses anonymous callers and
+  -- stamps ownedBy from the verified connection, so reaching it proves an
+  -- identity rather than bypassing one.
+  -- YOUR OWN FIRST, THEN THE SUBSTRATE FLOOR. A row this kernel registered wins;
+  -- otherwise the row seeded at install, which belongs to no kernel because
+  -- install runs before any kernel exists. Resolving ONLY the floor made every
+  -- kernel share one name's surface; resolving ONLY the caller made the seeded
+  -- verbs unreachable for everyone. Empty still means NONE -- it is now a real
+  -- answer about this kernel rather than a lookup under someone else's name.
   SELECT to_jsonb(r) FROM ckp.affordance_registry r
-  WHERE r.kernel = p_kernel AND r.verb = p_verb;
+  WHERE r.verb = p_verb
+    AND (r.kernel = p_kernel OR r.kernel = 'pgck' OR p_verb = 'kernel.germinate')
+  ORDER BY (r.kernel = p_kernel) DESC
+  LIMIT 1;
 $function$
 ;
 
@@ -2927,6 +3687,11 @@ CREATE OR REPLACE FUNCTION ckp.run_derived_affordance(p_verb text, p_payload jso
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
+  -- The plan is keyed by (kernel, verb, epoch). Reading it under a hard-coded
+  -- kernel while register_*_affordance writes under p_project splits the pair:
+  -- the write lands under the calling project and the read never finds it.
+  -- Both sides now resolve the SAME way dispatch does.
+  v_proj   text := ckp._project();
   v_plan    jsonb;
   v_epoch   bigint;
   v_formula text;
@@ -2938,7 +3703,8 @@ DECLARE
   wm_ph     bigint;
 BEGIN
   SELECT plan, epoch INTO v_plan, v_epoch FROM ckp.plans
-    WHERE kernel = 'pgCK' AND verb = p_verb ORDER BY epoch DESC LIMIT 1;
+    WHERE kernel IN (v_proj, 'pgck') AND verb = p_verb
+   ORDER BY (kernel = v_proj) DESC, epoch DESC LIMIT 1;
   IF v_plan IS NULL OR v_plan->>'kind' <> 'derived' THEN
     RETURN jsonb_build_object('ok', false, 'error', 'unknown_derived_affordance', 'verb', p_verb); END IF;
   IF v_concept IS NULL THEN
@@ -2972,6 +3738,11 @@ CREATE OR REPLACE FUNCTION ckp.run_query_affordance(p_verb text, p_payload jsonb
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
+  -- The plan is keyed by (kernel, verb, epoch). Reading it under a hard-coded
+  -- kernel while register_*_affordance writes under p_project splits the pair:
+  -- the write lands under the calling project and the read never finds it.
+  -- Both sides now resolve the SAME way dispatch does.
+  v_proj   text := ckp._project();
   v_plan   jsonb;
   v_stmt   text;
   v_params jsonb;
@@ -2981,8 +3752,16 @@ DECLARE
   v_rows   jsonb;
 BEGIN
   -- latest-epoch plan for this governed verb (a stale epoch is simply superseded).
+  -- PLAN RESOLUTION = your own first, then the substrate floor. A plan the
+  -- calling project registered wins; otherwise fall back to the one seeded at
+  -- install, which belongs to no kernel because install runs before any kernel
+  -- exists. Reading ONLY the floor made every project share one kernel's plans;
+  -- reading ONLY v_proj made the seeded substrate verbs unreachable for
+  -- everyone (smoke-s4 s32). Both halves are needed until the seed itself stops
+  -- naming a kernel.
   SELECT plan INTO v_plan FROM ckp.plans
-   WHERE kernel = 'pgCK' AND verb = p_verb ORDER BY epoch DESC LIMIT 1;
+   WHERE kernel IN (v_proj, 'pgck') AND verb = p_verb
+   ORDER BY (kernel = v_proj) DESC, epoch DESC LIMIT 1;
   IF v_plan IS NULL OR v_plan->>'kind' <> 'sparql' THEN
     RETURN jsonb_build_object('ok', false, 'error', 'unknown_query_affordance', 'verb', p_verb); END IF;
 
@@ -3024,7 +3803,7 @@ DECLARE
     NULLIF(current_setting('ckp.identity_key', true), ''),
     (SELECT v FROM ckp.config WHERE k='identity_key')
   );
-  v_project TEXT := COALESCE(NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  v_project TEXT := ckp._project();
   v_type   TEXT := p_body->>'type';
   v_missing TEXT;
   v_sha    TEXT;
@@ -3034,6 +3813,7 @@ DECLARE
   v_led_ttl TEXT;
   v_prf_ttl TEXT;
   v_sub    TEXT;
+  v_req    TEXT;
   v_display TEXT;
   v_email  TEXT;
   v_participant TEXT;
@@ -3054,10 +3834,23 @@ BEGIN
   -- are carried as non-authoritative attributes per NOTIFIES.pgCK §D.
   -- This MUST run before the body SHA (step 2) so the stored body, the ledger
   -- digest, and ckp.verify()'s recompute all hash the same canonical body.
+  --
+  -- IDENTITY HAS ONE SOURCE. `ckp.requester` is set transaction-locally by the
+  -- relay from the callout-verified connection; the payload's participant.sub
+  -- is whatever the client typed. Reading the payload here while germination
+  -- read the GUC gave one seal two identities: a Project ownedBy a verified
+  -- participant and createdBy anon:<nonce> -- "owned by someone, created by
+  -- nobody" -- and it made createdBy client-assertable, which is the whole
+  -- thing the four stamps exist to prevent. The verified connection WINS; a
+  -- conflicting payload sub is ignored, not merged. The payload arm survives
+  -- only for callers with no verified connection at all (direct SQL, tests).
+  v_req     := NULLIF(trim(COALESCE(current_setting('ckp.requester', true), '')), '');
   v_sub     := p_body->'participant'->>'sub';
   v_display := NULLIF(trim(COALESCE(p_body->'participant'->>'preferred_username','')), '');
   v_email   := NULLIF(trim(COALESCE(p_body->'participant'->>'email','')), '');
-  IF p_body ? 'participant' AND v_sub IS NOT NULL AND length(trim(v_sub)) > 0 THEN
+  IF v_req IS NOT NULL THEN
+    v_participant := 'urn:ckp:participant:' || ckp.urn_normalise(v_req);
+  ELSIF p_body ? 'participant' AND v_sub IS NOT NULL AND length(trim(v_sub)) > 0 THEN
     v_participant := 'urn:ckp:participant:' || ckp.urn_normalise(v_sub);
   ELSE
     v_participant := 'urn:ckp:participant:anon:' || gen_random_uuid()::text;
@@ -3218,52 +4011,39 @@ CREATE OR REPLACE FUNCTION ckp.shapes_self_test(p_project text DEFAULT 'demo'::t
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  v_board_iri text := format('urn:ckp:%s/kernel/board', p_project);
-  v_board_g   bigint := pgrdf.graph_id(v_board_iri);
-  v_q         text;
-  v_row       record;
-  v_ask       text;
-  v_missing   text[] := ARRAY[]::text[];
+  v_comp_iri text := format('urn:ckp:%s/shapes/composed', p_project);
+  v_iri      text;
+  v_row      record;
+  v_n        int := 0;
 BEGIN
-  IF v_board_g IS NULL THEN
-    -- v0.4.2: no board ontology imported for this project — nothing loaded, nothing
-    -- stale to guard. The gate arms itself when ckp.import_module() lands the shapes.
-    RAISE NOTICE 'ckp.shapes_self_test: board graph % not imported yet — self-test skipped (valid silence; import task/goal modules to arm the board gate)', v_board_iri;
-    RETURN;
-  END IF;
+  -- Prefer the project's composed surface; fall back to the ε0 core so a
+  -- project that has not composed yet is still checked for vacuity.
+  v_iri := CASE WHEN pgrdf.graph_id(v_comp_iri) IS NOT NULL
+                THEN v_comp_iri ELSE 'urn:ckp:core' END;
 
   FOR v_row IN
-    SELECT * FROM (VALUES
-      ('ckp:TaskShape', 'ckp:Task'),
-      ('ckp:GoalShape', 'ckp:Goal')
-    ) AS expected(shape, target)
-  LOOP
-    v_q := format(
-      'PREFIX ckp: <https://conceptkernel.org/ontology/v3.11/core#>
-       PREFIX sh:  <http://www.w3.org/ns/shacl#>
+    SELECT j->>'s' AS s, j->>'tc' AS tc
+    FROM pgrdf.sparql(format(
+      'PREFIX sh: <http://www.w3.org/ns/shacl#>
        PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-       ASK FROM <%s>
-       WHERE { ?s rdf:type sh:NodeShape ; sh:targetClass %s }',
-      v_board_iri, v_row.target);
-
-    shape_class  := v_row.shape;
-    target_class := v_row.target;
-    SELECT j->>'_ask' INTO v_ask FROM pgrdf.sparql(v_q) j LIMIT 1;
-    present := COALESCE(v_ask = 'true', false);
-    IF NOT present THEN
-      v_missing := array_append(v_missing, v_row.shape);
-    END IF;
+       SELECT ?s ?tc FROM <%s>
+       WHERE { ?s rdf:type sh:NodeShape ; sh:targetClass ?tc }', v_iri)) j
+  LOOP
+    shape_class  := v_row.s;
+    target_class := v_row.tc;
+    present      := true;
+    v_n := v_n + 1;
     RETURN NEXT;
   END LOOP;
 
-  IF array_length(v_missing, 1) > 0 THEN
+  IF v_n = 0 THEN
     RAISE EXCEPTION
-      'ckp.shapes_self_test: missing % shape(s) in %; check /ontology mount is current',
-      v_missing, v_board_iri;
+      'ckp.shapes_self_test: % targets NO class — the surface is VACUOUS. '
+      'A validation against it would report conforms:true having evaluated '
+      'nothing. Check the ontology mount and that ckp.boot() ran.', v_iri;
   END IF;
 END;
-$function$
-;
+$function$;
 
 CREATE OR REPLACE FUNCTION ckp.snapshot(p_payload jsonb)
  RETURNS jsonb
@@ -3339,7 +4119,7 @@ CREATE OR REPLACE FUNCTION ckp.transition(p_payload jsonb)
 AS $function$
 DECLARE
   C        text := 'https://conceptkernel.org/ontology/v3.11/core#';
-  N        text := 'https://conceptkernel.org/ontology/v3.7/';
+  N        text := 'urn:ckp:board/';
   v_id     text := p_payload->>'id';
   v_to     text := p_payload->>'to_state';
   v_state_re text := '^[A-Za-z][A-Za-z0-9_-]*$';
@@ -3402,7 +4182,7 @@ AS $function$
 DECLARE
   v_id      text := p_payload->>'id';
   v_patch   jsonb := p_payload->'patch';
-  v_proj    text := COALESCE(NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  v_proj    text := ckp._project();
   v_cur     jsonb;
   v_type    text;
   v_ns      text;
@@ -3485,7 +4265,17 @@ CREATE OR REPLACE FUNCTION ckp.validate(ttl text, shapes_graph_id integer)
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  scratch_id INT := 1000000000 + pg_backend_pid();
+  -- The scratch graph is allocated BY IRI, never computed as
+  -- 1000000000 + pg_backend_pid(). That arithmetic lands inside the very band
+  -- pgrdf allocates data graphs from: on the bench 59 live graphs sat at
+  -- offsets 112..1637 -- ordinary container pids -- with the core ontology
+  -- itself at 1000000221. A backend that drew a colliding pid aimed
+  -- clear_graph at real data, and every seal in that session refused with a
+  -- shape error that had nothing to do with the payload. Only pgrdf's
+  -- "bound to a different IRI" check stood between this and deleting core.
+  -- add_graph(iri) is idempotent and returns the id, so the scratch stays
+  -- one-per-backend and can never alias a data graph.
+  scratch_id BIGINT := pgrdf.add_graph('urn:ckp:validate-scratch:'||pg_backend_pid());
   report jsonb;
 BEGIN
   -- Bench-proven form (reconciled from pgck.localhost, 2026-08-08): the graph
@@ -3493,7 +4283,6 @@ BEGIN
   -- entailment is per-graph, so without this the candidate's rdf:type closure
   -- is invisible to targetClass resolution and a malformed entry can conform
   -- vacuously — the PASS-10/PASS-17 failure shape, at the innermost gate.
-  PERFORM pgrdf.add_graph(scratch_id, 'urn:ckp:scratch:'||scratch_id);
   PERFORM pgrdf.clear_graph(scratch_id);
   PERFORM pgrdf.parse_turtle(ttl, scratch_id, 'urn:ckp:scratch#');
   PERFORM pgrdf.materialize(scratch_id);
@@ -3513,14 +4302,14 @@ AS $function$
 DECLARE
   v_body    jsonb := COALESCE(p_payload->'body', p_payload);
   v_type    text := v_body->>'type';
-  v_proj    text := COALESCE(NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  v_proj    text := ckp._project();
   v_subj    text := 'urn:ckp:validate:'||pg_backend_pid();
   v_ns      text;
   v_propmap jsonb;
   v_resolved jsonb;
   v_key text; v_val jsonb; v_kiri text;
   v_scratch bigint;
-  v_kernel  bigint;
+  v_comp    int;
   v_ttl     text;
   v_report  jsonb;
 BEGIN
@@ -3533,9 +4322,9 @@ BEGIN
   -- validate <=> seal is a slogan. An undeclared type reports conforms=false
   -- with a violation naming it — never the vacuous conforms=true that let
   -- invented types look valid.
-  DECLARE v_comp0 int := ckp._composed_shapes(v_proj);
+  v_comp := ckp._composed_shapes(v_proj);
   BEGIN
-    IF NOT ckp._type_admitted(v_type, v_proj, v_comp0) THEN
+    IF NOT ckp._type_admitted(v_type, v_proj, v_comp) THEN
       RETURN jsonb_build_object('ok', true, 'type', v_type, 'conforms', false,
         'violations', jsonb_build_array(jsonb_build_object(
           'focusNode', v_type, 'resultMessage', 'type is not admitted — no shape targets it and it is declared by no class',
@@ -3553,7 +4342,7 @@ BEGIN
     SELECT DISTINCT j->>'path' AS path
     FROM pgrdf.sparql(format($q$
       PREFIX sh: <http://www.w3.org/ns/shacl#>
-      SELECT ?path WHERE { GRAPH <urn:ckp:%s/kernel/ck> {
+      SELECT ?path WHERE { GRAPH <urn:ckp:%s/shapes/composed> {
         ?s sh:targetClass <%s> ; sh:property ?p . ?p sh:path ?path } }
     $q$, v_proj, v_type)) AS j WHERE j->>'path' IS NOT NULL
   ) p;
@@ -3567,7 +4356,7 @@ BEGIN
   END LOOP;
 
   -- project the resolved candidate body to RDF in a scratch graph.
-  v_ttl := ckp._body_to_ttl(v_resolved, v_subj);
+  v_ttl := ckp._body_to_ttl(v_resolved, v_subj, v_comp);
   v_scratch := pgrdf.add_graph('urn:ckp:validate:'||pg_backend_pid());
   PERFORM pgrdf.clear_graph(v_scratch);
   BEGIN
@@ -3577,9 +4366,15 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'error', 'project_error', 'detail', SQLERRM);
   END;
 
-  -- full native W3C SHACL Core report against the kernel shapes.
-  v_kernel := pgrdf.add_graph(format('urn:ckp:%s/kernel/ck', v_proj));
-  v_report := pgrdf.validate(v_scratch, v_kernel, 'native');
+  -- Full native W3C SHACL Core report against the COMPOSED SURFACE -- the graph
+  -- ckp.seal actually gates on. This validated against <urn:ckp:%s/kernel/ck>,
+  -- which holds a Kernel and three organs and NO shapes: measured on the bench,
+  -- 30 triples and 0 sh:targetClass, versus a composed surface of 1258 triples
+  -- and 27 targets. Nothing could ever be selected, and the only thing standing
+  -- between that and a vacuous conforms:true is the no-target guard.
+  -- "validate PREDICTS seal" (pgCK#27) was a slogan on all three axes -- shapes
+  -- graph, property map, serializer overload. All three now match seal.
+  v_report := pgrdf.validate(v_scratch, v_comp, 'native');
   PERFORM pgrdf.clear_graph(v_scratch);
 
   RETURN jsonb_build_object('ok', true, 'type', v_type,
@@ -3767,7 +4562,9 @@ DECLARE
   C           text := 'https://conceptkernel.org/ontology/v3.11/core#';
   v_core      int  := (SELECT v::int FROM ckp.config WHERE k='core_graph_id');
   v_about     text := p_payload->>'about';   -- the Proposal @id (IRI)
-  v_value     text := p_payload->>'value';   -- approve | reject
+  -- VoteShape declares ckp:voteValue; this read only 'value', so a caller using
+  -- the declared name got invalid_vote_value. Accept both.
+  v_value     text := COALESCE(p_payload->>'value', p_payload->>'voteValue');
   v_prop      jsonb;
   v_quorum    int;
   v_approvals int;

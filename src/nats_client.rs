@@ -59,14 +59,21 @@ static RELAY_STARTED: OnceLock<()> = OnceLock::new();
 /// communication + presence). It does NOT seal, validate, or resolve
 /// affordances. When the governed dispatcher lands (CKA-4), this handler
 /// becomes the seam: input -> resolve affordance -> validate -> seal -> event.
-const RELAY_IN_SUBJECT: &str = "input.kernel.pgCK.action.>";
+// The kernel segment is a WILDCARD, not a literal. Hardcoding `pgCK` here made the
+// relay a second policy point: the callout mints grants per `pgck.kernels`, but a
+// kernel it granted was never subscribed, so every non-pgCK kernel was silently
+// unreachable (measured PASS-27: CK-dev, pgCK.MCP, CK.Lib.Js, and `Dictionary`,
+// which held a grant and no listener). Subscription is TRANSPORT; the callout grant
+// is POLICY. `*` matches exactly one token, and the grant filter already forbids
+// NATS metacharacters in a kernel name, so a dotted name can never widen this.
+const RELAY_IN_SUBJECT: &str = "input.kernel.*.action.>";
 const RELAY_IN_PREFIX: &str = "input.kernel.pgCK.action.";
 const RELAY_OUT_PREFIX: &str = "event.kernel.pgCK.";
 
 /// Identity-scoped inbound (hop 4, subject-scoping): the auth-callout grants a
 /// verified connection publish ONLY on `input.kernel.pgCK.id.<its-own-sub>.action.>`,
 /// so the `<sub>` segment the relay reads here is broker-enforced, never claimed.
-const RELAY_ID_SUBJECT: &str = "input.kernel.pgCK.id.*.action.>";
+const RELAY_ID_SUBJECT: &str = "input.kernel.*.id.*.action.>";
 
 /// The NATS auth-callout request subject pgCK answers on when it owns admittance
 /// (`pgck.nats_account_seed` set). SPEC.OAUTH2 §3.2.
@@ -212,7 +219,11 @@ async fn connect_with_retry(who: &str, url: &str) -> async_nats::Client {
 /// broker-enforced identity (if the subject carried the id scope).
 #[derive(Debug, PartialEq)]
 struct RoutedInbound {
-    /// `Some(sub)` when routed from `input.kernel.pgCK.id.<sub>.action.<verb>` —
+    /// The kernel segment the caller addressed. Carried through to `ckp.project`
+    /// so the seal is gated by the caller's own surface. Dropping it is what made
+    /// every door-sealed fact resolve to project `demo` and pass ungated (PASS-27).
+    kernel: String,
+    /// `Some(sub)` when routed from `input.kernel.<K>.id.<sub>.action.<verb>` —
     /// the callout granted publish ONLY on the connection's own `<sub>` segment,
     /// so the value is broker-enforced (subject-scoping, SPEC.SECURITY hop 4).
     identity: Option<String>,
@@ -227,25 +238,33 @@ struct RoutedInbound {
 ///
 /// `<sub>` is a single NATS token; the verb is non-empty. Anything else is `None`.
 fn route_inbound(subject: &str) -> Option<RoutedInbound> {
-    const ID_PREFIX: &str = "input.kernel.pgCK.id.";
-    let (identity, verb) = if let Some(rest) = subject.strip_prefix(ID_PREFIX) {
-        // `<sub>` is exactly one token: split at the FIRST dot and require the
-        // literal `action.` right after — a dotted sub can't smuggle past its grant.
-        let (sub, after) = rest.split_once('.')?;
+    const IN_PREFIX: &str = "input.kernel.";
+    let rest = subject.strip_prefix(IN_PREFIX)?;
+    // `<K>` is exactly one token, split at the FIRST dot — same discipline the
+    // `<sub>` segment has always had. The callout's grant filter rejects a kernel
+    // name carrying `.` `*` `>` or whitespace, so a name can never span tokens and
+    // widen its own grant here.
+    let (kernel, after) = rest.split_once('.')?;
+    if kernel.is_empty() {
+        return None;
+    }
+    let (identity, verb) = if let Some(scoped) = after.strip_prefix("id.") {
+        let (sub, tail) = scoped.split_once('.')?;
         if sub.is_empty() {
             return None;
         }
-        (Some(sub.to_string()), after.strip_prefix("action.")?)
+        (Some(sub.to_string()), tail.strip_prefix("action.")?)
     } else {
-        (None, subject.strip_prefix(RELAY_IN_PREFIX)?)
+        (None, after.strip_prefix("action.")?)
     };
     if verb.is_empty() {
         return None;
     }
     Some(RoutedInbound {
+        kernel: kernel.to_string(),
         identity,
         verb: verb.to_string(),
-        result_subject: format!("result.kernel.pgCK.{verb}"),
+        result_subject: format!("result.kernel.{kernel}.{verb}"),
     })
 }
 
@@ -315,6 +334,7 @@ fn run_relay_thread(url: String, callout: Option<CalloutContext>) {
             };
             let headers = msg.headers.as_ref().map(trace_headers).unwrap_or_default();
             crate::inbound_dispatch::enqueue(crate::inbound_dispatch::InboundAction {
+                kernel: routed.kernel,
                 verb: routed.verb,
                 payload: msg.payload.to_vec(),
                 result_subject: routed.result_subject,
@@ -529,6 +549,41 @@ mod tests {
         assert_eq!(r.identity.as_deref(), Some(sub));
         assert_eq!(r.verb, "task.create");
         assert_eq!(r.result_subject, "result.kernel.pgCK.task.create");
+    }
+
+    /// PASS-27's defect, as a test that fails if the kernel segment is ever
+    /// hardcoded again: a NON-pgCK kernel must route, and must carry its own
+    /// segment through to `ckp.project` and its own reply subject. Before the fix
+    /// this returned `None` — every non-pgCK kernel was silently unreachable, and
+    /// every pgCK write was gated by project `demo`.
+    #[test]
+    fn route_inbound_carries_a_non_pgck_kernel_segment() {
+        let r = route_inbound("input.kernel.CK-dev.action.instance.query").expect("routes");
+        assert_eq!(r.kernel, "CK-dev");
+        assert_eq!(r.identity, None);
+        assert_eq!(r.verb, "instance.query");
+        assert_eq!(r.result_subject, "result.kernel.CK-dev.instance.query");
+
+        let sub = "some-verified-sub"; // synthetic — never a captured identity
+        let r = route_inbound(&format!(
+            "input.kernel.CK-dev.id.{sub}.action.instance.create"
+        ))
+        .expect("routes");
+        assert_eq!(r.kernel, "CK-dev");
+        assert_eq!(r.identity.as_deref(), Some(sub));
+        assert_eq!(r.result_subject, "result.kernel.CK-dev.instance.create");
+    }
+
+    /// The kernel segment stays ONE token. A name carrying a dot would otherwise
+    /// span segments and could widen its own grant; the callout's filter rejects
+    /// such names, and this asserts the parser agrees rather than trusting it.
+    #[test]
+    fn route_inbound_kernel_is_exactly_one_token() {
+        // `CK.Lib.Js` — the parser must read kernel `CK`, then fail to find
+        // `action.`/`id.` after it, rather than silently accepting a dotted name.
+        assert_eq!(route_inbound("input.kernel.CK.Lib.Js.action.x"), None);
+        // empty kernel token
+        assert_eq!(route_inbound("input.kernel..action.x"), None);
     }
 
     #[test]

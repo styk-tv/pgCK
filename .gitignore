@@ -58,3 +58,4 @@ SPEC*.md
 
 # bench scratch mount (nx5 REQ-3) — never tracked
 .bench-scratch/
+ontology.old/

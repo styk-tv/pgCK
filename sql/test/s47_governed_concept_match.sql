@@ -28,7 +28,7 @@ END $$;
 DO $$
 DECLARE n int;
 BEGIN
-  SELECT count(*) INTO n FROM ckp.plans WHERE kernel='pgCK' AND verb='concept.match' AND plan->>'kind'='sparql';
+  SELECT count(*) INTO n FROM ckp.plans WHERE kernel='pgck' AND verb='concept.match' AND plan->>'kind'='sparql';
   IF n < 1 THEN RAISE EXCEPTION 's47 FAIL (1): concept.match is not a governed plan in ckp.plans'; END IF;
 END $$;
 

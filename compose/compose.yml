@@ -38,7 +38,7 @@ services:
       - ./extensions/pgrdf/share/extension/pgrdf--0.6.22--0.6.25.sql:/usr/share/postgresql/18/extension/pgrdf--0.6.22--0.6.25.sql:ro,z
       - ./extensions/pgck/lib/pgck.so:/usr/lib/postgresql/18/lib/pgck.so:ro,z
       - ./extensions/pgck/share/extension/pgck.control:/usr/share/postgresql/18/extension/pgck.control:ro,z
-      - ./extensions/pgck/share/extension/pgck--0.4.35.sql:/usr/share/postgresql/18/extension/pgck--0.4.35.sql:ro,z
+      - ./extensions/pgck/share/extension/pgck--0.4.49.sql:/usr/share/postgresql/18/extension/pgck--0.4.49.sql:ro,z
       # The upgrade script is NOT in the builder export (pgrx emits only the
       # per-version install) — mount it from the repo so ALTER EXTENSION
       # pgck UPDATE resolves on this rig, same intent as the pgrdf line above.
@@ -46,19 +46,23 @@ services:
       - ../sql/pgck--0.4.32--0.4.33.sql:/usr/share/postgresql/18/extension/pgck--0.4.32--0.4.33.sql:ro,z
       - ../sql/pgck--0.4.33--0.4.34.sql:/usr/share/postgresql/18/extension/pgck--0.4.33--0.4.34.sql:ro,z
       - ../sql/pgck--0.4.34--0.4.35.sql:/usr/share/postgresql/18/extension/pgck--0.4.34--0.4.35.sql:ro,z
-      # NOTE: parent is NOT :ro — docker must create mountpoints for the
-      # task.ttl/goal.ttl overlays below (they don't exist in fixtures, and a
-      # read-only parent bind-mount rejects mknod of new mountpoint files).
-      # The container never writes here; the per-file overlays stay :ro.
-      - ../fixtures/ontologies:/ontology:z
-      # Overlay the authoritative current CK ontology over the (stale) fixtures
-      # copies: fixtures/ontologies/core.ttl lacks the ProofShape minCount
-      # constraints, and has no task.ttl/goal.ttl at all. These nested per-file
-      # mounts make boot() load the current core (SHACL gate effective) and
-      # ckp.import_module('task'/'goal') resolve for the board.
-      - ../ontology/core.ttl:/ontology/core.ttl:ro,z
-      - ../ontology/task.ttl:/ontology/task.ttl:ro,z
-      - ../ontology/goal.ttl:/ontology/goal.ttl:ro,z
+      - ../sql/pgck--0.4.35--0.4.36.sql:/usr/share/postgresql/18/extension/pgck--0.4.35--0.4.36.sql:ro,z
+      - ../sql/pgck--0.4.36--0.4.37.sql:/usr/share/postgresql/18/extension/pgck--0.4.36--0.4.37.sql:ro,z
+      - ../sql/pgck--0.4.37--0.4.38.sql:/usr/share/postgresql/18/extension/pgck--0.4.37--0.4.38.sql:ro,z
+      - ../sql/pgck--0.4.38--0.4.39.sql:/usr/share/postgresql/18/extension/pgck--0.4.38--0.4.39.sql:ro,z
+      - ../sql/pgck--0.4.39--0.4.40.sql:/usr/share/postgresql/18/extension/pgck--0.4.39--0.4.40.sql:ro,z
+      - ../sql/pgck--0.4.40--0.4.41.sql:/usr/share/postgresql/18/extension/pgck--0.4.40--0.4.41.sql:ro,z
+      - ../sql/pgck--0.4.41--0.4.42.sql:/usr/share/postgresql/18/extension/pgck--0.4.41--0.4.42.sql:ro,z
+      - ../sql/pgck--0.4.42--0.4.43.sql:/usr/share/postgresql/18/extension/pgck--0.4.42--0.4.43.sql:ro,z
+      # v3.11-ONLY ONTOLOGY DELIVERY (0.4.40). This was a v3.7 fixtures corpus
+      # (fixtures/ontologies) with three per-file overlays papering over it —
+      # core.ttl for the SHACL gate, task.ttl/goal.ttl for the board. All three
+      # are gone: boot() now reads /ontology/v3.11/core.ttl, and task/goal are
+      # RETIRED (they do not exist in the v3.11 root — measured against the
+      # loaded core, digest e5f7d1e5…). The mount is simply the repo's
+      # ontology/ — README.md plus v3.11/{core, modules/wave, modules/lexicon},
+      # mirrored byte-identically from the CK-org publication surface.
+      - ../ontology:/ontology:ro,z
       - ../examples:/examples:ro,z
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pgck} -d ${POSTGRES_DB:-pgck}"]

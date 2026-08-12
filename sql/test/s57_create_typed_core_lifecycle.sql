@@ -20,7 +20,7 @@ BEGIN
   res := ckp.dispatch('instance.create','{"type":"urn:ckp:demo/type/Thing","lifecycle_state":"pending","label":"x"}'::jsonb);
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's57 FAIL: create not ok: %', res; END IF;
   v_id := res->>'id';
-  SELECT body->>'https://conceptkernel.org/ontology/v3.7/lifecycle_state' INTO core_state FROM ckp.instances WHERE id = v_id;
+  SELECT body->>'urn:ckp:board/lifecycle_state' INTO core_state FROM ckp.instances WHERE id = v_id;
   IF core_state IS DISTINCT FROM 'pending' THEN
     RAISE EXCEPTION 's57 FAIL: lifecycle_state must land under the v3.7 core NS as pending, got % (body=%)',
       core_state, (SELECT body FROM ckp.instances WHERE id=v_id);

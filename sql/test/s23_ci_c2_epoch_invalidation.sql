@@ -8,16 +8,16 @@
 -- Run (booted by the smoke): psql … < s23_ci_c2_epoch_invalidation.sql
 
 \set ON_ERROR_STOP 1
-SELECT ckp.compile_plans('pgCK');
+SELECT ckp.compile_plans('pgck');
 
 -- (a) bump_epoch increments the epoch and recompiles at the new epoch (and clears pgRDF cache).
 DO $$
 DECLARE e0 int; e1 int;
 BEGIN
-  e0 := (SELECT epoch FROM ckp.kernel_epoch WHERE kernel='pgCK');
-  e1 := ckp.bump_epoch('pgCK');   -- also PERFORMs pgrdf.plan_cache_clear() — errors here if unavailable
+  e0 := (SELECT epoch FROM ckp.kernel_epoch WHERE kernel='pgck');
+  e1 := ckp.bump_epoch('pgck');   -- also PERFORMs pgrdf.plan_cache_clear() — errors here if unavailable
   IF e1 <> e0 + 1 THEN RAISE EXCEPTION 's23 FAIL: bump_epoch %→% (want +1)', e0, e1; END IF;
-  IF (SELECT count(*) FROM ckp.plans WHERE kernel='pgCK' AND epoch=e1) < 2 THEN
+  IF (SELECT count(*) FROM ckp.plans WHERE kernel='pgck' AND epoch=e1) < 2 THEN
     RAISE EXCEPTION 's23 FAIL: no recompiled plans at new epoch %', e1;
   END IF;
 END $$;
@@ -28,11 +28,11 @@ INSERT INTO ckp.instances(id, body) VALUES ('urn:ckp:s23:t1', '{"rdfs:label":"S2
 DO $$
 DECLARE res jsonb;
 BEGIN
-  res := ckp.plan_exec('pgCK', 'instance.get', '{"id":"urn:ckp:s23:t1"}'::jsonb);
+  res := ckp.plan_exec('pgck', 'instance.get', '{"id":"urn:ckp:s23:t1"}'::jsonb);
   IF (res->>'ok') IS DISTINCT FROM 'true' OR jsonb_array_length(res->'rows') <> 1 THEN
     RAISE EXCEPTION 's23 FAIL: instance.get at bumped epoch failed: %', res;
   END IF;
-  IF (res->>'epoch')::int <> (SELECT epoch FROM ckp.kernel_epoch WHERE kernel='pgCK') THEN
+  IF (res->>'epoch')::int <> (SELECT epoch FROM ckp.kernel_epoch WHERE kernel='pgck') THEN
     RAISE EXCEPTION 's23 FAIL: plan_exec used a stale epoch: %', res;
   END IF;
 END $$;
@@ -41,13 +41,13 @@ END $$;
 DO $$
 DECLARE res jsonb; e int;
 BEGIN
-  e := (SELECT epoch FROM ckp.kernel_epoch WHERE kernel='pgCK');
-  DELETE FROM ckp.plans WHERE kernel='pgCK' AND epoch=e;
-  res := ckp.plan_exec('pgCK', 'instance.get', '{"id":"urn:ckp:s23:t1"}'::jsonb);
+  e := (SELECT epoch FROM ckp.kernel_epoch WHERE kernel='pgck');
+  DELETE FROM ckp.plans WHERE kernel='pgck' AND epoch=e;
+  res := ckp.plan_exec('pgck', 'instance.get', '{"id":"urn:ckp:s23:t1"}'::jsonb);
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN
     RAISE EXCEPTION 's23 FAIL: recompile-then-retry did not recover a deleted plan: %', res;
   END IF;
-  IF (SELECT count(*) FROM ckp.plans WHERE kernel='pgCK' AND epoch=e) < 2 THEN
+  IF (SELECT count(*) FROM ckp.plans WHERE kernel='pgck' AND epoch=e) < 2 THEN
     RAISE EXCEPTION 's23 FAIL: plans were not recompiled in-call';
   END IF;
 END $$;

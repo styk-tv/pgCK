@@ -21,7 +21,7 @@ BEGIN
     '{"task":{"target_kernel":"Build","title":"ship it"},"sub":"attacker"}'::jsonb);
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's58 FAIL: task.create not ok: %', res; END IF;
   v_id := res->>'id';
-  SELECT body->>'https://conceptkernel.org/ontology/v3.7/created_by' INTO cby FROM ckp.instances WHERE id = v_id;
+  SELECT body->>'urn:ckp:board/created_by' INTO cby FROM ckp.instances WHERE id = v_id;
   IF cby = 'urn:ckp:participant:attacker' THEN
     RAISE EXCEPTION 's58 FAIL (SECURITY): forged payload sub became created_by (%) — identity MUST derive from the verified connection', cby;
   END IF;
@@ -41,7 +41,7 @@ BEGIN
     '{"type":"urn:ckp:kernel#Greeting","urn:ckp:kernel#name":"s58-generic","sub":"attacker"}'::jsonb);
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's58 FAIL: instance.create not ok: %', res; END IF;
   v_id := res->>'id';
-  SELECT body->>'https://conceptkernel.org/ontology/v3.7/created_by' INTO cby FROM ckp.instances WHERE id = v_id;
+  SELECT body->>'urn:ckp:board/created_by' INTO cby FROM ckp.instances WHERE id = v_id;
   IF cby = 'urn:ckp:participant:attacker' THEN
     RAISE EXCEPTION 's58 FAIL (SECURITY): forged payload sub became created_by on instance.create (%)', cby;
   END IF;
@@ -60,7 +60,7 @@ BEGIN
     '{"from":"a","to":"b","body":"hi","sub":"attacker"}'::jsonb);
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's58 FAIL: notify not ok: %', res; END IF;
   v_id := res->>'id';
-  SELECT body->>'https://conceptkernel.org/ontology/v3.7/created_by' INTO cby FROM ckp.instances WHERE id = v_id;
+  SELECT body->>'urn:ckp:board/created_by' INTO cby FROM ckp.instances WHERE id = v_id;
   IF cby = 'urn:ckp:participant:attacker' THEN
     RAISE EXCEPTION 's58 FAIL (SECURITY): forged payload sub became message created_by (%)', cby;
   END IF;

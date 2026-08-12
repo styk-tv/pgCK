@@ -27,7 +27,7 @@ END $$;
 DO $$
 DECLARE res jsonb; piri text := (SELECT piri FROM s27); e0 int;
 BEGIN
-  e0 := (SELECT epoch FROM ckp.kernel_epoch WHERE kernel='pgCK');
+  e0 := (SELECT epoch FROM ckp.kernel_epoch WHERE kernel = ckp._project());
   SET LOCAL ROLE ck_participant;
   res := ckp.dispatch('kernel.apply', jsonb_build_object('about', piri));
   RESET ROLE;

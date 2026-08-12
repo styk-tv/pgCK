@@ -55,7 +55,7 @@ DO $$
 DECLARE res jsonb; failed text;
 BEGIN
   INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane)
-    VALUES ('pgCK','kernel.unhandled_gov','input.kernel.pgCK.action.kernel.unhandled_gov','governance')
+    VALUES ('pgck','kernel.unhandled_gov','input.kernel.pgck.action.kernel.unhandled_gov','governance')
     ON CONFLICT (kernel, verb) DO UPDATE SET plane='governance';
   SET LOCAL ROLE ck_participant;
   BEGIN

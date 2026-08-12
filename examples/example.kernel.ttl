@@ -21,3 +21,71 @@
   ckp:inTopic  "input.demo.Hello.create" ;
   ckp:outTopic "event.demo.Hello.created" ;
   ckp:inShape  :GreetingShape .
+
+#######################################################################
+# THE BOARD, AS DOMAIN VOCABULARY (pgCK#46/#47, 0.4.42)
+#
+# ckp:Task and ckp:Goal do NOT exist in the v3.11 root — measured against the
+# loaded core (e5f7d1e5): rdfs:label over {Goal, Task, Kernel, Instance, Organ}
+# returns three rows. The board was never core vocabulary; it was v3.7 residue
+# that no shape targeted, so every board write took a VACUOUS conforms:true and
+# sealed ungated behind the #46 transitional allowance.
+#
+# Re-issued under DOMAIN naming (SPEC.CKP.v3.11 §2), FLAT rather than the
+# type/prop split s48 uses, because ckp.dispatch carries one namespace constant
+# N for BOTH types (N||'Task') and properties (N||'title'). One flat namespace
+# repoints both coherently in a single change; a split would need the emitter
+# restructured, and emission drifting from shape is exactly the failure mode.
+#
+# NOT wave: — wave:TicketShape requires openedAtPass and benchClass, which are
+# pass-process metadata a consumer board task has no basis for. Inventing values
+# to satisfy a shape is the "invented contract" this epoch exists to end.
+#
+# PROJECT-INDEPENDENT on purpose: load_kernel parses this file into
+# urn:ckp:<project>/kernel/ck for whatever project it is given, so a per-project
+# IRI would drift from the emission per project.
+#
+# Every sh:minCount matches a field ckp.dispatch ALWAYS emits; the optionals are
+# optional in the code too. A shape demanding more than the emitter produces
+# would refuse conformant work; one demanding less would be decoration.
+#######################################################################
+
+<urn:ckp:board/Task> a rdfs:Class .
+<urn:ckp:board/shape/Task> a sh:NodeShape ;
+  sh:targetClass <urn:ckp:board/Task> ;
+  sh:property [ sh:path <urn:ckp:board/task_id>         ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/title>           ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/target_kernel>   ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/part_of_goal>    ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/lifecycle_state> ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/created_at>      ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/created_by>      ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/priority>        ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/queue_seq>       ; sh:maxCount 1 ] .
+
+<urn:ckp:board/Goal> a rdfs:Class .
+<urn:ckp:board/shape/Goal> a sh:NodeShape ;
+  sh:targetClass <urn:ckp:board/Goal> ;
+  sh:property [ sh:path <urn:ckp:board/goal_id>    ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/title>      ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/created_at> ; sh:minCount 1 ; sh:maxCount 1 ] .
+
+<urn:ckp:board/Edge> a rdfs:Class .
+<urn:ckp:board/shape/Edge> a sh:NodeShape ;
+  sh:targetClass <urn:ckp:board/Edge> ;
+  sh:property [ sh:path <urn:ckp:board/source>     ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/predicate>  ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/target>     ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/topic>      ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/created_at> ; sh:minCount 1 ; sh:maxCount 1 ] .
+
+<urn:ckp:board/Message> a rdfs:Class .
+<urn:ckp:board/shape/Message> a sh:NodeShape ;
+  sh:targetClass <urn:ckp:board/Message> ;
+  sh:property [ sh:path <urn:ckp:board/from>       ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/to>         ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/predicate>  ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/body>       ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/topic>      ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/created_by> ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/created_at> ; sh:minCount 1 ; sh:maxCount 1 ] .
