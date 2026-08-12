@@ -574,8 +574,25 @@ BEGIN
       ELSE
         v_obj := '"'||replace(replace(replace(s,'\','\\'),'"','\"'),chr(10),'\n')||'"';  -- xsd:string literal
       END IF;
+    ELSIF jsonb_typeof(v_val) = 'array' THEN
+      -- 0.4.43: ARRAYS EXPAND INTO ONE TRIPLE PER ELEMENT. They were silently
+      -- dropped here, so NO sealed instance could carry a multi-valued property —
+      -- which made ckp:Kernel unsealable, because KernelShape requires
+      -- hasOrgan minCount 3. That is the whole reason "pgCK cannot create a concept
+      -- kernel" was true: not a design decision, a serializer gap. Measured:
+      -- germinate refused with MinCount(3) not satisfied while the body carried all
+      -- three organs. Same value rules as the scalar arm, per element.
+      FOR s IN SELECT jsonb_array_elements_text(v_val) LOOP
+        IF s ~ '^[a-z][a-z0-9+.-]*:[^ ]' THEN
+          v_ttl := v_ttl||'<'||p_subj||'> <'||v_key||'> <'||s||'> .'||chr(10);
+        ELSE
+          v_ttl := v_ttl||'<'||p_subj||'> <'||v_key||'> "'||
+                   replace(replace(replace(s,'\\','\\\\'),'"','\\"'),chr(10),'\\n')||'" .'||chr(10);
+        END IF;
+      END LOOP;
+      CONTINUE;
     ELSE
-      CONTINUE;                                                                 -- arrays/objects: not simple values
+      CONTINUE;                                                                 -- objects: not simple values
     END IF;
     v_ttl := v_ttl || '<'||p_subj||'> <'||v_key||'> '||v_obj||' .'||chr(10);
   END LOOP;
@@ -625,6 +642,26 @@ BEGIN
           v_obj := v_obj||'^^<'||v_d||'>';
         END IF;
       END IF;
+    ELSIF jsonb_typeof(v_val) = 'array' THEN
+      -- A multi-valued property emits one triple per element. Without this arm
+      -- arrays were silently dropped, so no sealed instance could carry a
+      -- repeated property -- which made ckp:Kernel unsealable, since it
+      -- requires three organs: germinate refused with hasOrgan MinCount(3)
+      -- while the body carried all three. Same value rules as the scalar arm,
+      -- applied per element. NOTE this is the 3-arg overload, the one ckp.seal
+      -- actually calls; fixing only the 2-arg sibling changes nothing.
+      FOR s IN SELECT jsonb_array_elements_text(v_val) LOOP
+        IF s ~ '^[a-z][a-z0-9+.-]*:[^ ]' AND (v_d IS NULL OR v_d = '') THEN
+          v_ttl := v_ttl || '<'||p_subj||'> <'||v_key||'> <'||s||'> .'||chr(10);
+        ELSE
+          v_obj := '"'||replace(replace(replace(s,'\','\\'),'"','\"'),chr(10),'\n')||'"';
+          IF v_d IS NOT NULL AND v_d <> 'http://www.w3.org/2001/XMLSchema#string' THEN
+            v_obj := v_obj||'^^<'||v_d||'>';
+          END IF;
+          v_ttl := v_ttl || '<'||p_subj||'> <'||v_key||'> '||v_obj||' .'||chr(10);
+        END IF;
+      END LOOP;
+      CONTINUE;
     ELSE CONTINUE;
     END IF;
     v_ttl := v_ttl || '<'||p_subj||'> <'||v_key||'> '||v_obj||' .'||chr(10);
@@ -2174,6 +2211,100 @@ COMMENT ON FUNCTION ckp._dispatch_safe(text, jsonb) IS
   'terminates the worker — taking the auth-callout responder with it and closing '
   'the door for every client (measured 2026-08-11, pgck-bridge exit code 1).';
 
+CREATE OR REPLACE FUNCTION ckp.germinate_kernel(p_project text, p_label text DEFAULT NULL,
+                                                p_kind text DEFAULT 'personal')
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_sub   text := NULLIF(current_setting('ckp.requester', true), '');
+  v_owner text;
+  v_label text := COALESCE(p_label, p_project);
+  v_iri   text := format('urn:ckp:%s/kernel/ck', p_project);
+  v_g     int;
+  v_ttl   text;
+  v_base  text := format('urn:ckp:%s', p_project);
+  v_kid   text := format('urn:ckp:%s/kernel', p_project);
+  v_pid   text := format('urn:ckp:project:%s', p_project);
+BEGIN
+  IF p_project IS NULL OR btrim(p_project) = '' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'project required');
+  END IF;
+  -- The transport segment is one NATS token. A dotted name can never be granted
+  -- (configured_kernels drops it), so germinating one would build a kernel nobody
+  -- can ever reach. Refuse at the door with the slug it should use.
+  IF p_project ~ '[.*> \t\r\n]' THEN
+    RETURN jsonb_build_object('ok', false, 'refused', true,
+      'error', format('kernel id %L carries a NATS subject metacharacter, so it can never be granted. Use %L.',
+                      p_project, ckp._slug(p_project)));
+  END IF;
+  -- IDENTITY IS SERVER-DERIVED. No verified connection, no owner, no germination —
+  -- fail closed rather than mint an unowned project or invent an owner.
+  IF v_sub IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'refused', true,
+      'error', 'germination requires a verified identity: ckp.ownedBy is stamped from the connection, never supplied. Anonymous callers cannot own a project.');
+  END IF;
+  v_owner := 'urn:ckp:participant:' || ckp._slug(v_sub);
+
+  -- 1. the structure — Kernel + three organs, counted dependencies, gated authorities
+  v_g := pgrdf.add_graph(v_iri);
+  PERFORM pgrdf.clear_graph(v_g);
+  v_ttl := format($ttl$
+@prefix ckp:  <https://conceptkernel.org/ontology/v3.11/core#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<%1$s/kernel> a ckp:Kernel ; rdfs:label %2$L ; ckp:epoch 0 ;
+  ckp:inProject <%3$s> ;
+  ckp:hasOrgan <%1$s/organ/ck> , <%1$s/organ/tool> , <%1$s/organ/data> .
+<%1$s/organ/ck>   a ckp:Organ , ckp:CK   ; ckp:organKind "ck"   ; ckp:writeAuthority "governed-only" .
+<%1$s/organ/tool> a ckp:Organ , ckp:TOOL ; ckp:organKind "tool" ; ckp:writeAuthority "readonly-on-ontology" ;
+  ckp:dependsOn <%1$s/organ/ck> .
+<%1$s/organ/data> a ckp:Organ , ckp:DATA ; ckp:organKind "data" ; ckp:writeAuthority "readwrite" ;
+  ckp:dependsOn <%1$s/organ/ck> , <%1$s/organ/tool> .
+$ttl$, v_base, v_label, v_pid);
+  PERFORM pgrdf.parse_turtle(v_ttl, v_g, v_iri || '#');
+  PERFORM pgrdf.materialize(v_g);
+  GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+  GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
+
+  -- 2. the Project — ownedBy STAMPED, never supplied. This is the triple a client
+  --    cannot write and the reason germination is a governed verb at all.
+  PERFORM ckp.seal(v_pid, jsonb_build_object(
+    'type', 'https://conceptkernel.org/ontology/v3.11/core#Project',
+    '@id',  v_pid,
+    'http://www.w3.org/2000/01/rdf-schema#label', v_label,
+    'https://conceptkernel.org/ontology/v3.11/core#projectKind', p_kind,
+    'https://conceptkernel.org/ontology/v3.11/core#ownedBy', v_owner));
+
+  -- 3. the Kernel as a SEALED, ATTRIBUTED fact — so the kernel exists in the ledger
+  --    and not only as quads a stranger could have written.
+  PERFORM ckp.seal(v_kid, jsonb_build_object(
+    'type', 'https://conceptkernel.org/ontology/v3.11/core#Kernel',
+    '@id',  v_kid,
+    'http://www.w3.org/2000/01/rdf-schema#label', v_label,
+    'https://conceptkernel.org/ontology/v3.11/core#epoch', 0,
+    'https://conceptkernel.org/ontology/v3.11/core#inProject', v_pid,
+    'https://conceptkernel.org/ontology/v3.11/core#hasOrgan',
+      -- The organs live at <base>/organ/*, NOT <base>/kernel/organ/*. Both the
+      -- graph above and pgCK's own kernel use the former; deriving these from
+      -- v_kid (which already ends in /kernel) sealed a Kernel whose hasOrgan
+      -- pointed at three resources that do not exist. KernelShape only counts
+      -- them and checks nodeKind, so the gate passed and the drift was silent.
+      jsonb_build_array(v_base||'/organ/ck', v_base||'/organ/tool', v_base||'/organ/data')));
+
+  RETURN jsonb_build_object('ok', true, 'kernel', v_kid, 'graph', v_iri,
+                            'project', v_pid, 'ownedBy', v_owner, 'organs', 3);
+END;
+$function$;
+
+COMMENT ON FUNCTION ckp.germinate_kernel(text, text, text) IS
+  'Governed germination. A client declares its STRUCTURE (Kernel + three organs); the '
+  'substrate stamps WHO OWNS IT (ckp:ownedBy) from the verified connection, exactly as '
+  'ckp:createdBy is derived — never from the payload. Refuses anonymously, and refuses a '
+  'kernel id carrying a NATS subject metacharacter because such a kernel could never be '
+  'granted. Replaces the pgRDF route, which lands correct structure that belongs to nobody.';
+
 CREATE OR REPLACE FUNCTION ckp.dispatch(p_verb text, p_payload jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -2323,6 +2454,16 @@ BEGIN
   WHEN 'participant.join' THEN
     res := jsonb_build_object('ok', true, 'sub', p_payload->>'name',
       'urn', 'urn:ckp:participant:'||ckp._slug(p_payload->>'name'));
+
+  -- 0.4.43: germination as a GOVERNED act. kernel.create seals a board Goal and
+  -- creates no kernel; the pgRDF route creates a correct kernel that belongs to
+  -- nobody. This is the one that does both: client declares structure, substrate
+  -- stamps ckp:ownedBy from the verified connection.
+  WHEN 'kernel.germinate' THEN
+    res := ckp.germinate_kernel(
+             COALESCE(p_payload->>'project', p_payload->>'name'),
+             p_payload->>'label',
+             COALESCE(p_payload->>'projectKind', 'personal'));
 
   WHEN 'kernel.create' THEN
     DECLARE nm text := p_payload->>'name'; gid text;
@@ -3806,7 +3947,17 @@ CREATE OR REPLACE FUNCTION ckp.validate(ttl text, shapes_graph_id integer)
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  scratch_id INT := 1000000000 + pg_backend_pid();
+  -- The scratch graph is allocated BY IRI, never computed as
+  -- 1000000000 + pg_backend_pid(). That arithmetic lands inside the very band
+  -- pgrdf allocates data graphs from: on the bench 59 live graphs sat at
+  -- offsets 112..1637 -- ordinary container pids -- with the core ontology
+  -- itself at 1000000221. A backend that drew a colliding pid aimed
+  -- clear_graph at real data, and every seal in that session refused with a
+  -- shape error that had nothing to do with the payload. Only pgrdf's
+  -- "bound to a different IRI" check stood between this and deleting core.
+  -- add_graph(iri) is idempotent and returns the id, so the scratch stays
+  -- one-per-backend and can never alias a data graph.
+  scratch_id BIGINT := pgrdf.add_graph('urn:ckp:validate-scratch:'||pg_backend_pid());
   report jsonb;
 BEGIN
   -- Bench-proven form (reconciled from pgck.localhost, 2026-08-08): the graph
@@ -3814,7 +3965,6 @@ BEGIN
   -- entailment is per-graph, so without this the candidate's rdf:type closure
   -- is invisible to targetClass resolution and a malformed entry can conform
   -- vacuously — the PASS-10/PASS-17 failure shape, at the innermost gate.
-  PERFORM pgrdf.add_graph(scratch_id, 'urn:ckp:scratch:'||scratch_id);
   PERFORM pgrdf.clear_graph(scratch_id);
   PERFORM pgrdf.parse_turtle(ttl, scratch_id, 'urn:ckp:scratch#');
   PERFORM pgrdf.materialize(scratch_id);
