@@ -38,7 +38,7 @@ services:
       - ./extensions/pgrdf/share/extension/pgrdf--0.6.22--0.6.25.sql:/usr/share/postgresql/18/extension/pgrdf--0.6.22--0.6.25.sql:ro,z
       - ./extensions/pgck/lib/pgck.so:/usr/lib/postgresql/18/lib/pgck.so:ro,z
       - ./extensions/pgck/share/extension/pgck.control:/usr/share/postgresql/18/extension/pgck.control:ro,z
-      - ./extensions/pgck/share/extension/pgck--0.4.48.sql:/usr/share/postgresql/18/extension/pgck--0.4.48.sql:ro,z
+      - ./extensions/pgck/share/extension/pgck--0.4.49.sql:/usr/share/postgresql/18/extension/pgck--0.4.49.sql:ro,z
       # The upgrade script is NOT in the builder export (pgrx emits only the
       # per-version install) — mount it from the repo so ALTER EXTENSION
       # pgck UPDATE resolves on this rig, same intent as the pgrdf line above.

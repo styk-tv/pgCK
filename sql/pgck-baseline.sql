@@ -1661,14 +1661,25 @@ END;
 $function$
 ;
 
-CREATE OR REPLACE FUNCTION ckp.compute_publish_subject(p_type_uri text)
+CREATE OR REPLACE FUNCTION ckp.compute_publish_subject(p_type_uri text, p_project text DEFAULT NULL)
  RETURNS text
  LANGUAGE sql
- IMMUTABLE SECURITY DEFINER
+ STABLE SECURITY DEFINER
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
+  -- The subject names the kernel that PRODUCED the fact. This was
+  -- 'event.kernel.pgck.%s.sealed' -- a literal -- so every kernel's events
+  -- landed on one subject and a browser subscribed to its own kernel saw
+  -- nothing. Same defect as dispatch resolving every caller under one name
+  -- (0.4.46/47), on the OUTBOUND path, where it is invisible from inside:
+  -- the publish succeeds, it just arrives somewhere nobody is listening.
+  --
+  -- DEFAULT rather than a second overload: three of today's defects were an
+  -- overload pair drifting apart, and one CREATE with a default cannot.
+  -- STABLE, not IMMUTABLE -- it depends on ckp._project() when not told.
   SELECT format(
-    'event.kernel.pgck.%s.sealed',
+    'event.kernel.%s.%s.sealed',
+    COALESCE(NULLIF(p_project, ''), ckp._project()),
     COALESCE(
       NULLIF(regexp_replace(COALESCE(p_type_uri, ''), '^.*[/#]', ''), ''),
       'Instance'
@@ -2776,6 +2787,7 @@ CREATE OR REPLACE FUNCTION ckp.ledger_to_outbox()
 AS $function$
 DECLARE
   v_body JSONB;
+  v_proj TEXT;
 BEGIN
   SELECT body INTO v_body FROM ckp.instances WHERE id = NEW.instance_id;
   IF v_body IS NULL THEN
@@ -2784,10 +2796,20 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- The producing kernel comes from the SEALED producedBy stamp
+  -- (urn:ckp:<project>/kernel/ck) -- substrate-derived and unforgeable -- not
+  -- from session state, which by trigger time may belong to another caller.
+  v_proj := NULLIF(regexp_replace(
+              COALESCE(v_body->>'https://conceptkernel.org/ontology/v3.11/core#producedBy',''),
+              '^urn:ckp:(.*)/kernel/ck$', '\1'), '');
+  IF v_proj IS NULL OR v_proj = v_body->>'https://conceptkernel.org/ontology/v3.11/core#producedBy' THEN
+    v_proj := ckp._project();
+  END IF;
+
   INSERT INTO ckp.outbox(ledger_seq, subject, payload, headers)
   VALUES (
     NEW.seq,
-    ckp.compute_publish_subject(v_body->>'type'),
+    ckp.compute_publish_subject(v_body->>'type', v_proj),
     convert_to(v_body::text, 'UTF8'),
     jsonb_build_object(
       'Ck-Seq',        NEW.seq::text,
@@ -2796,7 +2818,14 @@ BEGIN
     -- F4 (msg.by): stamp the server-attributed sender `by` so peers (kernels, web bots, users) see
     -- who-said-what WITHOUT the client asserting it. `created_by` derives from the VERIFIED
     -- ckp.requester (F-A), never a client field — so `by` is un-forgeable.
-    || CASE WHEN v_body ? 'urn:ckp:board/created_by'
+    -- `by` reads the DERIVED core stamp first. It keyed only on the v3.8-era
+    -- board property, which 5 instances carry against 73 with core createdBy --
+    -- so after the 0.4.44 identity work the header was absent on virtually
+    -- everything, and a subscriber could not tell who said what. Board form
+    -- kept as the legacy fallback.
+    || CASE WHEN v_body ? 'https://conceptkernel.org/ontology/v3.11/core#createdBy'
+            THEN jsonb_build_object('by', v_body->>'https://conceptkernel.org/ontology/v3.11/core#createdBy')
+            WHEN v_body ? 'urn:ckp:board/created_by'
             THEN jsonb_build_object('by', v_body->>'urn:ckp:board/created_by')
             ELSE '{}'::jsonb END
   );
@@ -3457,9 +3486,16 @@ BEGIN
   ON CONFLICT (kernel, verb, epoch) DO UPDATE SET plan = EXCLUDED.plan, compiled_at = now();
 
   -- REGISTER: dispatch resolves the verb via plane='derived'.
-  INSERT INTO ckp.affordance_registry(kernel, verb, in_topic, plane, epoch)
-  VALUES (p_project, v_verb, 'input.kernel.'||p_project||'.action.'||v_verb, 'derived', p_epoch)
-  ON CONFLICT (kernel, verb) DO UPDATE SET plane = 'derived', epoch = EXCLUDED.epoch, refreshed_at = now();
+  -- out_topic DECLARES where the caller will receive the result. It was left
+  -- NULL on every row (0 of 30 measured), so a subscriber had no way to know
+  -- what to listen to. This is not a new channel: src/nats_client.rs already
+  -- publishes replies to result.kernel.<kernel>.<verb>. Registration now
+  -- states the truth the transport already implements.
+  INSERT INTO ckp.affordance_registry(kernel, verb, in_topic, out_topic, plane, epoch)
+  VALUES (p_project, v_verb, 'input.kernel.'||p_project||'.action.'||v_verb,
+          'result.kernel.'||p_project||'.'||v_verb, 'derived', p_epoch)
+  ON CONFLICT (kernel, verb) DO UPDATE SET plane = 'derived', epoch = EXCLUDED.epoch,
+    out_topic = EXCLUDED.out_topic, refreshed_at = now();
 
   RETURN v_verb;
 END;
@@ -3497,9 +3533,16 @@ BEGIN
   ON CONFLICT (kernel, verb, epoch) DO UPDATE SET plan = EXCLUDED.plan, compiled_at = now();
 
   -- REGISTER: dispatch resolves the verb via plane='query'.
-  INSERT INTO ckp.affordance_registry(kernel, verb, in_topic, plane, epoch)
-  VALUES (p_project, v_verb, 'input.kernel.'||p_project||'.action.'||v_verb, 'query', p_epoch)
-  ON CONFLICT (kernel, verb) DO UPDATE SET plane = 'query', epoch = EXCLUDED.epoch, refreshed_at = now();
+  -- out_topic DECLARES where the caller will receive the result. It was left
+  -- NULL on every row (0 of 30 measured), so a subscriber had no way to know
+  -- what to listen to. This is not a new channel: src/nats_client.rs already
+  -- publishes replies to result.kernel.<kernel>.<verb>. Registration now
+  -- states the truth the transport already implements.
+  INSERT INTO ckp.affordance_registry(kernel, verb, in_topic, out_topic, plane, epoch)
+  VALUES (p_project, v_verb, 'input.kernel.'||p_project||'.action.'||v_verb,
+          'result.kernel.'||p_project||'.'||v_verb, 'query', p_epoch)
+  ON CONFLICT (kernel, verb) DO UPDATE SET plane = 'query', epoch = EXCLUDED.epoch,
+    out_topic = EXCLUDED.out_topic, refreshed_at = now();
 
   RETURN v_verb;
 END;
