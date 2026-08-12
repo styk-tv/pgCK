@@ -968,8 +968,48 @@ BEGIN
     v_class := COALESCE(v_detail->>'class', v_detail->>'targetClass', p_prop->>(C||'about'));
     IF v_class IS NULL OR v_class !~ v_iri_re THEN
       RAISE EXCEPTION 'add_class: class must be an IRI, got %', v_class; END IF;
+    -- detail.properties[] WAS ACCEPTED AND SILENTLY DROPPED. The op emitted one
+    -- quad (<class> a owl:Class) and reported graph_changed:true, so a caller
+    -- who declared constraints got a class carrying none and no complaint --
+    -- the same family as detail/proposalDetail and the inert epoch. Reported by
+    -- pgCK.MCP against urn:ckp:pgck-mcp/type/ToolProjection: two property
+    -- shapes sent, one quad applied, nothing validatable.
+    --
+    -- Emit the NodeShape too, with the same per-property gate add_property uses.
+    -- A malformed property is REFUSED here, never dropped: silently narrowing a
+    -- shape is un-enforcement nobody sees.
+    v_ts := '';
+    IF jsonb_typeof(v_detail->'properties') = 'array' THEN
+      FOR v_map IN SELECT jsonb_array_elements(v_detail->'properties') LOOP
+        v_path := v_map->>'path';
+        IF v_path IS NULL OR v_path !~ v_iri_re THEN
+          RAISE EXCEPTION 'add_class: property path must be an IRI, got %', v_path; END IF;
+        BEGIN
+          v_min := COALESCE((v_map->>'minCount')::int, 1);
+        EXCEPTION WHEN OTHERS THEN
+          RAISE EXCEPTION 'add_class: property minCount must be an integer, got %', v_map->>'minCount'; END;
+        v_dtype := v_map->>'datatype';
+        v_dt_line := '';
+        IF v_dtype IS NOT NULL THEN
+          IF v_dtype !~ v_iri_re THEN
+            RAISE EXCEPTION 'add_class: property datatype must be an IRI, got %', v_dtype; END IF;
+          v_dt_line := ' ; sh:datatype <'||v_dtype||'>';
+        END IF;
+        v_ts := v_ts||' ; sh:property [ sh:path <'||v_path||'> ; sh:minCount '||v_min::text||v_dt_line||' ]';
+      END LOOP;
+    END IF;
+    IF v_ts = '' THEN
+      -- bare declaration: a building block for a following add_property. NOTE it
+      -- is admitted the moment it lands (_type_admitted accepts `a owl:Class`),
+      -- so until a shape targets it an instance of this type validates
+      -- VACUOUSLY. That window is a doctrine question, not a projector bug.
+      RETURN '@prefix owl: <http://www.w3.org/2002/07/owl#> .'||chr(10)||
+             '<'||v_class||'> a owl:Class .';
+    END IF;
     RETURN '@prefix owl: <http://www.w3.org/2002/07/owl#> .'||chr(10)||
-           '<'||v_class||'> a owl:Class .';
+           '@prefix sh: <http://www.w3.org/ns/shacl#> .'||chr(10)||
+           '<'||v_class||'> a owl:Class .'||chr(10)||
+           '[ a sh:NodeShape ; sh:targetClass <'||v_class||'>'||v_ts||' ] .';
 
   ELSIF v_op = 'set_transition_map' THEN
     v_class := v_detail->>'targetClass';
