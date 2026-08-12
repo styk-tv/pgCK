@@ -3210,6 +3210,113 @@ END;
 $function$
 ;
 
+CREATE OR REPLACE FUNCTION ckp._affordance_schema(p_shape_iri text, p_comp integer)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_giri text;
+  v_props jsonb;
+BEGIN
+  IF p_shape_iri IS NULL OR p_comp IS NULL THEN RETURN NULL; END IF;
+  SELECT iri INTO v_giri FROM pgrdf._pgrdf_graphs WHERE graph_id = p_comp;
+  IF v_giri IS NULL THEN RETURN NULL; END IF;
+
+  SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+           'path',     j->>'path',
+           'name',     regexp_replace(j->>'path', '^.*[#/]', ''),
+           'datatype', j->>'dt',
+           'required', CASE WHEN COALESCE((j->>'mn')::int, 0) >= 1 THEN true ELSE NULL END,
+           'maxCount', (j->>'mx')::int,
+           'nodeKind', regexp_replace(COALESCE(j->>'nk',''), '^.*[#/]', ''),
+           'pattern',  j->>'pat'
+         )) ORDER BY j->>'path')
+    INTO v_props
+  FROM pgrdf.sparql(format($q$
+    PREFIX sh: <http://www.w3.org/ns/shacl#>
+    SELECT ?path ?dt ?mn ?mx ?nk ?pat WHERE { GRAPH <%s> {
+      <%s> sh:property ?p . ?p sh:path ?path .
+      OPTIONAL { ?p sh:datatype ?dt } OPTIONAL { ?p sh:minCount ?mn }
+      OPTIONAL { ?p sh:maxCount ?mx } OPTIONAL { ?p sh:nodeKind ?nk }
+      OPTIONAL { ?p sh:pattern ?pat } } }$q$, v_giri, p_shape_iri)) j;
+
+  -- Unresolvable => NULL, never an empty contract. A shape that resolves to
+  -- nothing and a shape that is not there must not read the same.
+  IF v_props IS NULL THEN RETURN NULL; END IF;
+  RETURN jsonb_build_object('shape', p_shape_iri, 'properties', v_props);
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp.affordances_of(p_project text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  N       text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_kern  text := 'urn:ckp:'||p_project||'/kernel/ck';
+  v_epoch int  := COALESCE((SELECT epoch FROM ckp.kernel_epoch WHERE kernel = p_project), 0);
+  v_comp  int;
+  v_list  jsonb;
+  v_unsealed jsonb;
+BEGIN
+  v_comp := ckp._composed_shapes(p_project);
+
+  SELECT jsonb_agg(a ORDER BY a->>'name') INTO v_list FROM (
+    SELECT jsonb_strip_nulls(jsonb_build_object(
+      'name',    regexp_replace(i.body->>(N||'inTopic'), '^input\.kernel\.[^.]+\.action\.', ''),
+      'iri',     i.body->>'@id',
+      'in',      i.body->>(N||'inTopic'),
+      'out',     i.body->>(N||'outTopic'),
+      'plane',   i.body->>(N||'plane'),
+      'delegate', (i.body->>(N||'delegate'))::boolean,
+      'inShape', i.body->>(N||'inShape'),
+      -- inShape resolved into a real input contract, or null + a marker. §4.5:
+      -- report what was found; never invent a contract for a dangling IRI.
+      'schema',  ckp._affordance_schema(i.body->>(N||'inShape'), v_comp),
+      'schema_resolved',
+                 CASE WHEN i.body ? (N||'inShape')
+                      THEN ckp._affordance_schema(i.body->>(N||'inShape'), v_comp) IS NOT NULL
+                      ELSE NULL END,
+      -- provenance for the affordance ITSELF (root: derivedBy minCount 1)
+      'derivedBy', i.body->>(N||'derivedBy'),
+      'sealedAtEpoch', (i.body->>(N||'sealedAtEpoch'))::int
+    )) AS a
+    FROM ckp.instances i
+    WHERE i.body->>'type' = N||'Affordance'
+      -- kernel filter: producedBy is the substrate-stamped kernel, unforgeable
+      AND i.body->>(N||'producedBy') = v_kern
+      -- retirement honoured: retired AT or BEFORE the current epoch is gone
+      AND (NOT (i.body ? (N||'retiredAtEpoch'))
+           OR (i.body->>(N||'retiredAtEpoch'))::int > v_epoch)
+  ) s;
+
+  -- The #56 split, made VISIBLE: verbs dispatch resolves that no sealed
+  -- Affordance declares. Reported, never merged — a union would hide exactly
+  -- the hand-registered action the root says cannot hide.
+  SELECT jsonb_agg(r.verb ORDER BY r.verb) INTO v_unsealed
+  FROM ckp.affordance_registry r
+  WHERE r.kernel = p_project
+    AND NOT EXISTS (
+      SELECT 1 FROM ckp.instances i
+      WHERE i.body->>'type' = N||'Affordance'
+        AND i.body->>(N||'producedBy') = v_kern
+        AND regexp_replace(i.body->>(N||'inTopic'), '^input\.kernel\.[^.]+\.action\.', '') = r.verb);
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'kernel', p_project,
+    'epoch', v_epoch,
+    'affordances', COALESCE(v_list, '[]'::jsonb),
+    'unsealed', COALESCE(v_unsealed, '[]'::jsonb));
+END;
+$function$
+;
+
 CREATE OR REPLACE FUNCTION ckp.register_derived_affordance(p_prop jsonb, p_project text, p_epoch integer)
  RETURNS text
  LANGUAGE plpgsql
@@ -3292,8 +3399,24 @@ CREATE OR REPLACE FUNCTION ckp.registry_lookup(p_kernel text, p_verb text)
  STABLE SECURITY DEFINER
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
+  -- EMPTY MEANS NONE. A kernel is authorized for the verbs its OWN registry
+  -- rows name. It is never authorized for another kernel's, and never for
+  -- EVERYTHING on the grounds that it has none -- degrading an empty surface
+  -- to the full surface is fail-open authorization (d-28-sah-1). All 26 seeded
+  -- rows name kernel pgCK, so every other workspace resolves to zero rows,
+  -- which is a true answer meaning none.
+  --
+  -- ONE bootstrap exception, the narrowest that still permits creation: a
+  -- kernel that does not exist yet cannot own a registry row, so without this
+  -- no kernel could ever be created through the door. kernel.germinate is the
+  -- only verb reachable with no surface -- it refuses anonymous callers and
+  -- stamps ownedBy from the verified connection, so reaching it proves an
+  -- identity rather than bypassing one.
   SELECT to_jsonb(r) FROM ckp.affordance_registry r
-  WHERE r.kernel = p_kernel AND r.verb = p_verb;
+  WHERE r.verb = p_verb
+    AND (r.kernel = p_kernel OR p_verb = 'kernel.germinate')
+  ORDER BY (r.kernel = p_kernel) DESC
+  LIMIT 1;
 $function$
 ;
 
@@ -3509,6 +3632,7 @@ DECLARE
   v_led_ttl TEXT;
   v_prf_ttl TEXT;
   v_sub    TEXT;
+  v_req    TEXT;
   v_display TEXT;
   v_email  TEXT;
   v_participant TEXT;
@@ -3529,10 +3653,23 @@ BEGIN
   -- are carried as non-authoritative attributes per NOTIFIES.pgCK §D.
   -- This MUST run before the body SHA (step 2) so the stored body, the ledger
   -- digest, and ckp.verify()'s recompute all hash the same canonical body.
+  --
+  -- IDENTITY HAS ONE SOURCE. `ckp.requester` is set transaction-locally by the
+  -- relay from the callout-verified connection; the payload's participant.sub
+  -- is whatever the client typed. Reading the payload here while germination
+  -- read the GUC gave one seal two identities: a Project ownedBy a verified
+  -- participant and createdBy anon:<nonce> -- "owned by someone, created by
+  -- nobody" -- and it made createdBy client-assertable, which is the whole
+  -- thing the four stamps exist to prevent. The verified connection WINS; a
+  -- conflicting payload sub is ignored, not merged. The payload arm survives
+  -- only for callers with no verified connection at all (direct SQL, tests).
+  v_req     := NULLIF(trim(COALESCE(current_setting('ckp.requester', true), '')), '');
   v_sub     := p_body->'participant'->>'sub';
   v_display := NULLIF(trim(COALESCE(p_body->'participant'->>'preferred_username','')), '');
   v_email   := NULLIF(trim(COALESCE(p_body->'participant'->>'email','')), '');
-  IF p_body ? 'participant' AND v_sub IS NOT NULL AND length(trim(v_sub)) > 0 THEN
+  IF v_req IS NOT NULL THEN
+    v_participant := 'urn:ckp:participant:' || ckp.urn_normalise(v_req);
+  ELSIF p_body ? 'participant' AND v_sub IS NOT NULL AND length(trim(v_sub)) > 0 THEN
     v_participant := 'urn:ckp:participant:' || ckp.urn_normalise(v_sub);
   ELSE
     v_participant := 'urn:ckp:participant:anon:' || gen_random_uuid()::text;
