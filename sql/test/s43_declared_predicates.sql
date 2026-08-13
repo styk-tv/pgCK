@@ -24,6 +24,17 @@ BEGIN
 t:NodeShape a sh:NodeShape ;
   sh:targetClass t:Node ;
   sh:property [ sh:path r:part_of ] .
+
+# 0.4.57 legacy-compat fixture (see s38): instance.link no longer carries a
+# substrate default class — the project declares the edge class it emits.
+<urn:ckp:board/Edge> a <http://www.w3.org/2000/01/rdf-schema#Class> .
+<urn:ckp:board/shape/Edge> a sh:NodeShape ;
+  sh:targetClass <urn:ckp:board/Edge> ;
+  sh:property [ sh:path <urn:ckp:board/source>     ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/predicate>  ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/target>     ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/topic>      ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/created_at> ; sh:minCount 1 ; sh:maxCount 1 ] .
 $ttl$, g, 'urn:ckp:s43-test/kernel#');
   PERFORM pgrdf.materialize(g);
 END $setup$;
@@ -39,8 +50,8 @@ DO $$
 DECLARE r1 jsonb; r2 jsonb; P text := 'urn:ckp:s43-test/rel/part_of';
 BEGIN
   SET LOCAL ROLE ck_participant;
-  r1 := ckp.dispatch('instance.link', jsonb_build_object('source','urn:s43:a','predicate',P,'target','urn:s43:b'));
-  r2 := ckp.dispatch('instance.link', jsonb_build_object('source','urn:s43:b','predicate',P,'target','urn:s43:c'));
+  r1 := ckp.dispatch('instance.link', jsonb_build_object('type','urn:ckp:board/Edge','source','urn:s43:a','predicate',P,'target','urn:s43:b'));
+  r2 := ckp.dispatch('instance.link', jsonb_build_object('type','urn:ckp:board/Edge','source','urn:s43:b','predicate',P,'target','urn:s43:c'));
   RESET ROLE;
   IF (r1->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's43 FAIL (1): declared-predicate link rejected: %', r1; END IF;
   IF (r1->>'reachable') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's43 FAIL (1): link not materialized: %', r1; END IF;
@@ -77,6 +88,7 @@ DECLARE res jsonb;
 BEGIN
   SET LOCAL ROLE ck_participant;
   res := ckp.dispatch('instance.link', jsonb_build_object(
+    'type','urn:ckp:board/Edge',
     'source','urn:s43:a','predicate','https://conceptkernel.org/ontology/v3.11/core#link','target','urn:s43:d'));
   RESET ROLE;
   IF res->>'error' <> 'undeclared_predicate' THEN

@@ -14,13 +14,37 @@
 CALL ckp.bootstrap_kernel();
 SET ckp.project = 's40-test';
 
+-- 0.4.57 legacy-compat fixture (see s38): edge.create has no substrate default class; the project declares the edge class it emits.
+DO $bfix$ DECLARE g bigint; BEGIN
+  g := pgrdf.add_graph('urn:ckp:s40-test/kernel/ck');
+  PERFORM pgrdf.parse_turtle($bttl$
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+<urn:ckp:board/Edge> a <http://www.w3.org/2000/01/rdf-schema#Class> .
+<urn:ckp:board/shape/Edge> a sh:NodeShape ;
+  sh:targetClass <urn:ckp:board/Edge> ;
+  sh:property [ sh:path <urn:ckp:board/source>     ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/predicate>  ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/target>     ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/topic>      ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/created_at> ; sh:minCount 1 ; sh:maxCount 1 ] .
+# the predicate this test's links traverse — declaring shapes made this project's
+# predicate set non-empty, so the T2 gate now enforces it (correctly).
+<urn:ckp:board/shape/EdgePreds> a sh:NodeShape ;
+  sh:property [ sh:path <https://conceptkernel.org/ontology/v3.11/core#link> ] .
+$bttl$, g, 'urn:ckp:boardfix#');
+  PERFORM pgrdf.materialize(g);
+END $bfix$;
+GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
+
+
 -- (1) two participant-created edges A->B->C through the door — materialized as quads.
 DO $$
 DECLARE r1 jsonb; r2 jsonb; P text := 'https://conceptkernel.org/ontology/v3.11/core#link';
 BEGIN
   SET LOCAL ROLE ck_participant;
-  r1 := ckp.dispatch('edge.create', jsonb_build_object('source','urn:ckp:s40/a','predicate',P,'target','urn:ckp:s40/b'));
-  r2 := ckp.dispatch('edge.create', jsonb_build_object('source','urn:ckp:s40/b','predicate',P,'target','urn:ckp:s40/c'));
+  r1 := ckp.dispatch('edge.create', jsonb_build_object('type','urn:ckp:board/Edge','source','urn:ckp:s40/a','predicate',P,'target','urn:ckp:s40/b'));
+  r2 := ckp.dispatch('edge.create', jsonb_build_object('type','urn:ckp:board/Edge','source','urn:ckp:s40/b','predicate',P,'target','urn:ckp:s40/c'));
   RESET ROLE;
   IF (r1->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's40 FAIL (1): edge A->B not sealed: %', r1; END IF;
   IF (r1->>'reachable') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's40 FAIL (1): edge A->B not materialized as a quad: %', r1; END IF;
@@ -46,7 +70,7 @@ DO $$
 DECLARE res jsonb; P text := 'https://conceptkernel.org/ontology/v3.11/core#link';
 BEGIN
   SET LOCAL ROLE ck_participant;
-  res := ckp.dispatch('edge.create', jsonb_build_object('source','task-bare-1','predicate',P,'target','task-bare-2'));
+  res := ckp.dispatch('edge.create', jsonb_build_object('type','urn:ckp:board/Edge','source','task-bare-1','predicate',P,'target','task-bare-2'));
   RESET ROLE;
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's40 FAIL (3): edge with bare ids not sealed: %', res; END IF;
   IF (res->>'reachable') IS DISTINCT FROM 'false' THEN

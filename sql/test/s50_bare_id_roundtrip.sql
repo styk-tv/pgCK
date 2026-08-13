@@ -18,6 +18,20 @@ GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
 SET ckp.project = 's50-reach';   -- no declared predicates -> namespace-allowlist fallback for the predicate
 
+-- 0.4.57 legacy-compat fixture (see s38): instance.link has no substrate default
+-- class; the project declares the edge class it emits. Class ONLY, no sh:property
+-- paths — this test deliberately exercises the no-declared-predicates fallback,
+-- and a shape with property paths would flip the project into strict mode.
+DO $bfix$ DECLARE g bigint; BEGIN
+  g := pgrdf.add_graph('urn:ckp:s50-reach/kernel/ck');
+  PERFORM pgrdf.parse_turtle(
+    '<urn:ckp:board/Edge> a <http://www.w3.org/2000/01/rdf-schema#Class> .',
+    g, 'urn:ckp:boardfix#');
+  PERFORM pgrdf.materialize(g);
+END $bfix$;
+GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
+
 -- (1) create two real instances; capture their BARE ids (the form create returns).
 DO $mk$
 DECLARE a jsonb; b jsonb;
@@ -39,6 +53,7 @@ DECLARE r jsonb; P text := 'https://conceptkernel.org/ontology/v3.11/core#link';
 BEGIN
   SET LOCAL ROLE ck_participant;
   r := ckp.dispatch('instance.link', jsonb_build_object(
+    'type','urn:ckp:board/Edge',
         'source', current_setting('s50.a'), 'predicate', P, 'target', current_setting('s50.b')));
   RESET ROLE;
   IF (r->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's50 FAIL (2): bare-id link rejected: %', r; END IF;

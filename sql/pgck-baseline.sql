@@ -309,6 +309,13 @@ INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane) VALUES
   ('pgck','surface.check',       'input.kernel.pgck.action.surface.check',       'instance'),
   ('pgck','integrity.check',     'input.kernel.pgck.action.integrity.check',     'instance'),
   ('pgck','authority.mine',      'input.kernel.pgck.action.authority.mine',      'instance'),
+  -- 0.4.51 — the checker surface. Seeded here so they are DISPATCHABLE, and
+  -- sealed as ckp:Affordance through propose->vote->apply so they are DECLARED.
+  -- Both halves, or this grows the #56 gap it exists to close.
+  ('pgck','surface.typecheck',   'input.kernel.pgck.action.surface.typecheck',   'instance'),
+  ('pgck','surface.unshaped',    'input.kernel.pgck.action.surface.unshaped',    'instance'),
+  ('pgck','surface.declared',    'input.kernel.pgck.action.surface.declared',    'instance'),
+  ('pgck','project.resolve',     'input.kernel.pgck.action.project.resolve',     'instance'),
   ('pgck','instance.create',      'input.kernel.pgck.action.instance.create',      'instance'),
   ('pgck','instance.update',      'input.kernel.pgck.action.instance.update',      'instance'),
   ('pgck','instance.link',        'input.kernel.pgck.action.instance.link',        'instance'),
@@ -466,6 +473,18 @@ BEGIN
 
   -- CI-A-4: floor the runtime-created tables (instances/ledger/proof/outbox).
   CALL ckp._enforce_internal_floor();
+
+  -- 0.4.57 — RESET THE ENGINE'S TERM CACHE. An aborted seal (every negative
+  -- control in the suite is one) can leave pgrdf's shmem term cache in a state
+  -- where a quad STORES but SHACL cannot SEE it — measured here as an Edge
+  -- candidate whose serialized created_at triple was present in the TTL and
+  -- absent from the validator's view, refusing conformant work. The engine's
+  -- own remedy is pgrdf.shmem_reset() after any aborted seal; this bootstrap
+  -- is the per-file entry point of every test, so each file starts clean.
+  -- Guarded: older engines without the function skip silently.
+  IF to_regprocedure('pgrdf.shmem_reset()') IS NOT NULL THEN
+    PERFORM pgrdf.shmem_reset();
+  END IF;
 END;
 $procedure$
 ;
@@ -545,12 +564,90 @@ BEGIN
 END;
 $procedure$;
 
-CREATE OR REPLACE FUNCTION ckp._project()
- RETURNS text
- LANGUAGE sql
- STABLE
+-- 0.4.51 — WHICH KERNEL DID THE CALLER MEAN? Resolved from a SEALED FACT, not
+-- from the transport string.
+--
+-- ckp.germinate_kernel refuses any project failing ^[a-z0-9]+(-[a-z0-9]+)*$ --
+-- one lowercase transport segment. ckp._project() applied NO rule at all, and
+-- the inbound relay sets ckp.project VERBATIM from the NATS subject segment
+-- (inbound_dispatch.rs). So THE NAME WAS VALIDATED WHERE KERNELS ARE BORN AND
+-- UNVALIDATED WHERE FACTS ARE SEALED, and one kernel came to exist twice.
+--
+-- Measured on the bench (PASS-30): urn:ckp:pgck/instances holds sealed
+-- projections of BOTH urn:ckp:project:pgck AND urn:ckp:project:pgCK, and of
+-- BOTH urn:ckp:pgck/kernel AND urn:ckp:pgCK/kernel, all four labelled "pgCK";
+-- urn:ckp:pgCK/instances holds 14 triples from the A3 adoption act; and
+-- neither urn:ckp:pgCK/kernel/ck nor urn:ckp:pgCK/shapes/composed exists. The
+-- split never surfaced as an error because registry_lookup resolves the
+-- substrate floor row under the literal 'pgck', so ROUTING SURVIVED IT while
+-- composition, adoption and the epoch did not.
+--
+-- Slugging the segment would have been the silent fix, and silent is the
+-- disease: it would have re-pointed three kernels that were germinated before
+-- the canonical rule existed (urn:ckp:pgRDF/kernel/ck and
+-- urn:ckp:SuperAiHarness3000/kernel/ck are LOCKED graphs with 25 triples each)
+-- onto empty surfaces, with no error anywhere. So the resolution asks a fact
+-- instead of transforming a string:
+--
+--   1. the segment is canonical AND a sealed ckp:Kernel carries it exactly -> it
+--   2. exactly one CANONICAL sealed kernel matches case-insensitively      -> that one
+--   3. more than one canonical match                                       -> REFUSE, naming them
+--   4. no sealed kernel, and the segment is canonical                      -> pass (germination)
+--   5. no sealed kernel, non-canonical, but urn:ckp:<seg>/kernel/ck EXISTS -> grandfathered
+--   6. otherwise                                                           -> REFUSE with the slug
+--
+-- THE ORDER WAS DESIGNED AGAINST THE LIVE INVENTORY, NOT AGAINST A PREFERENCE,
+-- and the first draft of it was wrong in both directions — measured before it
+-- shipped, which is the only reason it is not in the release:
+--
+--   * "exact match always wins" preserved the split it exists to close. BOTH
+--     urn:ckp:pgCK/kernel and urn:ckp:pgck/kernel are sealed, so `pgCK` matched
+--     exactly and resolved to itself forever. Hence clause 1's canonical guard:
+--     a non-canonical spelling can never win by exactness alone, so `pgCK` falls
+--     to clause 2 and lands on the sealed kernel that a germination would have
+--     produced.
+--   * "refuse anything non-canonical without a sealed kernel" stranded two live
+--     components. urn:ckp:pgRDF/kernel/ck and urn:ckp:SuperAiHarness3000/kernel/ck
+--     are LOCKED graphs with 25 triples each and NO sealed ckp:Kernel — they were
+--     germinated before the canonical rule existed. Clause 5 grandfathers exactly
+--     those: the substrate still derives from a fact (their kernel graph), just a
+--     weaker one than a seal. It admits no NEW non-canonical name, because a name
+--     with neither a seal nor a graph has nothing behind it.
+--
+-- Clause 3 is not a policy choice either. Two CANONICAL sealed kernels answering
+-- to one name is a genuine conflict, and guessing which one a caller meant is
+-- how the phantom project was written in the first place.
+--
+-- Clause 5's exit condition, stated so it cannot be forgotten: it disappears the
+-- day those two kernels are re-germinated under canonical names, or seal a
+-- ckp:Kernel of their own. It is a legacy allowance with a named end, not a knob.
+--
+-- It RAISEs rather than returning a sentinel because ckp._dispatch_safe already
+-- turns a RAISE into {ok:false, refused:true, sqlstate, error} data (0.4.41),
+-- so the door answers with the clause and the worker lives. Read paths fail
+-- closed for the same reason writes do.
+-- 0.4.56 — THE RESOLVER NOW SAYS WHY, AND THERE IS ONLY ONE OF IT.
+--
+-- ckp.project_resolve reported which clause fired by INFERRING it from the
+-- outcome (`v_out <> v_seg` therefore clause 2). The moment 0.4.54 added the
+-- graph-substance clause that inference was wrong: `pgrdf -> pgRDF` resolved on
+-- a kernel GRAPH and was reported as "clause 2 — the one CANONICAL sealed
+-- kernel", with `sealedKernelsMatching: []` printed directly beneath it,
+-- contradicting the label in the same object.
+--
+-- A CHECKER THAT MISREPORTS ITS OWN REASON is the defect class this pass exists
+-- to end, so the fix is not a better inference — it is to stop inferring. The
+-- resolution logic lives HERE, once, and returns {project, clause, hits}.
+-- ckp._project() is a thin reader of it, so the hot path is unchanged and the
+-- explanation cannot drift from the decision: they are the same execution.
+CREATE OR REPLACE FUNCTION ckp._project_explain()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
+DECLARE
+  N       text := 'https://conceptkernel.org/ontology/v3.11/core#';
   -- ONE definition of "which project is this". Twelve call sites resolved it
   -- inline in two spellings that DISAGREED on the empty string: ckp.dispatch
   -- mapped '' to '', everything else mapped '' to 'demo' -- so an empty GUC
@@ -559,7 +656,104 @@ AS $function$
   -- The 'demo' fallback is itself a real kernel name, which makes it a landing
   -- site for writes that belong to nobody. It lives HERE now, in one place, so
   -- it can be made fail-closed in a single edit instead of twelve.
-  SELECT COALESCE(NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  CANON   text := '^[a-z0-9]+(-[a-z0-9]+)*$';
+  v_raw   text := COALESCE(NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  v_kid   text;
+  v_hits  text[];
+  v_ask   text;
+BEGIN
+  v_kid := 'urn:ckp:'||v_raw||'/kernel';
+  -- 1. a CANONICAL spelling with its own sealed kernel wins outright. This is the
+  --    common path and costs one indexless scan of a small table. The canonical
+  --    guard is load-bearing: without it a non-canonical twin resolves to itself
+  --    and the split it exists to close survives (measured — see above).
+  IF v_raw ~ CANON AND EXISTS (SELECT 1 FROM ckp.instances i
+              WHERE i.body->>'type' = N||'Kernel' AND i.body->>'@id' = v_kid) THEN
+    RETURN jsonb_build_object('project', v_raw, 'clause',
+      'clause 1 — canonical, and it carries its own sealed ckp:Kernel', 'hits', to_jsonb(v_hits));
+  END IF;
+  -- 2/3. resolve case-insensitively against the CANONICAL sealed kernels — the
+  --      ones a germination today would have produced.
+  SELECT array_agg(DISTINCT i.body->>'@id') INTO v_hits
+    FROM ckp.instances i
+   WHERE i.body->>'type' = N||'Kernel'
+     AND lower(i.body->>'@id') = lower(v_kid)
+     AND regexp_replace(i.body->>'@id', '^urn:ckp:(.*)/kernel$', '\1') ~ CANON;
+  IF v_hits IS NOT NULL AND array_length(v_hits, 1) = 1 THEN
+    RETURN jsonb_build_object('project', regexp_replace(v_hits[1], '^urn:ckp:(.*)/kernel$', '\1'),
+      'clause', 'clause 2 — resolved onto the one CANONICAL SEALED kernel that answers to this name',
+      'hits', to_jsonb(v_hits));
+  ELSIF v_hits IS NOT NULL AND array_length(v_hits, 1) > 1 THEN
+    -- RAISE takes only `%`; a `%L` here would print the value followed by a
+    -- literal L. Format first, raise the formatted string. (Caught by the
+    -- negative control, which is the argument for having written one.)
+    RAISE EXCEPTION '%', format(
+      'ckp._project: kernel id %L is ambiguous — %s sealed kernels answer to it case-insensitively (%s). One kernel must have one spelling; resolve it by governance (seal a ckp:Supersession for the one that is not authoritative) rather than by guessing here.',
+      v_raw, array_length(v_hits, 1), array_to_string(v_hits, ', '));
+  END IF;
+  -- 4. NO SEALED KERNEL — RESOLVE ONTO THE SPELLING THAT HAS SUBSTANCE.
+  --
+  -- 0.4.54, and this gap was exposed by pgRDF's own report, not by pgCK. The
+  -- 0.4.51 rule resolved case only against SEALED kernels, so it closed the split
+  -- for pgck — which happens to have one — and did NOTHING for a kernel that
+  -- exists only as a GRAPH. Measured with pgCK's own project.resolve verb:
+  --     pgrdf -> clause 4 -> pgrdf   (urn:ckp:pgrdf/kernel/ck EMPTY)
+  --     pgRDF -> clause 5 -> pgRDF   (urn:ckp:pgRDF/kernel/ck, 25 triples, their doctrine)
+  -- sealedKernelsMatching [] for both. Two spellings, two surfaces, and the fix
+  -- shipped to end exactly that could not see it. A rule that only works for
+  -- kernels shaped like mine is not a rule.
+  --
+  -- The ordering principle is NOT "prefer the canonical spelling" — it is PREFER
+  -- THE SPELLING WITH SUBSTANCE, sealed beating graph, because the substrate must
+  -- derive from a fact rather than from a preference about names. Pointing pgrdf
+  -- at its empty canonical graph would be canonically tidy and would lose their
+  -- doctrine, which is the wrong trade every time.
+  --
+  -- Migration path, deliberately: the day a kernel seals a ckp:Kernel under its
+  -- canonical name, clauses 1-2 take over and BOTH spellings resolve there. This
+  -- clause retires itself; it is not a permanent tolerance.
+  SELECT array_agg(DISTINCT g) INTO v_hits FROM (
+    SELECT j->>'g' AS g FROM pgrdf.sparql(format($q$
+      SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } }
+    $q$)) j
+    WHERE lower(j->>'g') = lower(format('urn:ckp:%s/kernel/ck', v_raw))
+  ) d;
+  IF v_hits IS NOT NULL AND array_length(v_hits, 1) = 1 THEN
+    RETURN jsonb_build_object('project', regexp_replace(v_hits[1], '^urn:ckp:(.*)/kernel/ck$', '\1'),
+      'clause', 'clause 4 — no sealed kernel anywhere; resolved onto the one spelling whose kernel GRAPH has substance',
+      'hits', to_jsonb(v_hits));
+  ELSIF v_hits IS NOT NULL AND array_length(v_hits, 1) > 1 THEN
+    RAISE EXCEPTION '%', format(
+      'ckp._project: kernel id %L is ambiguous — %s non-empty kernel graphs answer to it case-insensitively (%s), and none carries a sealed ckp:Kernel to break the tie. Seal a ckp:Kernel under the canonical spelling; that resolves it permanently.',
+      v_raw, array_length(v_hits, 1), array_to_string(v_hits, ', '));
+  END IF;
+  -- 5. nothing behind any spelling. A canonical name is the germination path and
+  --    MUST stay open, or kernel.germinate is unreachable for every project that
+  --    does not exist yet.
+  IF v_raw ~ CANON THEN
+    RETURN jsonb_build_object('project', v_raw, 'clause',
+      'clause 5 — canonical, nothing sealed or graphed behind it yet; the germination path stays open',
+      'hits', '[]'::jsonb);
+  END IF;
+  -- 6. neither a seal nor a graph stands behind this name. Refuse with the slug,
+  --    the same message germination gives, so the two doors teach one rule.
+  RAISE EXCEPTION '%', format(
+    'ckp._project: kernel id %L is not canonical, no sealed kernel carries it and no kernel graph stands behind it. A project name is lowercase, dashes optional, one transport segment — use %L. (ckp.germinate_kernel refuses the same name; this door now applies the same rule, so a fact can never be sealed into a project that could not be germinated.)',
+    v_raw, ckp._slug(regexp_replace(v_raw, '^.*[:/]', '')));
+END;
+$function$
+;
+
+-- The hot path. One reader of one resolver: ckp._project() cannot disagree with
+-- ckp.project_resolve about which kernel a segment means, because they are the
+-- same execution and the explanation is a field of the decision.
+CREATE OR REPLACE FUNCTION ckp._project()
+ RETURNS text
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+  SELECT ckp._project_explain()->>'project';
 $function$
 ;
 
@@ -698,15 +892,28 @@ AS $function$
 DECLARE
   N text := 'https://conceptkernel.org/ontology/v3.11/core#';
 BEGIN
-  -- Sealed, unsuperseded Adoptions of THIS project, in seal order. intoProject
-  -- accepts both the bare project urn and the /kernel/ck form (the kernel IS
-  -- the project's governed identity; both spellings appear in early seals).
+  -- Sealed, unsuperseded Adoptions of THIS project, in seal order.
+  --
+  -- 0.4.57 — THE THIRD SPELLING, found by pgck-mcp the hard way. This accepted
+  -- 'urn:ckp:<p>' and 'urn:ckp:<p>/kernel/ck' and MISSED 'urn:ckp:project:<p>' —
+  -- which is the MOST principled form, because germinate_kernel seals exactly
+  -- that IRI as the ckp:Project @id and the kernel's inProject points at it. So
+  -- a caller who read the graph and used the Project's real IRI sealed an
+  -- Adoption that was judged by AdoptionShape, ledgered, proof-digested — and
+  -- silently composed NOTHING. Measured by pgck-mcp (adoption at their seq 159,
+  -- intoEpoch 4, then a full materialization at epoch 5: modules [], digest
+  -- unchanged) and filed as the surface.modules ask on this kernel. pgCK's own
+  -- adoptions worked only because they copied A3's bare spelling — the composer
+  -- rewarded the accident and ignored the principle. A sealed record whose
+  -- declared value has no effect is R2's defect shape, inside the composer.
   RETURN COALESCE((
     SELECT array_agg(a.body->>(N||'adopts') ORDER BY a.ts_created)
     FROM ckp.instances a
     WHERE a.body->>'type' = N||'Adoption'
       AND a.body->>(N||'adopts') IS NOT NULL
-      AND a.body->>(N||'intoProject') IN ('urn:ckp:'||p_project, 'urn:ckp:'||p_project||'/kernel/ck')
+      AND a.body->>(N||'intoProject') IN ('urn:ckp:'||p_project,
+                                          'urn:ckp:'||p_project||'/kernel/ck',
+                                          'urn:ckp:project:'||p_project)
       AND NOT EXISTS (
         SELECT 1 FROM ckp.instances s
         WHERE s.body->>'type' = N||'Supersession'
@@ -774,37 +981,320 @@ CREATE OR REPLACE FUNCTION ckp._type_admitted(p_type text, p_project text, p_com
  SECURITY DEFINER
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
-DECLARE v_comp_iri text; v_board_iri text; v_ask text;
+DECLARE v_comp_iri text; v_board_iri text; v_ask text; v_q text;
 BEGIN
   IF p_type IS NULL OR position(':' in p_type) = 0 THEN
     RETURN false;   -- no resolvable type is not an admitted type
   END IF;
-  -- 0.4.42: the #46 TRANSITIONAL ALLOWANCE IS DELETED, and its own exit condition
-  -- is now met. It read "tolerate it until #46 re-points the body construction, at
-  -- which point the board path becomes non-vacuously validated". Both halves landed
-  -- in one act: ckp.dispatch's namespace constant N moved off …/ontology/v3.7/ to
-  -- urn:ckp:board/, and urn:ckp:board/{Task,Goal,Edge,Message} now carry shapes in
-  -- the project kernel graph. While it stood, R2 was open on the write path — seal
+  -- 0.4.42: the #46 TRANSITIONAL ALLOWANCE IS DELETED. It read "tolerate it until
+  -- #46 re-points the body construction, at which point the board path becomes
+  -- non-vacuously validated". While it stood, R2 was open on the write path — seal
   -- consults this function, so a v3.7 type reached the SHACL gate, was targeted by
   -- no shape, took a VACUOUS conforms:true and sealed. An undeclared type is now
   -- refused whatever namespace it carries.
+  --
+  -- 0.4.51 — CORRECTION, and it is this file's own claim being withdrawn. 0.4.42
+  -- also asserted here that "urn:ckp:board/{Task,Goal,Edge,Message} now carry
+  -- shapes in the project kernel graph", i.e. that its exit condition was met.
+  -- THEY DO NOT. Those four are declared in exactly one place,
+  -- examples/example.kernel.ttl, which no module can load — import_module knows
+  -- {task, goal} and both are retired. Measured fleet-wide, twice, by two
+  -- parties: zero rows mention urn:ckp:board/Edge in any graph. The board
+  -- defaults are removed from edge.create and notify in this same version, so
+  -- the claim is not merely corrected, its subject is gone.
+  --
+  -- The lesson is R1 turned on our own comments: a sentence asserting a gate is
+  -- a claim, and an unverified claim in a comment is the same defect class as an
+  -- unenforced constraint in a shape. It survived because nobody re-ran it.
   -- Admitted = the type is DECLARED (a shape targets it, or it is a declared
   -- class) anywhere the kernel loaded: the composed core+ck surface OR the
   -- project board. Reads the same surfaces the gate/self-test consult — never
   -- a second authority. An invented URN in none of them is refused.
+  --
+  -- 0.4.51 — THE SCOPE WAS NEVER ENFORCED, AND THAT IS THE WHOLE GATE.
+  -- This asked ONE query shaped
+  --     ASK { GRAPH ?g { …UNION…UNION… } FILTER(?g IN (<comp>, <board>)) }
+  -- and pgrdf DOES NOT APPLY THAT FILTER under the UNION. Measured live
+  -- (PASS-30 §1): the identical ASK restricted to a graph that does not exist
+  -- returns TRUE for a module-declared class, and returns TRUE for <http://ex/T>,
+  -- a type declared only in urn:sh:probe — a five-triple SHACL scratch graph.
+  -- So a TEST FIXTURE WIDENED THE PRODUCTION TYPE GATE, and every type declared
+  -- anywhere on the substrate was admitted for every kernel.
+  --
+  -- The consequence is the state pgCK.MCP filed as F10. The type gate read the
+  -- whole store while the shape gate read the composed surface, so a class the
+  -- store declares and the surface does not shape was ADMITTED and then judged
+  -- by nothing — SHACL is target-driven, so validation never ran, and the seal
+  -- omitted conformsToShape honestly. Three correct components, two of them
+  -- reading different stores.
+  --
+  -- The same FILTER on a plain BGP is REJECTED as untranslatable; only the UNION
+  -- form drops it silently. So the one shape pgCK shipped is the one shape that
+  -- fails open, with no log line. The fix does not argue with the engine: it
+  -- issues ONE CONSTANT-GRAPH ASK PER SURFACE and combines them HERE, where the
+  -- combination is plpgsql and cannot be optimised away. A graph that does not
+  -- exist answers false rather than raising (measured), so the board arm is safe
+  -- for every project that never imported one.
   v_comp_iri  := pgrdf.graph_iri(p_comp);
   v_board_iri := format('urn:ckp:%s/kernel/board', p_project);
-  SELECT COALESCE(j->>'_ask', j->>'boolean') INTO v_ask
-  FROM pgrdf.sparql(format($q$
+  v_q := $q$
     PREFIX sh:   <http://www.w3.org/ns/shacl#>
     PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
     PREFIX owl:  <http://www.w3.org/2002/07/owl#>
-    ASK WHERE { GRAPH ?g {
-      { ?s sh:targetClass <%s> } UNION { <%s> a rdfs:Class } UNION { <%s> a owl:Class }
-    } FILTER(?g IN (<%s>, <%s>)) }
-  $q$, p_type, p_type, p_type, v_comp_iri, v_board_iri)) j
-  LIMIT 1;
+    ASK WHERE { GRAPH <%1$s> {
+      { ?s sh:targetClass <%2$s> } UNION { <%2$s> a rdfs:Class } UNION { <%2$s> a owl:Class }
+    } }
+  $q$;
+  SELECT COALESCE(j->>'_ask', j->>'boolean') INTO v_ask
+  FROM pgrdf.sparql(format(v_q, v_comp_iri, p_type)) j LIMIT 1;
+  IF COALESCE(v_ask, 'false') = 'true' THEN
+    RETURN true;
+  END IF;
+  SELECT COALESCE(j->>'_ask', j->>'boolean') INTO v_ask
+  FROM pgrdf.sparql(format(v_q, v_board_iri, p_type)) j LIMIT 1;
   RETURN COALESCE(v_ask, 'false') = 'true';
+END;
+$function$
+;
+
+-- 0.4.51 — ONE definition of "which properties does this type declare".
+--
+-- Four call sites resolved this inline and THEY DID NOT AGREE. create_typed,
+-- ckp.query and update_typed read urn:ckp:<proj>/kernel/ck; validate_instance
+-- read urn:ckp:<proj>/shapes/composed. So `instance.validate` and
+-- `instance.create` mapped the SAME JSON to DIFFERENT property IRIs, which is
+-- validate ⟺ seal (R3/G3) broken one layer beneath the gate everyone was
+-- watching: validate could resolve `reason` to ckp:reason while create minted
+-- <type-namespace>reason, and the caller is told its body conformed.
+--
+-- The kernel-graph-only read is also the trap that springs on adoption. A
+-- module type's shape may require a FOREIGN property — wave:FindingShape
+-- requires rdfs:label and ckp:reason — and neither is in the kernel graph, so
+-- the map came back empty and both keys fell through to the type's own
+-- namespace. Harmless only for as long as nothing gates the type. See PASS-30
+-- §4: emission and shape move in one act.
+--
+-- Composed FIRST, kernel LAST, so a kernel's own declaration wins over a stale
+-- composed copy of it and the module/core paths are still resolvable. Never
+-- fewer entries than the old read; the caller's fallback is unchanged for what
+-- neither graph declares.
+--
+-- p_composed exists for ONE declared exception: ckp.query uses this map to
+-- REFUSE undeclared filter keys, so widening it there would newly refuse reads
+-- that resolve today (e.g. filtering on a substrate-stamped key no shape
+-- declares). That is a tightening other components have not asked for, so it is
+-- held here as a named argument with a reason rather than taken silently. Flip
+-- it when the read surface is ready, in its own act.
+CREATE OR REPLACE FUNCTION ckp._propmap(p_type text, p_project text, p_composed boolean DEFAULT true)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_map jsonb := '{}'::jsonb;
+  v_g   text;
+  v_gs  text[];
+  v_q   text := $q$
+    PREFIX sh: <http://www.w3.org/ns/shacl#>
+    SELECT ?path WHERE { GRAPH <%1$s> {
+      ?s sh:targetClass <%2$s> ; sh:property ?p . ?p sh:path ?path } }
+  $q$;
+BEGIN
+  IF p_type IS NULL OR btrim(p_type) = '' THEN
+    RETURN v_map;
+  END IF;
+  v_gs := CASE WHEN p_composed
+               THEN ARRAY[format('urn:ckp:%s/shapes/composed', p_project),
+                          format('urn:ckp:%s/kernel/ck', p_project)]
+               ELSE ARRAY[format('urn:ckp:%s/kernel/ck', p_project)] END;
+  FOREACH v_g IN ARRAY v_gs LOOP
+    SELECT v_map || COALESCE(jsonb_object_agg(regexp_replace(path, '^.*[/#]', ''), path), '{}'::jsonb)
+      INTO v_map
+    FROM (
+      SELECT DISTINCT j->>'path' AS path
+        FROM pgrdf.sparql(format(v_q, v_g, p_type)) AS j
+       WHERE j->>'path' IS NOT NULL
+    ) p;
+  END LOOP;
+  RETURN v_map;
+END;
+$function$
+;
+
+-- 0.4.51 — THE CHECKER SURFACE, as verbs rather than as scratch scripts.
+--
+-- PASS-30 answered four questions with hand-written psql probes: is this type
+-- admitted and by WHICH graph · which admitted types does no shape target · what
+-- does this type declare · what does this transport segment resolve to and why.
+-- Each answer mattered; none of them was re-runnable by the party who needed it,
+-- and none was a fact. A check that lives in a scratch directory is a second
+-- enforcement surface with worse provenance than the first.
+--
+-- These four read the SAME functions the gate reads — _type_admitted, _propmap,
+-- _project, _composed_shapes — never a parallel implementation. That is the
+-- whole point: a probe that re-implements the gate tests the probe.
+
+CREATE OR REPLACE FUNCTION ckp.surface_typecheck(p_payload jsonb, p_project text DEFAULT NULL)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_proj text := COALESCE(p_project, ckp._project());
+  v_type text := COALESCE(p_payload->>'type', p_payload->>'@type');
+  v_comp int;
+  v_ci   text; v_bi text; v_q text; v_a text;
+  v_in_comp bool := false; v_in_board bool := false;
+BEGIN
+  IF v_type IS NULL OR btrim(v_type) = '' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'type_required',
+      'hint', 'surface.typecheck {"type": "<class IRI>"} — answers whether THIS kernel admits it, and by which graph');
+  END IF;
+  v_comp := ckp._composed_shapes(v_proj);
+  v_ci := pgrdf.graph_iri(v_comp);
+  v_bi := format('urn:ckp:%s/kernel/board', v_proj);
+  v_q  := $q$
+    PREFIX sh:   <http://www.w3.org/ns/shacl#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+    ASK WHERE { GRAPH <%1$s> {
+      { ?s sh:targetClass <%2$s> } UNION { <%2$s> a rdfs:Class } UNION { <%2$s> a owl:Class }
+    } }
+  $q$;
+  SELECT COALESCE(j->>'_ask', j->>'boolean') INTO v_a
+    FROM pgrdf.sparql(format(v_q, v_ci, v_type)) j LIMIT 1;
+  v_in_comp := COALESCE(v_a,'false') = 'true';
+  SELECT COALESCE(j->>'_ask', j->>'boolean') INTO v_a
+    FROM pgrdf.sparql(format(v_q, v_bi, v_type)) j LIMIT 1;
+  v_in_board := COALESCE(v_a,'false') = 'true';
+  RETURN jsonb_build_object(
+    'ok', true,
+    'kernel', v_proj,
+    'type', v_type,
+    -- the gate's OWN answer, not a re-implementation of it
+    'admitted', ckp._type_admitted(v_type, v_proj, v_comp),
+    'via', CASE WHEN v_in_comp THEN 'composed' WHEN v_in_board THEN 'board' ELSE null END,
+    'shaped', (SELECT count(*) > 0 FROM pgrdf.sparql(format(
+       'PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?s WHERE { GRAPH <%s> { ?s sh:targetClass <%s> } }',
+       v_ci, v_type))),
+    'surface', v_ci,
+    'surfaceDigest', ckp._surface_digest(v_comp),
+    'epoch', COALESCE((SELECT epoch FROM ckp.kernel_epoch WHERE kernel = v_proj), 0),
+    -- SHAPED is the half that decides whether a seal is GATED. Admitted-but-
+    -- unshaped seals verified:true and conformsToShape ABSENT, which is P13's
+    -- "no outcome recorded by omission" happening inside the record.
+    'note', 'admitted says the type may seal; shaped says a seal would be JUDGED. Admitted and not shaped means conformsToShape will be absent.');
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp.surface_unshaped(p_project text DEFAULT NULL)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_proj text := COALESCE(p_project, ckp._project());
+  v_comp int; v_ci text; v_rows jsonb;
+BEGIN
+  v_comp := ckp._composed_shapes(v_proj);
+  v_ci   := pgrdf.graph_iri(v_comp);
+  -- 0.4.52 — THE ANTI-JOIN IS DONE HERE, NOT IN A FILTER THE ENGINE IGNORES.
+  --
+  -- The obvious form is one query with FILTER NOT EXISTS { ?sh sh:targetClass ?c }.
+  -- It is SILENTLY DROPPED — same family as the FILTER(?g IN …) defect this
+  -- version's _type_admitted exists to fix. Measured within minutes of shipping
+  -- it: surface.vacuity returned 55 rows including core#Kernel and wave#Finding,
+  -- while surface.typecheck reported shaped:true for both. Two answers from one
+  -- surface, and the one that was WRONG was the checker.
+  --
+  -- So this pass built the exact defect it was written to detect, in the tool
+  -- meant to detect it — a check that cannot fail the thing it claims. It is
+  -- recorded rather than quietly corrected because "the negative control caught
+  -- it" is only worth something if the near-miss is also on the record.
+  --
+  -- Two plain queries, difference taken in SQL. No FILTER anywhere. If the engine
+  -- ever drops one of THESE, the result is empty rather than everything — the
+  -- failure direction matters, and this one fails closed.
+  SELECT COALESCE(jsonb_agg(c ORDER BY c), '[]'::jsonb) INTO v_rows FROM (
+    SELECT j->>'c' AS c FROM pgrdf.sparql(format($q$
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+      SELECT DISTINCT ?c WHERE { GRAPH <%1$s> { { ?c a rdfs:Class } UNION { ?c a owl:Class } } }
+    $q$, v_ci)) j
+    EXCEPT
+    SELECT k->>'c' FROM pgrdf.sparql(format($q$
+      PREFIX sh: <http://www.w3.org/ns/shacl#>
+      SELECT DISTINCT ?c WHERE { GRAPH <%1$s> { ?sh sh:targetClass ?c } }
+    $q$, v_ci)) k
+  ) d;
+  RETURN jsonb_build_object(
+    'ok', true, 'kernel', v_proj, 'surface', v_ci,
+    'epoch', COALESCE((SELECT epoch FROM ckp.kernel_epoch WHERE kernel = v_proj), 0),
+    'surfaceDigest', ckp._surface_digest(v_comp),
+    'unshaped', v_rows,
+    'count', jsonb_array_length(v_rows),
+    'note', 'a class this surface DECLARES that no shape TARGETS. An instance of one seals with conformsToShape absent — admitted, ledgered, and judged by nothing. owl:Thing/owl:Nothing are structural and expected.');
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp.surface_declared(p_payload jsonb, p_project text DEFAULT NULL)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_proj text := COALESCE(p_project, ckp._project());
+  v_type text := COALESCE(p_payload->>'type', p_payload->>'@type');
+BEGIN
+  IF v_type IS NULL OR btrim(v_type) = '' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'type_required',
+      'hint', 'surface.declared {"type": "<class IRI>"} — the property contract, so a caller can learn it WITHOUT writing');
+  END IF;
+  -- The same map create and validate resolve keys through. A caller reading this
+  -- and a caller writing a body cannot disagree, because there is one map.
+  RETURN jsonb_build_object(
+    'ok', true, 'kernel', v_proj, 'type', v_type,
+    'declared', ckp._propmap(v_type, v_proj),
+    'kernelGraphOnly', ckp._propmap(v_type, v_proj, false),
+    'note', 'declared = the composed surface ∪ this kernel graph, which is what the gate judges against. kernelGraphOnly is what the create path read before 0.4.51 — a difference between them is a property that WOULD have been minted into the type namespace and refused.');
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp.project_resolve(p_payload jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  CANON text := '^[a-z0-9]+(-[a-z0-9]+)*$';
+  v_seg text := COALESCE(p_payload->>'segment', ckp._project());
+  v_ex  jsonb;
+BEGIN
+  -- 0.4.56: ASK THE RESOLVER, DO NOT RE-DERIVE IT. This used to infer the clause
+  -- from the outcome and got it wrong the moment a clause was added — reporting
+  -- "the one CANONICAL sealed kernel" for a resolution that came off a kernel
+  -- GRAPH, with sealedKernelsMatching [] printed beneath it. The explanation is
+  -- now a field of the decision, so the two cannot drift.
+  PERFORM set_config('ckp.project', v_seg, true);
+  BEGIN
+    v_ex := ckp._project_explain();
+  EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('ok', true, 'segment', v_seg, 'resolves', null,
+      'refused', true, 'canonical', (v_seg ~ CANON), 'reason', SQLERRM,
+      'note', 'a refusal IS the result. One kernel has one spelling; this name resolves to none or to more than one.');
+  END;
+  RETURN jsonb_build_object('ok', true, 'segment', v_seg,
+    'resolves', v_ex->>'project', 'clause', v_ex->>'clause',
+    'canonical', (v_seg ~ CANON), 'matched', COALESCE(v_ex->'hits', '[]'::jsonb),
+    'note', 'the answer AND the reason come from ckp._project_explain itself, never a copy of its rules.');
 END;
 $function$
 ;
@@ -1772,7 +2262,16 @@ CREATE OR REPLACE FUNCTION ckp.create_typed(p_payload jsonb)
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  v_type    text := p_payload->>'type';
+  -- 0.4.51: read the SAME payload shapes ckp.validate_instance reads. It did
+  -- COALESCE(p_payload->'body', p_payload) and this did not, so a nested
+  -- {body:{type,…}} VALIDATED and then failed to CREATE — validate ⟺ seal
+  -- broken at the envelope, one level above where it was broken at the
+  -- property map. Both are closed in this version, in the same act, because
+  -- fixing one and not the other just moves the disagreement.
+  v_in      jsonb := CASE WHEN jsonb_typeof(p_payload->'body') = 'object'
+                            AND ((p_payload->'body') ? 'type')
+                          THEN p_payload->'body' ELSE p_payload END;
+  v_type    text := v_in->>'type';
   v_proj    text := ckp._project();
   -- F-A / P0-C (pgCK#26): identity is SERVER-DERIVED from the verified
   -- connection (the ckp.requester GUC the trusted ingress sets from the
@@ -1794,7 +2293,19 @@ DECLARE
   v_keyiri  text;
 BEGIN
   IF v_type IS NULL OR btrim(v_type) = '' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'type_required');
+    -- 0.4.51 — ABSENT is not the same as PRESENT-BUT-NOT-READABLE-HERE, and the
+    -- old error said the first when the second was true. A caller following
+    -- JSON-LD habit sends {"@type": …} and is told it gave no type; a caller
+    -- nesting {"type": …, "body": {…}} is told the same. Both then re-send the
+    -- one field they already sent. pgCK.MCP lost two calls to exactly this
+    -- (F9) before reading the spec. Name the shape instead of the field.
+    IF p_payload ? '@type' OR (jsonb_typeof(p_payload->'body') = 'object'
+                               AND ((p_payload->'body') ? '@type')) THEN
+      RETURN jsonb_build_object('ok', false, 'error', 'type_not_readable_here',
+        'hint', 'a type WAS supplied, in a position this verb does not read. Accepted: FLAT {"type": "<class IRI>", "<prop>": …}, or nested {"body": {"type": …, "<prop>": …}} — the same two shapes instance.validate reads. NOT accepted: @type, which is never read.');
+    END IF;
+    RETURN jsonb_build_object('ok', false, 'error', 'type_required',
+      'hint', 'the payload is flat: {"type": "<class IRI>", "<prop>": …}');
   END IF;
   IF position(':' in v_type) = 0 THEN
     RETURN jsonb_build_object('ok', false, 'error', 'type_must_be_iri',
@@ -1805,20 +2316,13 @@ BEGIN
   v_ns    := regexp_replace(v_type, '[^/#]*$', '');
   v_iid   := lower(v_local) || '-' || (extract(epoch from clock_timestamp())*1e9)::bigint::text;
 
-  SELECT COALESCE(jsonb_object_agg(regexp_replace(path, '^.*[/#]', ''), path), '{}'::jsonb)
-    INTO v_propmap
-  FROM (
-    SELECT DISTINCT j->>'path' AS path
-    FROM pgrdf.sparql(format($q$
-      PREFIX sh: <http://www.w3.org/ns/shacl#>
-      SELECT ?path WHERE { GRAPH <urn:ckp:%s/kernel/ck> {
-        ?s sh:targetClass <%s> ; sh:property ?p . ?p sh:path ?path } }
-    $q$, v_proj, v_type)) AS j
-    WHERE j->>'path' IS NOT NULL
-  ) p;
+  -- 0.4.51: the SAME map validate_instance uses. It read the kernel graph while
+  -- validate read composed, so validate and create could resolve one JSON key to
+  -- two different IRIs. See ckp._propmap.
+  v_propmap := ckp._propmap(v_type, v_proj);
 
   v_body := jsonb_build_object('type', v_type, '@id', 'ckp://' || v_local || '#' || v_iid);
-  FOR v_key, v_val IN SELECT key, value FROM jsonb_each(p_payload)
+  FOR v_key, v_val IN SELECT key, value FROM jsonb_each(v_in)
   LOOP
     CONTINUE WHEN v_key IN ('type', 'sub', '@id', 'participant');     -- control keys, not data (sub/participant: identity is never payload)
     IF position(':' in v_key) > 0 THEN
@@ -2488,8 +2992,17 @@ BEGIN
   -- `type` (task.create -> {task:{…}}, kernel.create -> {name:…}). `name` is NOT a usable
   -- discriminator here — it is a perfectly ordinary property on a generic type — so a `{task}`
   -- body still wins (the established concretion path) but everything else with a `type` is generic.
+  -- 0.4.51: `@type` and a nested `{body:{type}}` route here TOO, so the teaching
+  -- refusal is reachable. Without this a caller following JSON-LD habit fell
+  -- through to the task.create concretion and was told "kernel and title
+  -- required" — an error about a verb it did not call, naming fields it never
+  -- heard of. create_typed answers `type_not_readable_here` and names the two
+  -- shapes that ARE read. Routing on a key it will then refuse is deliberate:
+  -- the alternative is a correct-looking error from the wrong handler, which is
+  -- the class of misdirection F9 filed.
   ELSIF p_verb = 'instance.create'
-        AND (p_payload ? 'type')
+        AND (p_payload ? 'type' OR p_payload ? '@type'
+             OR (p_payload ? 'body' AND ((p_payload->'body') ? 'type' OR (p_payload->'body') ? '@type')))
         AND NOT (p_payload ? 'task') THEN
     RETURN ckp.create_typed(p_payload) || jsonb_build_object('req', req);
   -- Tier 2 / v0.5 T4: generic typed update. instance.update with a `patch` sub-object patches
@@ -2521,6 +3034,25 @@ BEGIN
 
   WHEN 'authority.mine' THEN
     res := ckp.authority_of(NULL);
+
+  -- 0.4.51 — THE CHECKER SURFACE. Every one of these answered a question this
+  -- kernel had to answer with a hand-written psql probe in PASS-30, which is a
+  -- second surface by definition: a check that lives in someone's scratch
+  -- directory cannot be re-run by the party who needs it, and it is not a fact.
+  -- As governed verbs they are callable by any identity the kernel grants,
+  -- their answers are attributable, and the negative control ships WITH the
+  -- gate instead of beside it.
+  WHEN 'surface.typecheck' THEN
+    res := ckp.surface_typecheck(p_payload, v_proj);
+
+  WHEN 'surface.unshaped' THEN
+    res := ckp.surface_unshaped(v_proj);
+
+  WHEN 'surface.declared' THEN
+    res := ckp.surface_declared(p_payload, v_proj);
+
+  WHEN 'project.resolve' THEN
+    res := ckp.project_resolve(p_payload);
 
   WHEN 'affordances' THEN
     -- B1 (pgCK#56): derived from SEALED ckp:Affordance instances of THIS kernel,
@@ -2664,13 +3196,40 @@ BEGIN
     END;
 
   -- ---- concept link (Edge) — captured so the structure is recoverable ---
+  -- 0.4.51 — THE EDGE CLASS IS THE CALLER'S TO NAME, AND WAS A DEFAULT NOTHING
+  -- DECLARED. This sealed N||'Edge' = urn:ckp:board/Edge unconditionally. That
+  -- class is declared in ONE file, examples/example.kernel.ttl, which no module
+  -- can load (import_module knows {task, goal}), so the path COULD NOT SEAL FOR
+  -- ANY PARTICIPANT ON ANY KERNEL SURFACE, regardless of grants — measured by
+  -- pgCK.MCP as F6 and re-measured here: SELECT ?g ?p WHERE { GRAPH ?g { ?s ?p
+  -- <urn:ckp:board/Edge> } } returns ZERO ROWS fleet-wide.
+  --
+  -- Worse, 0.4.42's own comment in ckp._type_admitted asserted the exit
+  -- condition was met — "urn:ckp:board/{Task,Goal,Edge,Message} now carry shapes
+  -- in the project kernel graph". They do not. That sentence is deleted with
+  -- this default; a comment claiming a gate is a claim, and R1 applies to
+  -- claims about our own code exactly as it applies to shapes.
+  --
+  -- The kernel declares what an edge IS; the substrate refuses what violates
+  -- that. So the class comes from the caller and the property IRIs follow ITS
+  -- namespace — the same rule create_typed's fallback already uses. A caller
+  -- that names no class is REFUSED with the reason, never sealed under a class
+  -- nobody declared.
   WHEN 'edge.create' THEN
     DECLARE src text := p_payload->>'source'; pred text := p_payload->>'predicate';
             tgt text := p_payload->>'target'; eid text; topic text;
+            v_etype text := NULLIF(btrim(COALESCE(p_payload->>'type','')), '');
+            v_ens   text;
             v_dpred jsonb := ckp.declared_predicates(v_proj);   -- T2: declared predicate set
     BEGIN
       IF src IS NULL OR pred IS NULL OR tgt IS NULL THEN
         res := jsonb_build_object('ok',false,'error','source, predicate, target required');
+      ELSIF v_etype IS NULL THEN
+        res := jsonb_build_object('ok',false,'refused',true,'error','edge_type_required',
+          'hint','instance.link requires {type}: the edge class THIS kernel declares (sh:targetClass or a declared rdfs:Class/owl:Class in its composed surface). There is no substrate default — the former one, urn:ckp:board/Edge, is declared by no loadable module and could never seal.');
+      ELSIF position(':' in v_etype) = 0 THEN
+        res := jsonb_build_object('ok',false,'refused',true,'error','type_must_be_iri',
+          'hint','instance.link {type} must be the full class IRI, e.g. urn:ckp:<project>/type/Edge');
       ELSIF src = tgt THEN
         res := jsonb_build_object('ok',false,'error','no self-loops (v3.7 Edge rule)');
       -- T2 (v0.4.9): when the kernel declares predicates, the link predicate MUST be one of them;
@@ -2678,37 +3237,51 @@ BEGIN
       ELSIF jsonb_array_length(v_dpred) > 0 AND NOT (v_dpred @> to_jsonb(pred)) THEN
         res := jsonb_build_object('ok',false,'error','undeclared_predicate','predicate',pred,'declared',v_dpred);
       ELSE
+        v_ens := regexp_replace(v_etype, '[^/#]*$', '');    -- the declared class's namespace
         eid := 'edge:'||src||'.'||pred||'.'||tgt;
         topic := 'link.'||pred||'.'||src||'.'||tgt;
-        PERFORM ckp.seal(eid, jsonb_build_object('type', N||'Edge', '@id', 'ckp://Edge#'||eid,
-          N||'source', src, N||'predicate', pred, N||'target', tgt, N||'topic', topic,
-          N||'created_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"')));
+        PERFORM ckp.seal(eid, jsonb_build_object('type', v_etype, '@id', 'ckp://Edge#'||eid,
+          v_ens||'source', src, v_ens||'predicate', pred, v_ens||'target', tgt, v_ens||'topic', topic,
+          v_ens||'created_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"')));
         -- Tier 2 (3/3a): also materialize the traversable quad so instance.reach finds
         -- this participant-created link (the Edge instance alone is not traversable).
-        res := jsonb_build_object('ok',true,'id',eid,'topic',topic,'verified',ckp.verify(eid),
+        res := jsonb_build_object('ok',true,'id',eid,'type',v_etype,'topic',topic,'verified',ckp.verify(eid),
           'reachable', ckp.materialize_edge(src, pred, tgt, v_proj));
       END IF;
     EXCEPTION WHEN OTHERS THEN res := jsonb_build_object('ok',false,'error',SQLERRM);
     END;
 
   -- ---- a message over a link (the automated pigeon) — sealed = recoverable
+  -- 0.4.51 — the SAME defect as edge.create, one class along, and untested by
+  -- the party who found the first: this sealed N||'Message' = urn:ckp:board/
+  -- Message, declared by no loadable module, so notify could not seal either.
+  -- The class is the caller's to name; the property IRIs follow its namespace.
   WHEN 'notify' THEN
     DECLARE frm text := p_payload->>'from'; tgt text := p_payload->>'to';
             pred text := COALESCE(p_payload->>'predicate','notifies');
             -- F-A: server-derived identity (verified connection), never the payload (see task.create).
             bdy text := p_payload->>'body'; sub text := current_setting('ckp.requester', true); mid text; topic text; v_body jsonb;
+            v_mtype text := NULLIF(btrim(COALESCE(p_payload->>'type','')), '');
+            v_mns   text;
     BEGIN
       IF frm IS NULL OR tgt IS NULL OR bdy IS NULL THEN
         res := jsonb_build_object('ok',false,'error','from, to, body required');
+      ELSIF v_mtype IS NULL THEN
+        res := jsonb_build_object('ok',false,'refused',true,'error','message_type_required',
+          'hint','notify requires {type}: the message class THIS kernel declares. There is no substrate default — the former one, urn:ckp:board/Message, is declared by no loadable module and could never seal.');
+      ELSIF position(':' in v_mtype) = 0 THEN
+        res := jsonb_build_object('ok',false,'refused',true,'error','type_must_be_iri',
+          'hint','notify {type} must be the full class IRI, e.g. urn:ckp:<project>/type/Message');
       ELSE
+        v_mns := regexp_replace(v_mtype, '[^/#]*$', '');
         mid := 'msg-'||(extract(epoch from clock_timestamp())*1e9)::bigint::text;
         topic := 'link.'||pred||'.'||frm||'.'||tgt;
-        v_body := jsonb_build_object('type', N||'Message', '@id', 'ckp://Message#'||mid,
-          N||'from', frm, N||'to', tgt, N||'predicate', pred, N||'body', bdy, N||'topic', topic,
-          N||'created_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'));
-        IF sub IS NOT NULL THEN v_body := v_body || jsonb_build_object(N||'created_by','urn:ckp:participant:'||ckp._slug(sub)); END IF;
+        v_body := jsonb_build_object('type', v_mtype, '@id', 'ckp://Message#'||mid,
+          v_mns||'from', frm, v_mns||'to', tgt, v_mns||'predicate', pred, v_mns||'body', bdy, v_mns||'topic', topic,
+          v_mns||'created_at', to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'));
+        IF sub IS NOT NULL THEN v_body := v_body || jsonb_build_object(v_mns||'created_by','urn:ckp:participant:'||ckp._slug(sub)); END IF;
         PERFORM ckp.seal(mid, v_body);
-        res := jsonb_build_object('ok',true,'id',mid,'topic',topic,'verified',ckp.verify(mid),
+        res := jsonb_build_object('ok',true,'id',mid,'type',v_mtype,'topic',topic,'verified',ckp.verify(mid),
           'proof_digest',(SELECT digest FROM ckp.proof WHERE about=mid ORDER BY id DESC LIMIT 1));
       END IF;
     EXCEPTION WHEN OTHERS THEN res := jsonb_build_object('ok',false,'error',SQLERRM);
@@ -3212,18 +3785,13 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'error', 'invalid_type', 'type', v_type);
   END IF;
 
-  -- Derive the type's declared property map from the kernel graph (same read as create_typed).
-  SELECT COALESCE(jsonb_object_agg(regexp_replace(path, '^.*[/#]', ''), path), '{}'::jsonb)
-    INTO v_propmap
-  FROM (
-    SELECT DISTINCT j->>'path' AS path
-    FROM pgrdf.sparql(format($q$
-      PREFIX sh: <http://www.w3.org/ns/shacl#>
-      SELECT ?path WHERE { GRAPH <urn:ckp:%s/kernel/ck> {
-        ?s sh:targetClass <%s> ; sh:property ?p . ?p sh:path ?path } }
-    $q$, v_proj, v_type)) AS j
-    WHERE j->>'path' IS NOT NULL
-  ) p;
+  -- Derive the type's declared property map. 0.4.51: one definition
+  -- (ckp._propmap), and this is the ONE declared exception to it — p_composed
+  -- false keeps the kernel-graph read, because v_shaped below turns the map
+  -- into a REFUSAL set for filter keys. Widening it here would newly refuse
+  -- reads that resolve today against substrate-stamped keys no shape declares.
+  -- Held as a named argument with a reason rather than tightened silently.
+  v_propmap := ckp._propmap(v_type, v_proj, false);
   v_shaped := (v_propmap <> '{}'::jsonb);
 
   v_where := format('(body->>%L) = %L', 'type', v_type);   -- base: this instance type only
@@ -3440,14 +4008,34 @@ BEGIN
   -- The #56 split, made VISIBLE: verbs dispatch resolves that no sealed
   -- Affordance declares. Reported, never merged — a union would hide exactly
   -- the hand-registered action the root says cannot hide.
-  SELECT jsonb_agg(r.verb ORDER BY r.verb) INTO v_unsealed
-  FROM ckp.affordance_registry r
-  WHERE r.kernel = p_project
-    AND NOT EXISTS (
+  --
+  -- 0.4.51 — THE ADVERTISED SURFACE WAS NOT THE ROUTABLE ONE. This filtered
+  -- `r.kernel = p_project`, while ckp.registry_lookup resolves
+  -- `r.kernel = p_kernel OR r.kernel = 'pgck'` — the substrate floor seeded at
+  -- install, which belongs to no kernel because install runs before any kernel
+  -- exists. So a kernel that had registered two verbs of its own read
+  -- {derived: [], unsealed: [its two]} and then SEALED SUCCESSFULLY through
+  -- instance.create, a verb neither list named. pgCK.MCP filed that as F11 and
+  -- inferred `derived` counts materialized affordances while instance-plane
+  -- verbs are granted by role; the inference is refuted — both lists answer the
+  -- same question, and they answered it against different predicates.
+  --
+  -- The fix is not a matching WHERE clause, which would drift again the next
+  -- time the router changes. The candidate set is now filtered THROUGH
+  -- registry_lookup itself, so "what this kernel may lawfully call" has exactly
+  -- one definition and enumerable ⟺ dispatchable holds by construction. That is
+  -- R7 / G7 closed by single-sourcing rather than by syncing two stores.
+  SELECT jsonb_agg(q.verb ORDER BY q.verb) INTO v_unsealed
+  FROM (
+    SELECT DISTINCT r.verb
+      FROM ckp.affordance_registry r
+     WHERE ckp.registry_lookup(p_project, r.verb) IS NOT NULL
+  ) q
+  WHERE NOT EXISTS (
       SELECT 1 FROM ckp.instances i
       WHERE i.body->>'type' = N||'Affordance'
         AND i.body->>(N||'producedBy') = v_kern
-        AND regexp_replace(i.body->>(N||'inTopic'), '^input\.kernel\.[^.]+\.action\.', '') = r.verb);
+        AND regexp_replace(i.body->>(N||'inTopic'), '^input\.kernel\.[^.]+\.action\.', '') = q.verb);
 
   RETURN jsonb_build_object(
     'ok', true,
@@ -3655,9 +4243,13 @@ CREATE OR REPLACE FUNCTION ckp.retire(p_payload jsonb)
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
+  C        text := 'https://conceptkernel.org/ontology/v3.11/core#';
   v_id     text := p_payload->>'id';
   v_reason text := p_payload->>'reason';
+  v_proj   text := ckp._project();
+  v_epoch  int;
   v_body   jsonb;
+  v_type   text;
 BEGIN
   IF v_reason IS NULL OR length(btrim(v_reason)) < 1 THEN
     RETURN jsonb_build_object('ok', false, 'error', 'reason_required', 'id', v_id);
@@ -3666,16 +4258,53 @@ BEGIN
   IF v_body IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'error', 'unknown_instance', 'id', v_id);
   END IF;
-  IF COALESCE((v_body->>'retired')::boolean, false) THEN
+  -- Only a DECLARED retirement blocks a second one. A row carrying the bare
+  -- pre-0.4.55 `retired` key and no ckp:retiredAtEpoch was never retired in any
+  -- way another kernel can read, so letting the sanctioned verb finish the act is
+  -- COMPLETING it, not repeating it and not backfilling it — nothing is invented,
+  -- the declared property is simply moved to where the private key already said
+  -- it was. This is what lets F15's two observed rows close instead of standing
+  -- as scars that every reader has to be told about.
+  IF v_body ? (C||'retiredAtEpoch') THEN
     RETURN jsonb_build_object('ok', false, 'error', 'already_retired', 'id', v_id,
-                              'retired_reason', v_body->>'retired_reason');
+      'reason', COALESCE(v_body->>(C||'reason'), v_body->>'retired_reason'));
   END IF;
-  -- The retraction is itself a sealed fact: body' carries the retirement; the seal
-  -- appends ledger + proof; every prior body stays in the chain (cannot unseal).
-  v_body := v_body || jsonb_build_object('retired', true, 'retired_reason', btrim(v_reason));
+  -- 0.4.55 — RETIREMENT NOW MOVES THE DECLARED PROPERTY, AND STOPS MINTING KEYS.
+  --
+  -- This wrote bare `retired` and `retired_reason` — not IRIs at all, so they
+  -- entered the body as undeclared predicates, which is the E3/R2 fail-open this
+  -- substrate exists to end, committed by the retraction path itself. Worse, the
+  -- DECLARED state never moved: a retired Proposal kept ckp:proposalState
+  -- "pending" forever, so every other kernel reading the gated property saw
+  -- outstanding work that no longer existed.
+  --
+  -- pgCK.MCP found it from outside and filed it as F15, and its reasoning is the
+  -- correct one: it counted those proposals as pending "because the declared
+  -- property is the only one another kernel can rely on". A retraction that only
+  -- a private key records is not a retraction — it is a note.
+  --
+  -- Declared vocabulary only, from here:
+  --   ckp:retiredAtEpoch  integer, already honoured by ckp.affordances_of
+  --   ckp:reason          string, the same property FailedMaterialization carries
+  --   ckp:proposalState   for a Proposal, moved to 'rejected' — the enum is
+  --                       (pending applied rejected) and it is sh:in-GATED, so if
+  --                       this value were wrong the seal would refuse and say so.
+  --
+  -- The retraction stays a sealed fact: body' carries it, the seal appends ledger
+  -- + proof, every prior body stays in the chain. Nothing is ever unsealed.
+  v_epoch := COALESCE((SELECT epoch FROM ckp.kernel_epoch WHERE kernel = v_proj), 0);
+  v_type  := v_body->>'type';
+  v_body  := v_body || jsonb_build_object(
+               C||'retiredAtEpoch', to_jsonb(v_epoch),
+               C||'reason', btrim(v_reason));
+  IF v_type = C||'Proposal' THEN
+    v_body := v_body || jsonb_build_object(C||'proposalState', 'rejected');
+  END IF;
   PERFORM ckp.seal(v_id, v_body);
-  RETURN jsonb_build_object('ok', true, 'id', v_id, 'retired', true,
-                            'reason', btrim(v_reason), 'verified', ckp.verify(v_id));
+  RETURN jsonb_build_object('ok', true, 'id', v_id,
+    'retiredAtEpoch', v_epoch,
+    'declaredStateMoved', (v_type = C||'Proposal'),
+    'reason', btrim(v_reason), 'verified', ckp.verify(v_id));
 END;
 $function$
 ;
@@ -4166,7 +4795,27 @@ BEGIN
   END IF;
 
   v_body := v_body || jsonb_build_object(N||'lifecycle_state', v_to, 'state', v_to);
-  PERFORM ckp.seal(v_id, v_body);
+  -- 0.4.57 — THE RE-SEAL IS JUDGED BY THE KERNEL THAT PRODUCED THE FACT, never
+  -- by the ambient session project. This sealed under _project(), so an
+  -- instance produced by demo, transitioned from a session whose GUC named a
+  -- different kernel, was re-validated against a FOREIGN surface — an M2
+  -- violation (jurisdiction: whose meaning governs it). Invisible while the
+  -- type gate was fleet-wide; the moment the gate was scoped (0.4.51), s56
+  -- refused exactly this, which is that test doing its job one layer deeper
+  -- than it was written for. The map lookup above was already
+  -- project-independent; the re-seal now follows the same rule: derive the
+  -- project from the substrate-stamped producedBy (unforgeable), fall back to
+  -- the session only for pre-stamp rows.
+  DECLARE
+    v_pb   text := v_body->>(C||'producedBy');
+    v_proj text;
+  BEGIN
+    IF v_pb IS NOT NULL AND v_pb ~ '^urn:ckp:.+/kernel/ck$' THEN
+      v_proj := regexp_replace(v_pb, '^urn:ckp:(.+)/kernel/ck$', '\1');
+      PERFORM set_config('ckp.project', v_proj, true);
+    END IF;
+    PERFORM ckp.seal(v_id, v_body);
+  END;
   RETURN jsonb_build_object('ok', true, 'id', v_id, 'from', v_from, 'to', v_to,
                             'source', v_src, 'verified', ckp.verify(v_id));
 END;
@@ -4204,17 +4853,11 @@ BEGIN
   v_ns   := CASE WHEN v_type ~ '[/#]' THEN regexp_replace(v_type, '[^/#]*$', '') ELSE '' END;
 
   -- declared property map for the instance's type (same read as create_typed).
-  SELECT COALESCE(jsonb_object_agg(regexp_replace(path, '^.*[/#]', ''), path), '{}'::jsonb)
-    INTO v_propmap
-  FROM (
-    SELECT DISTINCT j->>'path' AS path
-    FROM pgrdf.sparql(format($q$
-      PREFIX sh: <http://www.w3.org/ns/shacl#>
-      SELECT ?path WHERE { GRAPH <urn:ckp:%s/kernel/ck> {
-        ?s sh:targetClass <%s> ; sh:property ?p . ?p sh:path ?path } }
-    $q$, v_proj, v_type)) AS j
-    WHERE j->>'path' IS NOT NULL
-  ) p;
+  -- 0.4.51: composed-aware, because a patch is a WRITE and must resolve keys the
+  -- same way the gate will judge them. Refusing an undeclared patch key earlier,
+  -- with the declared set named, is strictly better than sealing it under the
+  -- type's namespace and letting the gate refuse the whole body.
+  v_propmap := ckp._propmap(v_type, v_proj);
   v_shaped := (v_propmap <> '{}'::jsonb);
 
   v_cur := v_cur - 'participant';   -- re-resolved by ckp.seal from any supplied claims
@@ -4314,7 +4957,18 @@ DECLARE
   v_report  jsonb;
 BEGIN
   IF v_type IS NULL THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'type_required');
+    -- 0.4.51 — the payload IS read as COALESCE(p_payload->'body', p_payload), so
+    -- flat {type, …} and nested {body:{type, …}} both work and
+    -- {type, body:{…}} is the ONE shape that cannot: the type sits outside the
+    -- body this descends into. Saying "type_required" there names the single
+    -- field the caller DID supply, and the caller re-sends it. Distinguish.
+    IF p_payload ? '@type' OR p_payload ? 'type'
+       OR (jsonb_typeof(p_payload->'body') = 'object' AND ((p_payload->'body') ? '@type')) THEN
+      RETURN jsonb_build_object('ok', false, 'error', 'type_not_readable_here',
+        'hint', 'a type WAS supplied, in a position this verb does not read. Accepted: FLAT {"type": "<class IRI>", "<prop>": …}, or nested {"body": {"type": …, "<prop>": …}}. NOT accepted: @type (never read), or {"type": …, "body": {…}} — that puts the type outside the body this verb descends into.');
+    END IF;
+    RETURN jsonb_build_object('ok', false, 'error', 'type_required',
+      'hint', 'the payload is flat: {"type": "<class IRI>", "<prop>": …}');
   END IF;
 
   -- P0-D mechanism 2 parity (pgCK#27): validate PREDICTS seal. seal refuses an
@@ -4336,16 +4990,9 @@ BEGIN
   -- Resolve the body's short keys to declared property IRIs (mirror ckp.create_typed) so validate
   -- accepts the same {type, …fields} shape as instance.create. Already-IRI keys pass through.
   v_ns := CASE WHEN v_type ~ '[/#]' THEN regexp_replace(v_type, '[^/#]*$', '') ELSE '' END;
-  SELECT COALESCE(jsonb_object_agg(regexp_replace(path, '^.*[/#]', ''), path), '{}'::jsonb)
-    INTO v_propmap
-  FROM (
-    SELECT DISTINCT j->>'path' AS path
-    FROM pgrdf.sparql(format($q$
-      PREFIX sh: <http://www.w3.org/ns/shacl#>
-      SELECT ?path WHERE { GRAPH <urn:ckp:%s/shapes/composed> {
-        ?s sh:targetClass <%s> ; sh:property ?p . ?p sh:path ?path } }
-    $q$, v_proj, v_type)) AS j WHERE j->>'path' IS NOT NULL
-  ) p;
+  -- 0.4.51: the SAME map create_typed uses. This read composed while create read
+  -- the kernel graph — validate ⟺ seal broken one layer below the gate.
+  v_propmap := ckp._propmap(v_type, v_proj);
   v_resolved := jsonb_build_object('type', v_type);
   FOR v_key, v_val IN SELECT key, value FROM jsonb_each(v_body) LOOP
     CONTINUE WHEN v_key IN ('type', '@id', 'sub');

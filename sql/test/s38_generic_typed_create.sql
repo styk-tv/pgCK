@@ -30,6 +30,26 @@ ship:ShipShape a sh:NodeShape ;
   sh:targetClass ship:Ship ;
   sh:property [ sh:path p:crew_size ; sh:minCount 1 ] ;
   sh:property [ sh:path p:name      ; sh:minCount 1 ] .
+
+# 0.4.57 — the legacy-compat fixture. Case (4) seals urn:ckp:board/Task, and
+# before the type gate was scoped (0.4.51) that sealed only because the
+# FLEET-WIDE gate found the class in whatever graph some other test had loaded
+# — the back-compat case was riding the security hole it now regression-guards.
+# The honest form of compat: THE PROJECT DECLARES WHAT THE LEGACY PATH EMITS,
+# same pattern as the Ship above. Class + shape from examples/example.kernel.ttl,
+# so the legacy emission is admitted AND judged, not admitted-and-vacuous.
+<urn:ckp:board/Task> a <http://www.w3.org/2000/01/rdf-schema#Class> .
+<urn:ckp:board/shape/Task> a sh:NodeShape ;
+  sh:targetClass <urn:ckp:board/Task> ;
+  sh:property [ sh:path <urn:ckp:board/task_id>         ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/title>           ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/target_kernel>   ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/part_of_goal>    ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/lifecycle_state> ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/created_at>      ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/created_by>      ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/priority>        ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/queue_seq>       ; sh:maxCount 1 ] .
 $ttl$, g, 'urn:ckp:s38-test/kernel#');
   PERFORM pgrdf.materialize(g);
 END $setup$;

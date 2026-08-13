@@ -2,7 +2,66 @@
 
 All notable changes to `pgCK` are logged here.
 
-## v0.4.50 - 2026-08-12
+## v0.4.57 - 2026-08-13
+
+**The admitted-type gate is scoped to the surface it names, one kernel has one spelling, and the
+wave vocabulary is composed and gating.** Seven versions in one day (0.4.51–0.4.57), each proven on
+the bench through the door before the next began; this tag ships them together. The recurring shape,
+again: a check whose scope or failure-direction was never negative-controlled, caught each time by a
+second instrument disagreeing — never by re-reading the diff.
+
+- **The admitted-type gate was substrate-wide** (0.4.51). `ckp._type_admitted` scoped itself with
+  `FILTER(?g IN (<composed>, <board>))`, and the engine silently dropped that filter under `UNION` —
+  so any type declared in *any* graph was admitted for *every* kernel; a five-triple SHACL test
+  fixture widened the production type gate. Fixed with one constant-graph ASK per surface, combined
+  in PL/pgSQL, plus the negative control that never existed: a type declared only in a foreign graph
+  is refused. Escalated upstream; pgRDF 0.6.30 now **refuses** group-level constructs alongside
+  `UNION` (`pgRDF#114`) and counts every refusal (`stats().filter_clauses_dropped`) — closed by
+  pgCK's own repros inverting on the bench, not by the release notes.
+- **One kernel, one spelling** (0.4.51–0.4.56). The project segment was validated at germination and
+  unvalidated at seal, so one kernel's facts split across two casings and the adoption record named a
+  project the composer never read. `ckp._project` now resolves the transport segment against a
+  sealed `ckp:Kernel`: a non-canonical twin resolves onto the canonical sealed kernel; a pre-rule
+  kernel with a non-empty kernel graph is grandfathered (prefer the spelling with *substance*, never
+  the tidy empty graph); ambiguity refuses naming all parties. The resolver explains itself from its
+  own execution (`ckp._project_explain` returns `{project, clause, hits}`) after its first reporter
+  inferred the clause from the outcome and misreported it.
+- **Adoption-derived composition honours all three `intoProject` spellings** (0.4.57).
+  `_adopted_graphs` matched `urn:ckp:<p>` and `urn:ckp:<p>/kernel/ck` and missed
+  `urn:ckp:project:<p>` — the IRI germination itself seals as the Project `@id` — so a judged,
+  ledgered Adoption could compose nothing, silently. Found by a consumer's measurement, fixed the
+  same hour, ruled on the record.
+- **The checker surface is verbs, not scripts** (0.4.52–0.4.53): `surface.typecheck` (admitted?
+  shaped? via which graph, at which digest) · `surface.unshaped` (classes the surface declares that
+  no shape targets) · `surface.declared` (the property contract, learnable without writing) ·
+  `project.resolve` (which kernel a name means, under which clause). Each calls the same internal
+  the gate calls — a probe that re-implements the gate tests the probe. The first cut of
+  `surface.unshaped` used `FILTER NOT EXISTS`, which the engine also silently dropped — **the
+  vacuity detector was itself vacuous**, caught within minutes because two instruments disagreed
+  about one class. It now takes the difference in SQL, so a dropped clause yields *empty*, never
+  *everything*.
+- **Retirement uses declared vocabulary** (0.4.55). `ckp.retire` wrote bare `retired`/
+  `retired_reason` — undeclared keys minted past the gate — and never moved `ckp:proposalState`, so
+  a retired Proposal read as pending to every other kernel forever. Now: `ckp:retiredAtEpoch` +
+  `ckp:reason`, and a Proposal moves to `rejected` (an `sh:in`-gated enum, so a wrong value refuses).
+  The s35 golden migrated from pinning the loose behaviour to pinning the declared one — the toll a
+  tightening release pays, on the record.
+- **`instance.link` and `notify` name their class** (0.4.51). Both sealed a `urn:ckp:board/*` type
+  declared by no loadable module — unsealable for any participant on any surface, regardless of
+  grants. The class is now the caller's to name, property IRIs follow its namespace, and the absent
+  default refuses with the reason.
+- **One property map for validate and seal** (0.4.51). Four inline copies disagreed — validate read
+  the composed surface while create read the kernel graph, so one JSON key could resolve to two
+  IRIs. `ckp._propmap` is the single definition; the advertised affordance surface is likewise
+  derived through `registry_lookup` itself, so enumerable ⟺ dispatchable by construction.
+- **Upgrade scripts are generated from the baseline** (`scripts/gen-upgrade-from-baseline.sh`), so
+  the fresh-install and `ALTER EXTENSION UPDATE` paths are the same bytes — proven by identical
+  catalog body digests across both routes.
+
+With the wave and lexicon modules adopted by digest into the kernel's own project, a
+`wave:Finding` missing its required `ckp:reason` — or carrying a state outside the declared enum —
+is now **refused with the clause named**, and a conformant one seals carrying
+`ckp:conformsToShape`. Facts are judged, not merely stored.
 
 **Release packaging follows the v3.11 ontology layout.** `v0.4.49` is a burned tag: all four build jobs
 failed at *Repack to INSTALL-spec layout* with `cp: cannot stat 'ontology/*.ttl'`, because 0.4.40 moved

@@ -14,6 +14,30 @@
 CALL ckp.bootstrap_kernel();
 SET ckp.project = 's47-test';
 
+-- 0.4.57 legacy-compat fixture (see s38): the scoped type gate requires the project to declare the legacy board vocabulary its task verbs emit.
+DO $bfix$ DECLARE g bigint; BEGIN
+  g := pgrdf.add_graph('urn:ckp:s47-test/kernel/ck');
+  PERFORM pgrdf.parse_turtle($bttl$
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+<urn:ckp:board/Task> a <http://www.w3.org/2000/01/rdf-schema#Class> .
+<urn:ckp:board/shape/Task> a sh:NodeShape ;
+  sh:targetClass <urn:ckp:board/Task> ;
+  sh:property [ sh:path <urn:ckp:board/task_id>         ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/title>           ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/target_kernel>   ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/part_of_goal>    ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/lifecycle_state> ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/created_at>      ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/created_by>      ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/priority>        ; sh:maxCount 1 ] ;
+  sh:property [ sh:path <urn:ckp:board/queue_seq>       ; sh:maxCount 1 ] .
+$bttl$, g, 'urn:ckp:boardfix#');
+  PERFORM pgrdf.materialize(g);
+END $bfix$;
+GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
+
+
 -- create tasks with distinctive titles (the trigger projects each title as rdfs:label).
 DO $$
 BEGIN

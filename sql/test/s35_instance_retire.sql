@@ -45,8 +45,22 @@ BEGIN
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's35 FAIL: retire not ok: %', res; END IF;
   SELECT count(*) INTO n1 FROM ckp.ledger WHERE instance_id='urn:ret:1';
   IF n1 <= n0 THEN RAISE EXCEPTION 's35 FAIL: ledger did not grow (% -> %) — retirement was not SEALED', n0, n1; END IF;
-  IF (SELECT (body->>'retired')::boolean FROM ckp.instances WHERE id='urn:ret:1') IS DISTINCT FROM true THEN
-    RAISE EXCEPTION 's35 FAIL: body not marked retired'; END IF;
+  -- 0.4.55 TOLL, PAID DELIBERATELY. This used to assert the bare key
+  -- `retired:true` — the OLD behaviour, in which the retraction path minted
+  -- undeclared predicates and never moved the declared state (F15: a retired
+  -- Proposal read proposalState "pending" to every other kernel forever). The
+  -- golden pinned the loose behaviour; the tightening release trips it; the
+  -- golden migrates to pin the DECLARED form. A retirement is real only in
+  -- vocabulary another kernel can rely on: ckp:retiredAtEpoch + ckp:reason.
+  IF (SELECT body->>'https://conceptkernel.org/ontology/v3.11/core#retiredAtEpoch'
+        FROM ckp.instances WHERE id='urn:ret:1') IS NULL THEN
+    RAISE EXCEPTION 's35 FAIL: body carries no ckp:retiredAtEpoch — retirement not declared'; END IF;
+  IF (SELECT body->>'https://conceptkernel.org/ontology/v3.11/core#reason'
+        FROM ckp.instances WHERE id='urn:ret:1') IS DISTINCT FROM 'superseded by urn:ret:2' THEN
+    RAISE EXCEPTION 's35 FAIL: ckp:reason absent or wrong'; END IF;
+  -- the bare key must be GONE: writing it was the defect, not a compatibility.
+  IF (SELECT body ? 'retired' FROM ckp.instances WHERE id='urn:ret:1') THEN
+    RAISE EXCEPTION 's35 FAIL: bare undeclared key `retired` still minted'; END IF;
 END $$;
 
 -- (d) you cannot retire twice (and the original fact is NOT erased — body still readable).
