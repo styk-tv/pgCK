@@ -312,6 +312,8 @@ INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane) VALUES
   -- 0.4.51 — the checker surface. Seeded here so they are DISPATCHABLE, and
   -- sealed as ckp:Affordance through propose->vote->apply so they are DECLARED.
   -- Both halves, or this grows the #56 gap it exists to close.
+  ('pgck','wave.oracle',         'input.kernel.pgck.action.wave.oracle',         'instance'),
+  ('pgck','wave.project',        'input.kernel.pgck.action.wave.project',        'instance'),
   ('pgck','surface.typecheck',   'input.kernel.pgck.action.surface.typecheck',   'instance'),
   ('pgck','surface.unshaped',    'input.kernel.pgck.action.surface.unshaped',    'instance'),
   ('pgck','surface.declared',    'input.kernel.pgck.action.surface.declared',    'instance'),
@@ -911,9 +913,15 @@ BEGIN
     FROM ckp.instances a
     WHERE a.body->>'type' = N||'Adoption'
       AND a.body->>(N||'adopts') IS NOT NULL
+      -- 0.4.60: pgRDF found the FOURTH spelling in their own sealed doctrine —
+      -- urn:ckp:project/<p>, slash not colon (their kernel graph's inProject
+      -- carries it). Anyone copying their sealed doctrine into an Adoption got
+      -- a valid, load-bearing-for-nothing record. All four forms match now;
+      -- the real cure (one canonical spelling at seal) is a shape question.
       AND a.body->>(N||'intoProject') IN ('urn:ckp:'||p_project,
                                           'urn:ckp:'||p_project||'/kernel/ck',
-                                          'urn:ckp:project:'||p_project)
+                                          'urn:ckp:project:'||p_project,
+                                          'urn:ckp:project/'||p_project)
       AND NOT EXISTS (
         SELECT 1 FROM ckp.instances s
         WHERE s.body->>'type' = N||'Supersession'
@@ -1095,10 +1103,23 @@ DECLARE
   v_map jsonb := '{}'::jsonb;
   v_g   text;
   v_gs  text[];
+  -- 0.4.60 — ANCESTORS INCLUDED. The gate validates the candidate against
+  -- shapes targeting the type AND its ancestors (the parent-closure stamp is
+  -- exactly what makes ParticipantShape reach a wave#Component), but this map
+  -- read only shapes targeting the type itself. So core#participantKind was
+  -- REQUIRED by the gate and ABSENT from surface.declared — measured
+  -- independently by pgrdf-mcp ("the declared map and the gate disagree about
+  -- the contract", three refusals to learn it) and by pgRDF. The composed
+  -- graph is materialized, so subClassOf closure is present as direct triples;
+  -- both branches are self-contained (branch-local — the #114-safe form).
   v_q   text := $q$
-    PREFIX sh: <http://www.w3.org/ns/shacl#>
+    PREFIX sh:   <http://www.w3.org/ns/shacl#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
     SELECT ?path WHERE { GRAPH <%1$s> {
-      ?s sh:targetClass <%2$s> ; sh:property ?p . ?p sh:path ?path } }
+      { ?s sh:targetClass <%2$s> ; sh:property ?p . ?p sh:path ?path }
+      UNION
+      { <%2$s> rdfs:subClassOf ?anc . ?s sh:targetClass ?anc ; sh:property ?p . ?p sh:path ?path }
+    } }
   $q$;
 BEGIN
   IF p_type IS NULL OR btrim(p_type) = '' THEN
@@ -1118,6 +1139,219 @@ BEGIN
     ) p;
   END LOOP;
   RETURN v_map;
+  -- (ancestors included since 0.4.60 — see v_q above)
+END;
+$function$
+;
+
+-- 0.4.59 — STAMP PROJECTION: the sealed spine becomes SPARQL-visible.
+--
+-- pgRDF's v0.6.30 spec §4.4 states the contract this implements: seals land
+-- through the door → stamps projected into instances graphs → the fence census
+-- (judged-or-fenced, the MINUS-pair pgRDF proved) runs CONTINUOUSLY over RDF.
+-- Until now sealed instances were relational-only (pgck-mcp's CL-A3, filed as
+-- F20: "sealed instances are not in RDF, so this question is not expressible as
+-- an affordance today"), which forced every oracle signal into a pgck-only
+-- built-in — the exact SQL escape hatch pgRDF's §4.6 wants gone, because a
+-- built-in cannot be adopted by another kernel while a SPARQL affordance can.
+--
+-- What is projected: the instance's @id as subject, rdf:type, and every
+-- top-level IRI-keyed property of the SEALED body — which includes the four
+-- stamps, since seal merges them before storage. Additive, never clearing: RDF
+-- set semantics dedupe re-seals. A projection failure WARNs loudly and never
+-- aborts the seal — a refusal is the gate's job; killing the write over a
+-- mirror is the transport-death class PASS-29 closed. Drift between store and
+-- mirror is repaired (and thereby detected) by the wave.project rebuild verb.
+CREATE OR REPLACE FUNCTION ckp._project_instance_spine(p_id text, p_body jsonb, p_project text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_g    bigint;
+  v_subj text;
+  v_ttl  text := '';
+  v_key  text;
+  v_val  jsonb;
+  v_el   jsonb;
+  v_type text := p_body->>'type';
+BEGIN
+  v_subj := COALESCE(NULLIF(p_body->>'@id',''), '');
+  IF v_subj !~ '^[A-Za-z][A-Za-z0-9+.-]*:' THEN
+    v_subj := 'urn:ckp:'||p_project||'/inst/'||ckp._slug(p_id);
+  END IF;
+  IF v_type IS NOT NULL AND position(':' in v_type) > 0 THEN
+    v_ttl := v_ttl || format('<%s> a <%s> .%s', v_subj, v_type, chr(10));
+  END IF;
+  FOR v_key, v_val IN SELECT key, value FROM jsonb_each(p_body) LOOP
+    CONTINUE WHEN v_key !~ '^(https?://|urn:)';
+    IF jsonb_typeof(v_val) = 'array' THEN
+      FOR v_el IN SELECT * FROM jsonb_array_elements(v_val) LOOP
+        v_ttl := v_ttl || ckp._spine_triple(v_subj, v_key, v_el);
+      END LOOP;
+    ELSIF jsonb_typeof(v_val) IN ('string','number','boolean') THEN
+      v_ttl := v_ttl || ckp._spine_triple(v_subj, v_key, v_val);
+    END IF;   -- objects are payload structure, not spine
+  END LOOP;
+  IF v_ttl = '' THEN RETURN; END IF;
+  v_g := pgrdf.add_graph('urn:ckp:'||p_project||'/instances');
+  PERFORM pgrdf.parse_turtle(v_ttl, v_g, 'urn:ckp:spine#');
+EXCEPTION WHEN OTHERS THEN
+  RAISE WARNING 'ckp._project_instance_spine: % (instance % sealed and ledgered; the RDF mirror is behind — run wave.project to rebuild)', SQLERRM, p_id;
+END;
+$function$
+;
+
+-- One triple, one place: IRI-looking string values become IRI objects, all else
+-- a quoted literal with backslash/quote/newline escaped. Numbers and booleans
+-- stay plain literals — the census needs existence, not xsd fidelity.
+CREATE OR REPLACE FUNCTION ckp._spine_triple(p_subj text, p_pred text, p_val jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE v_s text;
+BEGIN
+  IF jsonb_typeof(p_val) = 'string' THEN
+    v_s := p_val #>> '{}';
+    IF v_s ~ '^(https?://|urn:|ckp://)[^[:space:]"<>{}|\\^`]+$' THEN
+      RETURN format('<%s> <%s> <%s> .%s', p_subj, p_pred, v_s, chr(10));
+    END IF;
+    v_s := replace(replace(v_s, '\', '\\'), '"', '\"');
+    v_s := replace(replace(v_s, chr(10), '\n'), chr(13), '\n');
+    RETURN format('<%s> <%s> "%s" .%s', p_subj, p_pred, v_s, chr(10));
+  END IF;
+  RETURN format('<%s> <%s> "%s" .%s', p_subj, p_pred, p_val #>> '{}', chr(10));
+END;
+$function$
+;
+
+-- The rebuild: clears the mirror and re-projects EVERY sealed instance of the
+-- calling project. Doubles as the drift detector — mirror ≠ rebuild is the
+-- finding. Registered as wave.project.
+CREATE OR REPLACE FUNCTION ckp.wave_project_spine(p_payload jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_proj text := ckp._project();
+  v_g bigint; v_n int := 0; r record;
+BEGIN
+  v_g := pgrdf.add_graph('urn:ckp:'||v_proj||'/instances');
+  PERFORM pgrdf.clear_graph(v_g);
+  FOR r IN SELECT id, body FROM ckp.instances ORDER BY ts_created LOOP
+    PERFORM ckp._project_instance_spine(r.id, r.body, v_proj);
+    v_n := v_n + 1;
+  END LOOP;
+  RETURN jsonb_build_object('ok', true, 'kernel', v_proj,
+    'graph', 'urn:ckp:'||v_proj||'/instances', 'projected', v_n,
+    'note', 'the sealed spine is now SPARQL-visible: rdf:type + every IRI-keyed property incl. the four stamps. The fence census is the MINUS-pair over this graph — sealedAtEpoch MINUS conformsToShape.');
+END;
+$function$
+;
+
+-- 0.4.58 — THE ORACLE (v3.12 §5, first built piece). Signals are DERIVED from
+-- sealed facts, never asserted; the pass boundary is a query, never a memory.
+--
+-- The question it answers: WHAT GOES ON THIS PASS, AND WHAT GOES ON THE NEXT?
+-- The rule, encoded rather than remembered:
+--   THIS pass  = facts stamped with its number (discoveredAtPass / resolvedAtPass
+--                / ruledAtPass / opAtPass / rebasedAtPass / forPass), plus the
+--                epochs those acts advanced. Closed when its Index is sealed and
+--                its Confirmations reference re-run gates.
+--   NEXT pass  = whatever `next` returns AT INDEX-SEAL TIME: open findings,
+--                pending unretired proposals, operations addressed to this
+--                component and not yet answered. Nobody decides the carry-over
+--                by memory; the queue IS the derivation.
+--   THIS wave  = everything bound to one root digest (wave:Statement bindsRoot).
+--                The NEXT wave begins when the root moves — never mid-root.
+--
+-- Facts are relational (sealed instances), so this is a built-in, not a SPARQL
+-- affordance — the F20 limit, stated by pgck-mcp: sealed instances are not in
+-- RDF yet. When stamp projection lands, each signal becomes a governed SPARQL
+-- read and this function retires into compatibility.
+CREATE OR REPLACE FUNCTION ckp.wave_oracle(p_payload jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  W text := 'https://conceptkernel.org/ontology/v3.11/wave#';
+  v_proj  text := ckp._project();
+  v_pass  int  := (p_payload->>'pass')::int;
+  -- component alias convention: c-<project, dashes stripped> (c-pgck, c-pgckmcp);
+  -- override with {component} where the convention doesn't hold (ck-lib-js → c-cklib).
+  v_comp  text := COALESCE(p_payload->>'component', W||'c-'||replace(v_proj,'-',''));
+  v_epoch int  := COALESCE((SELECT epoch FROM ckp.kernel_epoch WHERE kernel = v_proj), 0);
+  v_this jsonb; v_next jsonb; v_sig jsonb;
+BEGIN
+  -- THIS PASS — everything stamped with the number, any of the six stamps.
+  IF v_pass IS NOT NULL THEN
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'id', i.id,
+        'type', regexp_replace(i.body->>'type','^.*[/#]',''),
+        'by',   i.body->>(C||'producedBy'),
+        'judged', (i.body ? (C||'conformsToShape'))) ORDER BY i.ts_created), '[]'::jsonb)
+      INTO v_this
+    FROM ckp.instances i
+    WHERE COALESCE((i.body->>(W||'discoveredAtPass'))::numeric, -1) = v_pass
+       OR COALESCE((i.body->>(W||'resolvedAtPass'))::numeric,  -1) = v_pass
+       OR COALESCE((i.body->>(W||'ruledAtPass'))::numeric,     -1) = v_pass
+       OR COALESCE((i.body->>(W||'opAtPass'))::numeric,        -1) = v_pass
+       OR COALESCE((i.body->>(W||'rebasedAtPass'))::numeric,   -1) = v_pass
+       OR i.body->>(W||'forPass') = W||'pass-'||v_pass;
+  END IF;
+
+  -- THE NEXT-PASS QUEUE — derived, so carry-over is never a memory exercise.
+  v_next := jsonb_build_object(
+    'openFindings', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'id', i.id,
+        'label', left(COALESCE(i.body->>'http://www.w3.org/2000/01/rdf-schema#label',
+                               i.body->>(W||'label')), 140),
+        'by', i.body->>(C||'producedBy')) ORDER BY i.ts_created), '[]'::jsonb)
+      FROM ckp.instances i
+      WHERE i.body->>'type' = W||'Finding' AND i.body->>(W||'findingState') = 'open'),
+    'pendingProposals', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'id', i.id, 'about', i.body->>(C||'about'), 'op', i.body->>(C||'proposalOp'),
+        'by', i.body->>(C||'createdBy')) ORDER BY i.ts_created), '[]'::jsonb)
+      FROM ckp.instances i
+      WHERE i.body->>'type' = C||'Proposal'
+        AND i.body->>(C||'proposalState') = 'pending'
+        AND NOT i.body ? (C||'retiredAtEpoch')),
+    'inbox', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'id', i.id, 'opKind', i.body->>(W||'opKind'),
+        'from', i.body->>(C||'producedBy')) ORDER BY i.ts_created), '[]'::jsonb)
+      FROM ckp.instances i
+      WHERE i.body->>'type' = W||'Operation' AND i.body->>(W||'opTarget') = v_comp));
+
+  -- SIGNALS — health counts a third party can recompute. Never one boolean.
+  v_sig := jsonb_build_object(
+    'unjudged',       (SELECT count(*) FROM ckp.instances i
+                       WHERE COALESCE((i.body->>(C||'sealedAtEpoch'))::numeric, -1) >= 1
+                         AND NOT i.body ? (C||'conformsToShape')),
+    'preEnforcement', (SELECT count(*) FROM ckp.instances i
+                       WHERE NOT i.body ? (C||'sealedAtEpoch')),
+    'anonymousSeals', (SELECT count(*) FROM ckp.instances i
+                       WHERE i.body->>(C||'createdBy') LIKE 'urn:ckp:participant:anon%'),
+    'openFindings',   (SELECT count(*) FROM ckp.instances i
+                       WHERE i.body->>'type' = W||'Finding'
+                         AND i.body->>(W||'findingState') = 'open'),
+    'pendingProposalsFleet', (SELECT count(*) FROM ckp.instances i
+                       WHERE i.body->>'type' = C||'Proposal'
+                         AND i.body->>(C||'proposalState') = 'pending'
+                         AND NOT i.body ? (C||'retiredAtEpoch')));
+
+  RETURN jsonb_build_object(
+    'ok', true, 'kernel', v_proj, 'component', v_comp, 'epoch', v_epoch,
+    'pass', v_pass, 'thisPass', COALESCE(v_this, '[]'::jsonb),
+    'next', v_next, 'signals', v_sig,
+    'boundary', 'THIS pass = facts stamped with its number + the epochs they advanced; closed at Index seal. NEXT pass = this `next` object AT close — derived, never remembered. NEXT wave = when bindsRoot moves. unjudged means sealedAtEpoch>=1 with conformsToShape ABSENT: admitted, ledgered, judged by nothing — the fence.');
 END;
 $function$
 ;
@@ -3042,6 +3276,12 @@ BEGIN
   -- As governed verbs they are callable by any identity the kernel grants,
   -- their answers are attributable, and the negative control ships WITH the
   -- gate instead of beside it.
+  WHEN 'wave.oracle' THEN
+    res := ckp.wave_oracle(p_payload);
+
+  WHEN 'wave.project' THEN
+    res := ckp.wave_project_spine(p_payload);
+
   WHEN 'surface.typecheck' THEN
     res := ckp.surface_typecheck(p_payload, v_proj);
 
@@ -4604,6 +4844,11 @@ BEGIN
 
   -- 5. PROJECT link triples for Task/Goal instances into the project board graph (CKB-5).
   PERFORM ckp.project_links(v_project, p_instance_id, p_body);
+
+  -- 6. PROJECT THE SPINE (0.4.59, pgRDF §4.4): the sealed body — stamps included,
+  -- since they merged at step 2 — becomes quads in <project>/instances, so the
+  -- fence census and every oracle signal are SPARQL, adoptable by any kernel.
+  PERFORM ckp._project_instance_spine(p_instance_id, p_body, v_project);
 
   RETURN v_sha;
 END;
