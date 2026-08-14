@@ -1,4 +1,8 @@
 \set ON_ERROR_STOP 1
+-- 0.4.64: unattributed seals REFUSE (the anon mint is gone). A test names
+-- its service identity explicitly — the sanctioned operator form.
+SELECT set_config('ckp.requester','svc:smoke-suite',false);
+
 SELECT set_config('ckp.project','demo',false);
 DO $$ BEGIN
   PERFORM ckp.seal('i-bad-1','{"type":"urn:ckp:kernel#Greeting"}'::jsonb);

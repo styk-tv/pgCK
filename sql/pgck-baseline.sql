@@ -501,6 +501,15 @@ BEGIN
   IF to_regprocedure('pgrdf.shmem_reset()') IS NOT NULL THEN
     PERFORM pgrdf.shmem_reset();
   END IF;
+
+  -- 0.4.64 — the dev/test bootstrap NAMES its service identity, per the refusal
+  -- ruling: unattributed seals refuse, and the sanctioned operator path is an
+  -- explicitly declared service identity. Session-scoped, constant (never a
+  -- fresh uuid — one suite, one accountable name), and only a default: a test
+  -- that sets its own requester overrides it, and a test that must exercise
+  -- the refusal clears it. This procedure is superuser-only; a participant
+  -- cannot reach it.
+  PERFORM set_config('ckp.requester', 'svc:bench-bootstrap', false);
 END;
 $procedure$
 ;
@@ -1216,7 +1225,14 @@ BEGIN
     END IF;   -- objects are payload structure, not spine
   END LOOP;
   IF v_ttl = '' THEN RETURN; END IF;
-  v_g := pgrdf.add_graph('urn:ckp:'||p_project||'/instances');
+  -- 0.4.64 — SAME deterministic id as project_instance_label's trigger. Two
+  -- registration paths for one IRI meant first-writer-wins: when a seal's spine
+  -- projection auto-registered <p>/instances at a low id first, the trigger's
+  -- deterministic add_graph raised, its swallow hid it, and the label search
+  -- index silently went dark (s32: governed match found 0 of 3). One IRI, one
+  -- id formula, both writers.
+  v_g := 1300000000 + (abs(hashtext(format('urn:ckp:%s/instances', p_project))) % 90000000);
+  PERFORM pgrdf.add_graph(v_g, format('urn:ckp:%s/instances', p_project));
   PERFORM pgrdf.parse_turtle(v_ttl, v_g, 'urn:ckp:spine#');
 EXCEPTION WHEN OTHERS THEN
   RAISE WARNING 'ckp._project_instance_spine: % (instance % sealed and ledgered; the RDF mirror is behind — run wave.project to rebuild)', SQLERRM, p_id;
@@ -1262,7 +1278,8 @@ DECLARE
   v_proj text := ckp._project();
   v_g bigint; v_n int := 0; r record;
 BEGIN
-  v_g := pgrdf.add_graph('urn:ckp:'||v_proj||'/instances');
+  v_g := 1300000000 + (abs(hashtext(format('urn:ckp:%s/instances', v_proj))) % 90000000);
+  PERFORM pgrdf.add_graph(v_g, format('urn:ckp:%s/instances', v_proj));
   PERFORM pgrdf.clear_graph(v_g);
   FOR r IN SELECT id, body FROM ckp.instances ORDER BY ts_created LOOP
     PERFORM ckp._project_instance_spine(r.id, r.body, v_proj);
@@ -4815,7 +4832,17 @@ BEGIN
   ELSIF p_body ? 'participant' AND v_sub IS NOT NULL AND length(trim(v_sub)) > 0 THEN
     v_participant := 'urn:ckp:participant:' || ckp.urn_normalise(v_sub);
   ELSE
-    v_participant := 'urn:ckp:participant:anon:' || gen_random_uuid()::text;
+    -- 0.4.64 — REFUSE, do not mint. This minted anon:<fresh-uuid> per call, so
+    -- every unattributed write became a permanent fact belonging to nobody and
+    -- N naked-path seals presented as N distinct participants (ck-dev's
+    -- finding-1786732252462817000; quorum was closed at 0.4.62, and THIS closes
+    -- unattributability itself). The door is unaffected: its anonymous tier is
+    -- subscribe-only and never reaches seal; a verified connection always sets
+    -- ckp.requester. Only the naked path (psql / pgRDF-side SPI) lands here,
+    -- and the naked path must NAME an identity — a declared service identity
+    -- is acceptable, an absent one is not. The 39 historical anon seals stand
+    -- as fenced history; no new one can be created.
+    RAISE EXCEPTION 'ckp.seal: unattributed write refused — no verified identity on this call. Name one explicitly: SELECT set_config(''ckp.requester'', ''<your declared identity, e.g. svc:smoke-suite>'', true) before sealing. The substrate no longer mints anon:<uuid> participants: a fact belonging to nobody is permanent, and fresh uuids let one caller impersonate many distinct parties.';
     v_display := NULL;
     v_email := NULL;
   END IF;

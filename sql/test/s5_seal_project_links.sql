@@ -1,3 +1,7 @@
+
+-- 0.4.64: unattributed seals REFUSE (the anon mint is gone). A test names
+-- its service identity explicitly — the sanctioned operator form.
+SELECT set_config('ckp.requester','svc:smoke-suite',false);
 -- CKB-5 acceptance: ckp.seal() on a Task body materialises exactly 3 link
 -- quads into the project's board graph (a + part_of_goal + target_kernel).
 -- Run with: psql -f sql/test/s5_seal_project_links.sql

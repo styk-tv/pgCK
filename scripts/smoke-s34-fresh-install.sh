@@ -108,7 +108,12 @@ echo "s34: retired board module refuses WITH A REASON ✓"
 # depending on a kernel being loaded. The old payload was {"task":{…}}, which
 # minted …/v3.7/Task and only ever passed because the #46 allowance waved it
 # through; it is now correctly refused, which is the point of deleting it.
-R="$(PART "SELECT ckp.dispatch('instance.create','{\"type\":\"https://conceptkernel.org/ontology/v3.11/core#Supersession\",\"supersedes\":\"urn:ckp:s34/probe\"}'::jsonb)->>'ok'")" \
+# 0.4.64: unattributed seals REFUSE — the mint is gone. On the door the trusted
+# ingress sets ckp.requester from the verified bearer (TR-02); this raw login
+# has no ingress, so it DECLARES its identity the sanctioned way. (At SQL level
+# the GUC is declared-not-verified by design — the cryptographic floor is the
+# door; SQL access was always full trust.)
+R="$(PART "SELECT ckp.dispatch('instance.create','{\"type\":\"https://conceptkernel.org/ontology/v3.11/core#Supersession\",\"supersedes\":\"urn:ckp:s34/probe\"}'::jsonb)->>'ok' FROM (SELECT set_config('ckp.requester','s34-participant',true)) _id")" \
   || fail "(ask 2c) dispatch as ck_participant ERRORED on a fresh cluster"
 [ "$R" = "true" ] || fail "(ask 2c) dispatch as ck_participant returned ok=$R"
 echo "s34: governed dispatch as ck_participant ok:true (v3.11 type, gated) ✓"

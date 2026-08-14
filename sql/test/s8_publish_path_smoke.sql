@@ -1,3 +1,7 @@
+
+-- 0.4.64: unattributed seals REFUSE (the anon mint is gone). A test names
+-- its service identity explicitly — the sanctioned operator form.
+SELECT set_config('ckp.requester','svc:smoke-suite',false);
 -- CKA-6 / S4 step 6 — SQL-side verification of the outbox publish path.
 --
 -- Acceptance (per _WIP/TASKS.PGCK.S4-BUNDLED-NATS.v0.1 step 6):

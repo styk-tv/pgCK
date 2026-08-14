@@ -1,3 +1,7 @@
+
+-- 0.4.64: unattributed seals REFUSE (the anon mint is gone). A test names
+-- its service identity explicitly — the sanctioned operator form.
+SELECT set_config('ckp.requester','svc:smoke-suite',false);
 -- CKB-4: ckp.seal() SHACL gate.
 -- Acceptance: bad Task (missing part_of_goal) raises during seal with the
 -- error message naming ckp:MinCountConstraintComponent and the bad-instance
