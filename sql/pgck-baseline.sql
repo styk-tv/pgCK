@@ -312,6 +312,8 @@ INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane) VALUES
   -- 0.4.51 — the checker surface. Seeded here so they are DISPATCHABLE, and
   -- sealed as ckp:Affordance through propose->vote->apply so they are DECLARED.
   -- Both halves, or this grows the #56 gap it exists to close.
+  ('pgck','wave.signals',        'input.kernel.pgck.action.wave.signals',        'instance'),
+  -- alias, one version (0.4.63) — see dispatch
   ('pgck','wave.oracle',         'input.kernel.pgck.action.wave.oracle',         'instance'),
   ('pgck','wave.project',        'input.kernel.pgck.action.wave.project',        'instance'),
   ('pgck','adoption.check',      'input.kernel.pgck.action.adoption.check',      'instance'),
@@ -1273,7 +1275,11 @@ END;
 $function$
 ;
 
--- 0.4.58 — THE ORACLE (v3.12 §5, first built piece). Signals are DERIVED from
+-- 0.4.63 — WAVE.SIGNALS (né wave.oracle, 0.4.58 — renamed before it ever
+-- shipped in a tag: "oracle" is Oracle Corp's strongest mark in exactly our
+-- product class, and the verb never prophesied anything anyway — it DERIVES
+-- signals from sealed facts, so the accurate name and the cautious name are
+-- the same name). Signals are DERIVED from
 -- sealed facts, never asserted; the pass boundary is a query, never a memory.
 --
 -- The question it answers: WHAT GOES ON THIS PASS, AND WHAT GOES ON THE NEXT?
@@ -1293,7 +1299,7 @@ $function$
 -- affordance — the F20 limit, stated by pgck-mcp: sealed instances are not in
 -- RDF yet. When stamp projection lands, each signal becomes a governed SPARQL
 -- read and this function retires into compatibility.
-CREATE OR REPLACE FUNCTION ckp.wave_oracle(p_payload jsonb)
+CREATE OR REPLACE FUNCTION ckp.wave_signals(p_payload jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
@@ -3354,8 +3360,14 @@ BEGIN
   -- As governed verbs they are callable by any identity the kernel grants,
   -- their answers are attributable, and the negative control ships WITH the
   -- gate instead of beside it.
+  WHEN 'wave.signals' THEN
+    res := ckp.wave_signals(p_payload);
+
+  -- one-version alias (0.4.63): routes, answers, and says where to go. Removed
+  -- next release — nothing tagged ever carried the old name.
   WHEN 'wave.oracle' THEN
-    res := ckp.wave_oracle(p_payload);
+    res := ckp.wave_signals(p_payload)
+        || jsonb_build_object('deprecated', 'wave.oracle is wave.signals; this alias is removed next release');
 
   WHEN 'adoption.check' THEN
     res := ckp.adoption_check(p_payload);
