@@ -38,7 +38,7 @@ services:
       - ./extensions/pgrdf/share/extension/pgrdf--0.6.22--0.6.25.sql:/usr/share/postgresql/18/extension/pgrdf--0.6.22--0.6.25.sql:ro,z
       - ./extensions/pgck/lib/pgck.so:/usr/lib/postgresql/18/lib/pgck.so:ro,z
       - ./extensions/pgck/share/extension/pgck.control:/usr/share/postgresql/18/extension/pgck.control:ro,z
-      - ./extensions/pgck/share/extension/pgck--0.4.61.sql:/usr/share/postgresql/18/extension/pgck--0.4.61.sql:ro,z
+      - ./extensions/pgck/share/extension/pgck--0.4.62.sql:/usr/share/postgresql/18/extension/pgck--0.4.62.sql:ro,z
       # The upgrade script is NOT in the builder export (pgrx emits only the
       # per-version install) — mount it from the repo so ALTER EXTENSION
       # pgck UPDATE resolves on this rig, same intent as the pgrdf line above.
@@ -65,6 +65,7 @@ services:
       - ../sql/pgck--0.4.58--0.4.59.sql:/usr/share/postgresql/18/extension/pgck--0.4.58--0.4.59.sql:ro,z
       - ../sql/pgck--0.4.59--0.4.60.sql:/usr/share/postgresql/18/extension/pgck--0.4.59--0.4.60.sql:ro,z
       - ../sql/pgck--0.4.60--0.4.61.sql:/usr/share/postgresql/18/extension/pgck--0.4.60--0.4.61.sql:ro,z
+      - ../sql/pgck--0.4.61--0.4.62.sql:/usr/share/postgresql/18/extension/pgck--0.4.61--0.4.62.sql:ro,z
       # v3.11-ONLY ONTOLOGY DELIVERY (0.4.40). This was a v3.7 fixtures corpus
       # (fixtures/ontologies) with three per-file overlays papering over it —
       # core.ttl for the SHACL gate, task.ttl/goal.ttl for the board. All three

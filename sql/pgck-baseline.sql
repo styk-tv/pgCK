@@ -1347,7 +1347,13 @@ BEGIN
         'id', i.id, 'opKind', i.body->>(W||'opKind'),
         'from', i.body->>(C||'producedBy')) ORDER BY i.ts_created), '[]'::jsonb)
       FROM ckp.instances i
-      WHERE i.body->>'type' = W||'Operation' AND i.body->>(W||'opTarget') = v_comp));
+      WHERE i.body->>'type' = W||'Operation'
+        -- 0.4.62: opTarget has no canonical spelling — components address this
+        -- kernel as its wave alias, its kernel URN, or its kernel/ck graph. Two
+        -- escalations from ck-dev sat unseen for a day because this matched the
+        -- alias alone. Same defect family as the intoProject spellings.
+        AND i.body->>(W||'opTarget') IN (v_comp,
+              'urn:ckp:'||v_proj||'/kernel', 'urn:ckp:'||v_proj||'/kernel/ck')));
 
   -- SIGNALS — health counts a third party can recompute. Never one boolean.
   v_sig := jsonb_build_object(
@@ -2259,8 +2265,17 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'error', 'proposal_not_pending', 'state', v_prop->>(C||'proposalState'));
   END IF;
   v_quorum := COALESCE((v_prop->>(C||'requiresQuorum'))::int, 1);
-  SELECT count(*) INTO v_approvals FROM ckp.instances
-    WHERE body->>'type' = C||'Vote' AND body->>(C||'about') = v_about AND body->>(C||'voteValue') = 'approve';
+  -- 0.4.62 — QUORUM IS DISTINCT ACCOUNTABLE PARTIES. This counted VOTES: one
+  -- identity voting twice was two approvals, and ckp.seal mints a FRESH
+  -- anon:<uuid> per unattributed call, so N naked-path seals presented as N
+  -- distinct parties — one psql caller could manufacture any quorum (ck-dev's
+  -- finding-1786732252462817000; measured unexploited, 3 anon votes on 3
+  -- proposals). Now: distinct createdBy, anon:* excluded — an identity nobody
+  -- can be held to cannot be a party to a decision. The three historical
+  -- anon-applied proposals stand as fenced history, not precedent.
+  SELECT count(DISTINCT body->>(C||'createdBy')) INTO v_approvals FROM ckp.instances
+    WHERE body->>'type' = C||'Vote' AND body->>(C||'about') = v_about AND body->>(C||'voteValue') = 'approve'
+      AND COALESCE(body->>(C||'createdBy'),'') NOT LIKE 'urn:ckp:participant:anon:%';
   IF v_approvals < v_quorum THEN
     RETURN jsonb_build_object('ok', false, 'error', 'quorum_not_met', 'approvals', v_approvals, 'quorum', v_quorum);
   END IF;
@@ -5314,7 +5329,20 @@ BEGIN
   END LOOP;
 
   -- project the resolved candidate body to RDF in a scratch graph.
-  v_ttl := ckp._body_to_ttl(v_resolved, v_subj, v_comp);
+  -- 0.4.62 — THE DRY-RUN CANDIDATE IS THE SEAL'S CANDIDATE, all three parts.
+  -- This serialized the body alone, so every requirement arriving by PARENT
+  -- CLOSURE was invisible: wave:Pass receives EpochShape via wave:Pass ⊑
+  -- ckp:Epoch, so epoch and surfaceDigest are demanded at seal — and this
+  -- dry-run said conforms:true to a body missing both (ck-dev's escalation
+  -- operation-1786642612862085000, reproduced here on 0.4.61 before fixing).
+  -- Same root as the 0.4.60 propmap fix, one layer over: ancestors resolved in
+  -- the property MAP but never STAMPED on the dry-run candidate. The derived
+  -- stamps join too, exactly as seal composes them, so InstanceShape's
+  -- requirements are previewed rather than falsely refused.
+  v_ttl := ckp._body_to_ttl(v_resolved, v_subj, v_comp)
+        || ckp._parent_closure_ttl(v_type, v_subj, v_comp)
+        || ckp._stamps_to_ttl(v_subj, ckp._derived_stamps(v_subj, v_type, v_proj,
+             NULLIF(trim(COALESCE(current_setting('ckp.requester', true), '')), ''), v_comp));
   v_scratch := pgrdf.add_graph('urn:ckp:validate:'||pg_backend_pid());
   PERFORM pgrdf.clear_graph(v_scratch);
   BEGIN
@@ -5571,11 +5599,13 @@ BEGIN
   );
   PERFORM ckp.seal(v_vid, v_body);
 
-  -- 5. quorum check: COUNT approve-votes about this Proposal vs requiresQuorum.
-  SELECT count(*) INTO v_approvals FROM ckp.instances
+  -- 5. quorum: DISTINCT accountable parties (0.4.62) — see ckp.apply for the
+  -- mechanism and ck-dev's finding. Votes are not approvals; parties are.
+  SELECT count(DISTINCT body->>(C||'createdBy')) INTO v_approvals FROM ckp.instances
     WHERE body->>'type' = C||'Vote'
       AND body->>(C||'about') = v_about
-      AND body->>(C||'voteValue') = 'approve';
+      AND body->>(C||'voteValue') = 'approve'
+      AND COALESCE(body->>(C||'createdBy'),'') NOT LIKE 'urn:ckp:participant:anon:%';
 
   RETURN jsonb_build_object('ok', true, 'vote', v_vid, 'proposal', v_about, 'value', v_value,
                             'approvals', v_approvals, 'quorum', v_quorum,
