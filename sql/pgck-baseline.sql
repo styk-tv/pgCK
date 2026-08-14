@@ -314,6 +314,7 @@ INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane) VALUES
   -- Both halves, or this grows the #56 gap it exists to close.
   ('pgck','wave.oracle',         'input.kernel.pgck.action.wave.oracle',         'instance'),
   ('pgck','wave.project',        'input.kernel.pgck.action.wave.project',        'instance'),
+  ('pgck','adoption.check',      'input.kernel.pgck.action.adoption.check',      'instance'),
   ('pgck','surface.typecheck',   'input.kernel.pgck.action.surface.typecheck',   'instance'),
   ('pgck','surface.unshaped',    'input.kernel.pgck.action.surface.unshaped',    'instance'),
   ('pgck','surface.declared',    'input.kernel.pgck.action.surface.declared',    'instance'),
@@ -468,6 +469,17 @@ BEGIN
     enqueued_at   TIMESTAMPTZ NOT NULL DEFAULT now()
   );
   CREATE INDEX IF NOT EXISTS ckp_outbox_seq_idx ON ckp.outbox(seq);
+  -- 0.4.61 — the adoption pin ledger (ck-dev's defect: a module composed under a
+  -- sourceDigest of sixty-four zeros; the pin was judged by AdoptionShape and
+  -- consulted by NOTHING). The substrate cannot verify a FILE-BYTE digest from
+  -- triples, so the honest split is: file verification belongs to the loader at
+  -- the file door; the substrate pins the GRAPH's canonical digest at first
+  -- composition and makes later drift DETECTABLE. Trust-on-first-sight, named.
+  CREATE TABLE IF NOT EXISTS ckp.adoption_pins (
+    graph_iri    TEXT PRIMARY KEY,
+    graph_digest TEXT NOT NULL,
+    pinned_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
   DROP TRIGGER IF EXISTS ckp_ledger_after_insert ON ckp.ledger;
   CREATE TRIGGER ckp_ledger_after_insert
     AFTER INSERT ON ckp.ledger
@@ -958,6 +970,13 @@ BEGIN
     IF v_cnt = 0 THEN
       RAISE EXCEPTION 'ckp._composed_shapes: adopted module graph % is absent or empty — a sealed Adoption names it, so composing without it would silently narrow the enforcement surface. Load the module graph or seal a Supersession.', v_iri;
     END IF;
+    -- 0.4.61: pin the graph's canonical digest at FIRST composition. Verification
+    -- happens in adoption.check / the oracle, never here — B4's rule: a report
+    -- may be wrong cheaply, a gate may not, and a false drift-positive in the
+    -- hot path would refuse every seal for the project. Detection, declared.
+    INSERT INTO ckp.adoption_pins(graph_iri, graph_digest)
+    VALUES (v_iri, ckp._surface_digest(v_mod))
+    ON CONFLICT (graph_iri) DO NOTHING;
     PERFORM pgrdf.copy_graph(v_mod, v_comp);
   END LOOP;
   -- Entailment is per-graph and pgrdf.validate does not entail, so the closure
@@ -1529,6 +1548,50 @@ BEGIN
     'resolves', v_ex->>'project', 'clause', v_ex->>'clause',
     'canonical', (v_seg ~ CANON), 'matched', COALESCE(v_ex->'hits', '[]'::jsonb),
     'note', 'the answer AND the reason come from ckp._project_explain itself, never a copy of its rules.');
+END;
+$function$
+;
+
+-- 0.4.61 — adoption.check: is any adopted module still what it was at first
+-- sight, and is the sealed pin verifiable at all? Answers ck-dev's Cluster-F
+-- defect (defect-1786649168553127000: a sourceDigest of 64 zeros composes) the
+-- honest way: per adopted module, the FILE-BYTE sourceDigest is reported as
+-- verifiable:false with the reason (triples cannot recompute file bytes — that
+-- verification belongs to whatever loads the file), and the GRAPH digest is
+-- compared against the pin taken at first composition, so a swapped or drifted
+-- module is DETECTED from adoption onward. Reports, never gates (B4).
+CREATE OR REPLACE FUNCTION ckp.adoption_check(p_payload jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  N text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_proj text := ckp._project();
+  v_iri  text;
+  v_rows jsonb := '[]'::jsonb;
+  v_pin  text; v_now text; v_drift boolean := false;
+BEGIN
+  FOREACH v_iri IN ARRAY ckp._adopted_graphs(v_proj) LOOP
+    SELECT graph_digest INTO v_pin FROM ckp.adoption_pins WHERE graph_iri = v_iri;
+    v_now := ckp._surface_digest(pgrdf.add_graph(v_iri));
+    IF v_pin IS NOT NULL AND v_pin <> v_now THEN v_drift := true; END IF;
+    v_rows := v_rows || jsonb_build_object(
+      'module', v_iri,
+      'graphDigestNow', v_now,
+      'graphDigestPinned', v_pin,
+      'drifted', (v_pin IS NOT NULL AND v_pin <> v_now),
+      'sourceDigest', (SELECT a.body->>(N||'sourceDigest') FROM ckp.instances a
+                        WHERE a.body->>'type' = N||'Adoption'
+                          AND a.body->>(N||'adopts') = v_iri
+                        ORDER BY a.ts_created DESC LIMIT 1),
+      'sourceDigestVerifiable', false,
+      'why', 'sourceDigest is a FILE-BYTE sha256; a graph cannot recompute file bytes. Verify it where the file is loaded. The substrate''s half is the graph pin: taken at first composition, drift detectable ever after.');
+  END LOOP;
+  RETURN jsonb_build_object('ok', true, 'kernel', v_proj,
+    'modules', v_rows, 'drifted', v_drift,
+    'note', 'drifted:true means an adopted module''s graph no longer matches its first-composition pin — the module was swapped or edited under an unsuperseded Adoption. A legitimate update arrives as a NEW Adoption + Supersession, which re-pins.');
 END;
 $function$
 ;
@@ -3278,6 +3341,9 @@ BEGIN
   -- gate instead of beside it.
   WHEN 'wave.oracle' THEN
     res := ckp.wave_oracle(p_payload);
+
+  WHEN 'adoption.check' THEN
+    res := ckp.adoption_check(p_payload);
 
   WHEN 'wave.project' THEN
     res := ckp.wave_project_spine(p_payload);
