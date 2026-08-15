@@ -261,6 +261,26 @@ ALTER TABLE ckp.proof ADD CONSTRAINT proof_id_not_null NOT NULL id;
 ALTER TABLE ckp.proof ADD CONSTRAINT proof_method_not_null NOT NULL method;
 ALTER TABLE ckp.proof ADD CONSTRAINT proof_verified_at_not_null NOT NULL verified_at;
 
+-- 0.4.65 — SEALED PROOF OBLIGATIONS (§5b, ruling-1786820448218277000). ckp.proof
+-- carries no uniqueness: N proofs per fact was placed so the seal's exit could
+-- grow by agreement. An obligation is a governed proof-producer — registered
+-- through propose→vote→apply (add_proof_obligation), run at seal-exit for its
+-- target type, its satisfaction appended as a ckp.proof row whose method names
+-- it. A failing obligation REFUSES the seal (that is its point); a buggy one is
+-- bounded — per-kernel scope, fixed pure-read check registry, removable by the
+-- same governed op that added it. Affordances-in open capability; obligations-
+-- out close it.
+CREATE TABLE IF NOT EXISTS ckp.proof_obligations (
+  project     text NOT NULL,
+  obligation  text NOT NULL,
+  target_type text NOT NULL,
+  check_name  text NOT NULL,
+  added_epoch integer,
+  active      boolean DEFAULT true NOT NULL,
+  ts_added    timestamp with time zone DEFAULT now() NOT NULL
+);
+ALTER TABLE ckp.proof_obligations ADD CONSTRAINT proof_obligations_pkey PRIMARY KEY (project, obligation);
+
 CREATE INDEX ckp_outbox_seq_idx ON ckp.outbox USING btree (seq);
 CREATE INDEX dictionary_v_idx ON ckp.dictionary USING btree (v);
 
@@ -481,6 +501,19 @@ BEGIN
     graph_iri    TEXT PRIMARY KEY,
     graph_digest TEXT NOT NULL,
     pinned_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  -- 0.4.65 — the obligation registry (§5b): governed proof-producers run at
+  -- seal-exit. Registered only through add_proof_obligation (propose→vote→
+  -- apply); consulted by ckp.seal via ckp._run_proof_obligations.
+  CREATE TABLE IF NOT EXISTS ckp.proof_obligations (
+    project     TEXT NOT NULL,
+    obligation  TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    check_name  TEXT NOT NULL,
+    added_epoch INTEGER,
+    active      BOOLEAN NOT NULL DEFAULT true,
+    ts_added    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (project, obligation)
   );
   DROP TRIGGER IF EXISTS ckp_ledger_after_insert ON ckp.ledger;
   CREATE TRIGGER ckp_ledger_after_insert
@@ -1393,7 +1426,16 @@ BEGIN
     'pendingProposalsFleet', (SELECT count(*) FROM ckp.instances i
                        WHERE i.body->>'type' = C||'Proposal'
                          AND i.body->>(C||'proposalState') = 'pending'
-                         AND NOT i.body ? (C||'retiredAtEpoch')));
+                         AND NOT i.body ? (C||'retiredAtEpoch')),
+    -- 0.4.65 (§5b): the agreements guarding this kernel's seal-exit. A guard
+    -- two parties agreed to must be READABLE by the third who meets it.
+    'obligations',    (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                         'obligation', o.obligation,
+                         'targetType', regexp_replace(o.target_type,'^.*[/#]',''),
+                         'check', o.check_name,
+                         'sinceEpoch', o.added_epoch) ORDER BY o.obligation), '[]'::jsonb)
+                       FROM ckp.proof_obligations o
+                       WHERE o.active AND o.project = v_proj));
 
   RETURN jsonb_build_object(
     'ok', true, 'kernel', v_proj, 'component', v_comp, 'epoch', v_epoch,
@@ -2372,6 +2414,21 @@ BEGIN
       v_applied := v_applied || jsonb_build_object('query_affordance', v_prop->'proposalDetail'->>'verb');
     EXCEPTION WHEN OTHERS THEN
       RETURN jsonb_build_object('ok', false, 'error', 'affordance_register_failed', 'detail', SQLERRM);
+    END;
+  END IF;
+
+  -- 4d. PROOF OBLIGATION (0.4.65, §5b) — the seal-exit dual of 4c: where
+  --     add_affordance opens a dispatch entry, add_proof_obligation closes the
+  --     seal's exit with a check every future seal of the target type must
+  --     satisfy. The registry row is the projected change (P0-E honoured);
+  --     removal travels the same governed road with detail.active=false.
+  IF v_op = 'add_proof_obligation' THEN
+    BEGIN
+      PERFORM ckp.register_proof_obligation(v_prop, v_proj, v_epoch);
+      v_applied := v_applied || jsonb_build_object('proof_obligation', v_prop->'proposalDetail'->>'obligation',
+                                                   'obligation_active', COALESCE(v_prop->'proposalDetail'->>'active','true'));
+    EXCEPTION WHEN OTHERS THEN
+      RETURN jsonb_build_object('ok', false, 'error', 'obligation_register_failed', 'detail', SQLERRM);
     END;
   END IF;
 
@@ -4026,8 +4083,10 @@ DECLARE
   -- modify_shape_constraint / set_quorum / set_materialize_policy have none yet
   -- (they would seal and do nothing) — refused until a projector exists,
   -- default-deny per I2. Widening this set requires implementing the projector,
-  -- not editing the list.
-  v_ops    text[] := ARRAY['add_class','add_property','set_transition_map','add_affordance'];
+  -- not editing the list. 0.4.65 adds add_proof_obligation (§5b): its projector
+  -- is ckp.register_proof_obligation at apply — the obligation registry is the
+  -- change it projects, the seal-exit dual of add_affordance's dispatch entry.
+  v_ops    text[] := ARRAY['add_class','add_property','set_transition_map','add_affordance','add_proof_obligation'];
   v_op     text := p_payload->>'op';
   -- ckp.dispatch calls this with v_proj -- the bare project SEGMENT ('pgck'),
   -- not a URN, despite the parameter name. Defaulting `about` to it produced a
@@ -4054,6 +4113,22 @@ BEGIN
     IF NOT (v_detail ? 'verb') OR NOT (v_detail ? 'query') THEN
       RETURN jsonb_build_object('ok', false, 'error', 'detail_projects_nothing', 'op', v_op,
         'hint', 'add_affordance needs detail.verb and detail.query; without them apply bumps the epoch and registers nothing (P0-E)',
+        'got', v_detail);
+    END IF;
+  END IF;
+  -- add_proof_obligation, same P0-E half: an activation must name the obligation,
+  -- its target type AND a check from the fixed registry; a deactivation
+  -- ({active:false}) needs only the obligation name. The strict parse (IRI
+  -- shape, check-in-registry) lives in ckp.register_proof_obligation — refused
+  -- again at apply if it fails there; this gate refuses the detail that could
+  -- not project anything at all.
+  IF v_op = 'add_proof_obligation' THEN
+    v_detail := COALESCE(p_payload->'detail', p_payload->'proposalDetail', '{}'::jsonb);
+    IF NOT (v_detail ? 'obligation')
+       OR (COALESCE(v_detail->>'active','true') <> 'false'
+           AND (NOT (v_detail ? 'targetType') OR NOT (v_detail ? 'check'))) THEN
+      RETURN jsonb_build_object('ok', false, 'error', 'detail_projects_nothing', 'op', v_op,
+        'hint', 'add_proof_obligation needs detail.obligation + detail.targetType + detail.check (or detail.obligation + active:false to deactivate); without them apply bumps the epoch and registers nothing (P0-E)',
         'got', v_detail);
     END IF;
   END IF;
@@ -4487,6 +4562,147 @@ END;
 $function$
 ;
 
+-- 0.4.65 — SEALED PROOF OBLIGATIONS (§5b, ruling-1786820448218277000).
+--
+-- The design fact this builds on: ckp.proof carries NO uniqueness — N proofs
+-- per fact was placed so the seal's exit could grow by agreement. An obligation
+-- is a governed proof-producer: registered through propose→vote→apply, run by
+-- ckp.seal after the shape gate for every candidate of its target type, its
+-- satisfaction appended as a ckp.proof row whose method names it. A failing
+-- obligation REFUSES the seal — that is its point. A buggy one is bounded:
+-- per-kernel scope (the registry row names the project), a FIXED registry of
+-- pure-read checks that call the substrate's own internals (an obligation may
+-- never carry code — it may only NAME a check the substrate implements, the
+-- exact discipline P0-E applies to ops), and removal by the same governed op
+-- that added it. External effects stay out until the validity≠safety gate is
+-- specified: anything touching outside state belongs to the TOOL tier.
+
+CREATE OR REPLACE FUNCTION ckp.register_proof_obligation(p_prop jsonb, p_project text, p_epoch integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_detail  jsonb := COALESCE(p_prop->'proposalDetail', '{}'::jsonb);
+  v_ob      text  := v_detail->>'obligation';
+  v_type    text  := v_detail->>'targetType';
+  v_chk     text  := v_detail->>'check';
+  v_active  boolean;
+  v_name_re text  := '^[a-z][a-z0-9-]*$';
+  v_iri_re  text  := '^[A-Za-z][A-Za-z0-9+.:#/_-]*$';
+  -- THE FIXED CHECK REGISTRY. Widening it means implementing a pure-read check
+  -- in ckp._run_proof_obligations' CASE, never editing this list alone — the
+  -- P0-E sibling: a check that cannot run is refused at registration.
+  v_checks  text[] := ARRAY['digest-match'];
+BEGIN
+  IF v_ob IS NULL OR v_ob !~ v_name_re THEN
+    RAISE EXCEPTION 'add_proof_obligation: obligation must be a lowercase dashed name, got %', v_ob; END IF;
+  BEGIN
+    v_active := COALESCE((v_detail->>'active')::boolean, true);
+  EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION 'add_proof_obligation: active must be a boolean, got %', v_detail->>'active'; END;
+  IF NOT v_active THEN
+    -- deactivation: the same governed road out that led in. The row stays —
+    -- WHICH obligation guarded WHICH epochs remains answerable.
+    UPDATE ckp.proof_obligations SET active = false
+      WHERE project = p_project AND obligation = v_ob;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'add_proof_obligation: no obligation named % on this kernel to deactivate', v_ob; END IF;
+    RETURN v_ob;
+  END IF;
+  IF v_type IS NULL OR v_type !~ v_iri_re THEN
+    RAISE EXCEPTION 'add_proof_obligation: targetType must be a type IRI, got %', v_type; END IF;
+  IF v_chk IS NULL OR NOT (v_chk = ANY(v_checks)) THEN
+    RAISE EXCEPTION 'add_proof_obligation: check % is not in the fixed registry % — an obligation names a check the substrate implements; widening the registry means implementing one, not naming one', v_chk, v_checks; END IF;
+  INSERT INTO ckp.proof_obligations(project, obligation, target_type, check_name, added_epoch, active)
+  VALUES (p_project, v_ob, v_type, v_chk, p_epoch, true)
+  ON CONFLICT (project, obligation) DO UPDATE
+    SET target_type = EXCLUDED.target_type, check_name = EXCLUDED.check_name,
+        added_epoch = EXCLUDED.added_epoch, active = true;
+  RETURN v_ob;
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp._oblig_digest_match(p_instance_id text, p_body jsonb, p_project text)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+-- THE DEBUT CHECK (§5b): "the surfaceDigest this candidate cites was sealed by
+-- an Epoch." Pure read. Returns NULL on satisfaction, the refusal text
+-- otherwise. Closes the fabricated-digest hole ck-lib-js measured
+-- (finding-1786716799509380000): a wave:Pass citing an invented sixty-four-hex
+-- digest sealed verified:true, because the shape gate judges FORM and nothing
+-- judged REFERENCE. This check judges reference — against the sealed Epoch
+-- instances themselves, never a parallel record.
+--
+-- Jurisdiction discipline: an ABSENT surfaceDigest is minCount's business (the
+-- shape gate refuses it); this check rules only on a PRESENT citation. When the
+-- candidate also cites an epoch number, the pair must sit on one sealed Epoch —
+-- citing epoch 13 with epoch 12's digest is exactly the dishonesty this exists
+-- to refuse.
+DECLARE
+  C        text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_digest text := p_body->>(C||'surfaceDigest');
+  v_epoch  text := p_body->>(C||'epoch');
+BEGIN
+  IF v_digest IS NULL THEN
+    RETURN NULL;
+  END IF;
+  IF EXISTS (SELECT 1 FROM ckp.instances i
+             WHERE i.body->>'type' = C||'Epoch'
+               AND i.body->>(C||'surfaceDigest') = v_digest
+               AND (v_epoch IS NULL OR i.body->>(C||'epoch') = v_epoch)) THEN
+    RETURN NULL;
+  END IF;
+  RETURN format('digest-match: the candidate cites surfaceDigest %s…%s but no sealed ckp:Epoch carries that surface — a citation must name a digest an Epoch sealed, exactly as sealed (ck_epochs lists them)',
+                left(v_digest, 12),
+                CASE WHEN v_epoch IS NOT NULL THEN ' at epoch '||v_epoch ELSE '' END);
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp._run_proof_obligations(p_instance_id text, p_type text, p_body jsonb, p_project text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+-- Runs every ACTIVE obligation this kernel registered for the candidate's
+-- declared type. Returns {satisfied: [names]} or {refused: <obligation>,
+-- reason: <text>} — ckp.seal raises on refusal and appends one proof row per
+-- satisfied name. Exact-type match: an obligation on wave:Pass does not reach
+-- ckp:Epoch seals (the apply cascade), and ancestor-aware matching waits for
+-- an agreement that wants it. An obligation naming a check this substrate does
+-- not implement fails CLOSED — registration refuses it (register_proof_
+-- obligation), and if one arrives anyway (downgrade skew), the seal refuses
+-- rather than silently skipping a guard two parties agreed to.
+DECLARE
+  r      record;
+  v_fail text;
+  v_sat  jsonb := '[]'::jsonb;
+BEGIN
+  FOR r IN SELECT obligation, check_name FROM ckp.proof_obligations
+           WHERE active AND project = p_project AND target_type = p_type
+           ORDER BY obligation
+  LOOP
+    CASE r.check_name
+      WHEN 'digest-match' THEN v_fail := ckp._oblig_digest_match(p_instance_id, p_body, p_project);
+      ELSE v_fail := format('check %s is not implemented by this substrate — failing closed rather than skipping an agreed guard', r.check_name);
+    END CASE;
+    IF v_fail IS NOT NULL THEN
+      RETURN jsonb_build_object('refused', r.obligation, 'reason', v_fail);
+    END IF;
+    v_sat := v_sat || to_jsonb(r.obligation);
+  END LOOP;
+  RETURN jsonb_build_object('satisfied', v_sat);
+END;
+$function$
+;
+
 CREATE OR REPLACE FUNCTION ckp.registry_lookup(p_kernel text, p_verb text)
  RETURNS jsonb
  LANGUAGE sql
@@ -4798,6 +5014,8 @@ DECLARE
   v_participant TEXT;
   N        TEXT := 'https://conceptkernel.org/ontology/v3.11/core#';
   v_stamps JSONB := '{}'::jsonb;
+  v_oblig  JSONB := '{}'::jsonb;
+  v_ob     TEXT;
 BEGIN
   IF v_type IS NULL THEN
     RAISE EXCEPTION 'ckp.seal: body has no "type"';
@@ -4914,6 +5132,19 @@ BEGIN
     END IF;
   END;
 
+  -- 1b. PROOF OBLIGATIONS (0.4.65, §5b) — the seal's exit, extensible by
+  -- agreement. The shape gate above judges FORM; obligations judge whatever the
+  -- registered check judges (the debut, digest-match, judges REFERENCE: a cited
+  -- surfaceDigest must be one an Epoch sealed). Every ACTIVE obligation this
+  -- kernel registered for this exact type runs; one refusal refuses the seal.
+  -- Satisfactions become proof rows at step 4b — the agreement leaves a mark on
+  -- every fact it guarded, so "which checks did this seal pass" is a read.
+  v_oblig := ckp._run_proof_obligations(p_instance_id, v_type, p_body, v_project);
+  IF v_oblig ? 'refused' THEN
+    RAISE EXCEPTION 'ckp.seal: proof obligation % refused this candidate — %',
+      v_oblig->>'refused', v_oblig->>'reason';
+  END IF;
+
   -- 2. MATERIALIZE durable instance.
   --
   -- #59: the stamps join the body BEFORE the digest. Merged last so they win
@@ -4961,6 +5192,27 @@ BEGIN
     RAISE EXCEPTION 'ckp.seal: proof fails ckp:ProofShape (core governance)';
   END IF;
   INSERT INTO ckp.proof(about, method, digest) VALUES (p_instance_id,'hmac+sha256',v_sha);
+
+  -- 4b. APPEND one proof per SATISFIED obligation (0.4.65, §5b) — same digest,
+  -- method naming the agreement ('obligation:<name>'). ckp.proof's absent
+  -- uniqueness is the placed joint this stands on: the hmac row proves the
+  -- bytes, each obligation row proves one agreed check held when they sealed.
+  -- Validated against ckp:ProofShape like the hmac row — the protocol's own
+  -- ops pass their own gate or nothing does.
+  FOR v_ob IN SELECT jsonb_array_elements_text(COALESCE(v_oblig->'satisfied','[]'::jsonb))
+  LOOP
+    v_prf_ttl := format($t$
+      @prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
+      @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+      <urn:ckp:prf:%s:%s> a ckp:Proof ;
+        ckp:about <%s> ; ckp:method "obligation:%s" ; ckp:digest "%s" ;
+        ckp:verifiedAt "%s"^^xsd:dateTime .$t$,
+      p_instance_id, v_ob, p_instance_id, v_ob, v_sha, to_char(v_now,'YYYY-MM-DD"T"HH24:MI:SS"Z"'));
+    IF NOT ckp.validate(v_prf_ttl, v_core) THEN
+      RAISE EXCEPTION 'ckp.seal: obligation proof % fails ckp:ProofShape (core governance)', v_ob;
+    END IF;
+    INSERT INTO ckp.proof(about, method, digest) VALUES (p_instance_id, 'obligation:'||v_ob, v_sha);
+  END LOOP;
 
   -- 5. PROJECT link triples for Task/Goal instances into the project board graph (CKB-5).
   PERFORM ckp.project_links(v_project, p_instance_id, p_body);
