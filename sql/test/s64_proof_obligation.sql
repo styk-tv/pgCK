@@ -107,6 +107,15 @@ BEGIN
   PERFORM 1 FROM ckp.proof WHERE about = 's64-report-honest'
     AND method = 'obligation:cite-real-surface' AND digest = v_sha;
   IF NOT FOUND THEN RAISE EXCEPTION 's64 FAIL (3): obligation proof row missing or digest-divergent'; END IF;
+  -- 0.4.66 — THE READERS, negative-controlled by the mechanism's own debut:
+  -- the first obligation-guarded fact on the bench verified FALSE seconds after
+  -- sealing cleanly, because verify() took the LAST proof row and demanded it
+  -- be hmac. Plural proofs are the feature; readers select the byte-proof by
+  -- METHOD and expose the rest.
+  IF NOT ckp.verify('s64-report-honest') THEN
+    RAISE EXCEPTION 's64 FAIL (3): ckp.verify false on an obligation-guarded fact — a reader still assumes one proof per fact'; END IF;
+  IF jsonb_array_length(ckp.dispatch('provenance', jsonb_build_object('id','s64-report-honest'))->'proofs') <> 2 THEN
+    RAISE EXCEPTION 's64 FAIL (3): the door does not expose both proof rows — the obligation mark exists only for parties with table access'; END IF;
 END $$;
 
 -- (4) THE PAIR: a real digest under the WRONG epoch number is exactly the

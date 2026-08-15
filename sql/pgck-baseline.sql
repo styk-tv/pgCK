@@ -3481,9 +3481,15 @@ BEGIN
     -- tables use, so provenance(@id) is no longer a hollow envelope (matches reach/link/get).
     DECLARE tid text := ckp._resolve_id(p_payload->>'id');
     BEGIN
+      -- 0.4.66: proofs are PLURAL since obligations (0.4.65). `proof` stays the
+      -- byte-proof (the hmac row — what `verified` checks) so existing readers
+      -- keep their meaning; `proofs` carries EVERY row, obligations included —
+      -- "which agreed checks did this seal pass" must be readable at the door,
+      -- or the obligation mark exists only for parties with table access.
       res := jsonb_build_object('ok', true, 'id', tid, 'verified', ckp.verify(tid),
         'body', (SELECT body FROM ckp.instances WHERE id=tid),
-        'proof', (SELECT jsonb_build_object('digest',digest,'method',method,'verified_at',verified_at) FROM ckp.proof WHERE about=tid ORDER BY id DESC LIMIT 1),
+        'proof', (SELECT jsonb_build_object('digest',digest,'method',method,'verified_at',verified_at) FROM ckp.proof WHERE about=tid AND method='hmac+sha256' ORDER BY id DESC LIMIT 1),
+        'proofs', COALESCE((SELECT jsonb_agg(jsonb_build_object('digest',digest,'method',method,'verified_at',verified_at) ORDER BY id) FROM ckp.proof WHERE about=tid),'[]'::jsonb),
         'ledger', COALESCE((SELECT jsonb_agg(jsonb_build_object('seq',seq,'prev_seq',prev_seq,'body_sha256',body_sha256,'ts',ts) ORDER BY seq) FROM ckp.ledger WHERE instance_id=tid),'[]'::jsonb));
     END;
 
@@ -5801,10 +5807,19 @@ BEGIN
   ORDER BY seq DESC
   LIMIT 1;
 
+  -- 0.4.66 — VERIFY THE BYTE-PROOF, BY NAME. This took the LAST proof row and
+  -- demanded it be hmac+sha256 — true exactly as long as ckp.proof held one row
+  -- per fact. 0.4.65's obligations made proofs PLURAL (that was the point), the
+  -- obligation row lands after the hmac row, and the first obligation-guarded
+  -- fact on the bench (pass-1786830306955914000) verified FALSE seconds after
+  -- sealing cleanly. The writer moved and this reader did not — caught by the
+  -- mechanism's own debut, the day it shipped. The byte-proof is selected by
+  -- METHOD now; obligation rows are attestations of agreed checks, never
+  -- substitutes for the bytes.
   SELECT method, digest
   INTO v_proof_method, v_proof_digest
   FROM ckp.proof
-  WHERE about = p_instance_id
+  WHERE about = p_instance_id AND method = 'hmac+sha256'
   ORDER BY id DESC
   LIMIT 1;
 
