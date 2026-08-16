@@ -261,6 +261,26 @@ ALTER TABLE ckp.proof ADD CONSTRAINT proof_id_not_null NOT NULL id;
 ALTER TABLE ckp.proof ADD CONSTRAINT proof_method_not_null NOT NULL method;
 ALTER TABLE ckp.proof ADD CONSTRAINT proof_verified_at_not_null NOT NULL verified_at;
 
+-- 0.4.65 — SEALED PROOF OBLIGATIONS (§5b, ruling-1786820448218277000). ckp.proof
+-- carries no uniqueness: N proofs per fact was placed so the seal's exit could
+-- grow by agreement. An obligation is a governed proof-producer — registered
+-- through propose→vote→apply (add_proof_obligation), run at seal-exit for its
+-- target type, its satisfaction appended as a ckp.proof row whose method names
+-- it. A failing obligation REFUSES the seal (that is its point); a buggy one is
+-- bounded — per-kernel scope, fixed pure-read check registry, removable by the
+-- same governed op that added it. Affordances-in open capability; obligations-
+-- out close it.
+CREATE TABLE IF NOT EXISTS ckp.proof_obligations (
+  project     text NOT NULL,
+  obligation  text NOT NULL,
+  target_type text NOT NULL,
+  check_name  text NOT NULL,
+  added_epoch integer,
+  active      boolean DEFAULT true NOT NULL,
+  ts_added    timestamp with time zone DEFAULT now() NOT NULL
+);
+ALTER TABLE ckp.proof_obligations ADD CONSTRAINT proof_obligations_pkey PRIMARY KEY (project, obligation);
+
 CREATE INDEX ckp_outbox_seq_idx ON ckp.outbox USING btree (seq);
 CREATE INDEX dictionary_v_idx ON ckp.dictionary USING btree (v);
 
@@ -312,9 +332,15 @@ INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane) VALUES
   -- 0.4.51 — the checker surface. Seeded here so they are DISPATCHABLE, and
   -- sealed as ckp:Affordance through propose->vote->apply so they are DECLARED.
   -- Both halves, or this grows the #56 gap it exists to close.
+  ('pgck','wave.signals',        'input.kernel.pgck.action.wave.signals',        'instance'),
+  -- alias, one version (0.4.63) — see dispatch
+  ('pgck','wave.oracle',         'input.kernel.pgck.action.wave.oracle',         'instance'),
+  ('pgck','wave.project',        'input.kernel.pgck.action.wave.project',        'instance'),
+  ('pgck','adoption.check',      'input.kernel.pgck.action.adoption.check',      'instance'),
   ('pgck','surface.typecheck',   'input.kernel.pgck.action.surface.typecheck',   'instance'),
   ('pgck','surface.unshaped',    'input.kernel.pgck.action.surface.unshaped',    'instance'),
   ('pgck','surface.declared',    'input.kernel.pgck.action.surface.declared',    'instance'),
+  ('pgck','surface.grounding',   'input.kernel.pgck.action.surface.grounding',   'instance'),
   ('pgck','project.resolve',     'input.kernel.pgck.action.project.resolve',     'instance'),
   ('pgck','instance.create',      'input.kernel.pgck.action.instance.create',      'instance'),
   ('pgck','instance.update',      'input.kernel.pgck.action.instance.update',      'instance'),
@@ -466,6 +492,38 @@ BEGIN
     enqueued_at   TIMESTAMPTZ NOT NULL DEFAULT now()
   );
   CREATE INDEX IF NOT EXISTS ckp_outbox_seq_idx ON ckp.outbox(seq);
+  -- 0.4.61 — the adoption pin ledger (ck-dev's defect: a module composed under a
+  -- sourceDigest of sixty-four zeros; the pin was judged by AdoptionShape and
+  -- consulted by NOTHING). The substrate cannot verify a FILE-BYTE digest from
+  -- triples, so the honest split is: file verification belongs to the loader at
+  -- the file door; the substrate pins the GRAPH's canonical digest at first
+  -- composition and makes later drift DETECTABLE. Trust-on-first-sight, named.
+  CREATE TABLE IF NOT EXISTS ckp.adoption_pins (
+    graph_iri    TEXT PRIMARY KEY,
+    graph_digest TEXT NOT NULL,
+    pinned_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  -- 0.4.67: the structural plane joins the pin (reload-surviving digest +
+  -- blank-node-immune counts). ADD COLUMN keeps pre-0.4.67 pins valid: their
+  -- structural fields backfill at the next composition's re-pin or stay NULL,
+  -- honestly reported as "pinned before the structural plane existed".
+  ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS structural_digest TEXT;
+  ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS nodeshapes INTEGER;
+  ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS properties INTEGER;
+  ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS asserted INTEGER;
+  -- 0.4.65 — the obligation registry (§5b): governed proof-producers run at
+  -- seal-exit. Registered only through add_proof_obligation (propose→vote→
+  -- apply); consulted by ckp.seal via ckp._run_proof_obligations.
+  CREATE TABLE IF NOT EXISTS ckp.proof_obligations (
+    project     TEXT NOT NULL,
+    obligation  TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    check_name  TEXT NOT NULL,
+    added_epoch INTEGER,
+    active      BOOLEAN NOT NULL DEFAULT true,
+    ts_added    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (project, obligation)
+  );
   DROP TRIGGER IF EXISTS ckp_ledger_after_insert ON ckp.ledger;
   CREATE TRIGGER ckp_ledger_after_insert
     AFTER INSERT ON ckp.ledger
@@ -485,6 +543,15 @@ BEGIN
   IF to_regprocedure('pgrdf.shmem_reset()') IS NOT NULL THEN
     PERFORM pgrdf.shmem_reset();
   END IF;
+
+  -- 0.4.64 — the dev/test bootstrap NAMES its service identity, per the refusal
+  -- ruling: unattributed seals refuse, and the sanctioned operator path is an
+  -- explicitly declared service identity. Session-scoped, constant (never a
+  -- fresh uuid — one suite, one accountable name), and only a default: a test
+  -- that sets its own requester overrides it, and a test that must exercise
+  -- the refusal clears it. This procedure is superuser-only; a participant
+  -- cannot reach it.
+  PERFORM set_config('ckp.requester', 'svc:bench-bootstrap', false);
 END;
 $procedure$
 ;
@@ -911,9 +978,15 @@ BEGIN
     FROM ckp.instances a
     WHERE a.body->>'type' = N||'Adoption'
       AND a.body->>(N||'adopts') IS NOT NULL
+      -- 0.4.60: pgRDF found the FOURTH spelling in their own sealed doctrine —
+      -- urn:ckp:project/<p>, slash not colon (their kernel graph's inProject
+      -- carries it). Anyone copying their sealed doctrine into an Adoption got
+      -- a valid, load-bearing-for-nothing record. All four forms match now;
+      -- the real cure (one canonical spelling at seal) is a shape question.
       AND a.body->>(N||'intoProject') IN ('urn:ckp:'||p_project,
                                           'urn:ckp:'||p_project||'/kernel/ck',
-                                          'urn:ckp:project:'||p_project)
+                                          'urn:ckp:project:'||p_project,
+                                          'urn:ckp:project/'||p_project)
       AND NOT EXISTS (
         SELECT 1 FROM ckp.instances s
         WHERE s.body->>'type' = N||'Supersession'
@@ -950,6 +1023,52 @@ BEGIN
     IF v_cnt = 0 THEN
       RAISE EXCEPTION 'ckp._composed_shapes: adopted module graph % is absent or empty — a sealed Adoption names it, so composing without it would silently narrow the enforcement surface. Load the module graph or seal a Supersession.', v_iri;
     END IF;
+    -- 0.4.61: pin the graph's canonical digest at FIRST composition. Verification
+    -- happens in adoption.check / the oracle, never here — B4's rule: a report
+    -- may be wrong cheaply, a gate may not, and a false drift-positive in the
+    -- hot path would refuse every seal for the project. Detection, declared.
+    -- 0.4.67: the pin carries BOTH planes plus the structural counts. The copy
+    -- digest detects in-store drift; the structural digest is what a party on
+    -- ANOTHER store verifies against (three loads of one module share it); the
+    -- counts (NodeShapes/properties/asserted) are the blank-node-immune third
+    -- instrument — the 27+11+4=42 arithmetic, per module.
+    -- 0.4.68: pin counts are ASSERTED-ONLY, distinct, and use the two named
+    -- methods (F3): nodeshapes = asserted sh:NodeShape typing (11 wave, 4
+    -- lexicon); properties = declared vocabulary properties (33, 17) — the
+    -- fleet's 27+11+4 / 80+33+17 arithmetic, per module. The first cut read
+    -- sh:path rows through SPARQL, which counts the inferred closure too.
+    --
+    -- 0.4.69 — DIGESTS AT THE DOOR, NEVER IN THE LOOP. This runs on EVERY seal
+    -- (ckp.seal composes the surface it judges against), and ON CONFLICT DO
+    -- NOTHING evaluates the VALUES first — so 0.4.67 silently computed both
+    -- digests and two counts of every adopted module per seal and threw them
+    -- away. The fleet's boundary rule ("if anyone proposes a fingerprint
+    -- inside a hot step, that's the smell — admission happens once") caught
+    -- its second defect in two days, this one in pgck's own day-old code. The
+    -- pin is trust-on-FIRST-sight by definition: compute only when absent.
+    IF EXISTS (SELECT 1 FROM ckp.adoption_pins ap WHERE ap.graph_iri = v_iri) THEN
+      PERFORM pgrdf.copy_graph(v_mod, v_comp);
+      CONTINUE;
+    END IF;
+    INSERT INTO ckp.adoption_pins(graph_iri, graph_digest, structural_digest, nodeshapes, properties, asserted)
+    VALUES (v_iri, ckp._surface_digest(v_mod), ckp._structural_digest(v_mod),
+      (SELECT count(DISTINCT q4.subject_id) FROM pgrdf._pgrdf_quads q4
+         JOIN pgrdf._pgrdf_dictionary p4 ON p4.id = q4.predicate_id
+         JOIN pgrdf._pgrdf_dictionary o4 ON o4.id = q4.object_id
+        WHERE q4.graph_id = v_mod AND NOT q4.is_inferred
+          AND p4.lexical_value = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+          AND o4.lexical_value = 'http://www.w3.org/ns/shacl#NodeShape'),
+      (SELECT count(DISTINCT q6.subject_id) FROM pgrdf._pgrdf_quads q6
+         JOIN pgrdf._pgrdf_dictionary p6 ON p6.id = q6.predicate_id
+         JOIN pgrdf._pgrdf_dictionary o6 ON o6.id = q6.object_id
+        WHERE q6.graph_id = v_mod AND NOT q6.is_inferred
+          AND p6.lexical_value = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+          AND o6.lexical_value IN ('http://www.w3.org/2002/07/owl#DatatypeProperty',
+                                   'http://www.w3.org/2002/07/owl#ObjectProperty',
+                                   'http://www.w3.org/2002/07/owl#AnnotationProperty',
+                                   'http://www.w3.org/1999/02/22-rdf-syntax-ns#Property')),
+      (SELECT count(*) FROM pgrdf._pgrdf_quads q WHERE q.graph_id = v_mod AND NOT q.is_inferred))
+    ON CONFLICT (graph_iri) DO NOTHING;
     PERFORM pgrdf.copy_graph(v_mod, v_comp);
   END LOOP;
   -- Entailment is per-graph and pgrdf.validate does not entail, so the closure
@@ -1095,10 +1214,23 @@ DECLARE
   v_map jsonb := '{}'::jsonb;
   v_g   text;
   v_gs  text[];
+  -- 0.4.60 — ANCESTORS INCLUDED. The gate validates the candidate against
+  -- shapes targeting the type AND its ancestors (the parent-closure stamp is
+  -- exactly what makes ParticipantShape reach a wave#Component), but this map
+  -- read only shapes targeting the type itself. So core#participantKind was
+  -- REQUIRED by the gate and ABSENT from surface.declared — measured
+  -- independently by pgrdf-mcp ("the declared map and the gate disagree about
+  -- the contract", three refusals to learn it) and by pgRDF. The composed
+  -- graph is materialized, so subClassOf closure is present as direct triples;
+  -- both branches are self-contained (branch-local — the #114-safe form).
   v_q   text := $q$
-    PREFIX sh: <http://www.w3.org/ns/shacl#>
+    PREFIX sh:   <http://www.w3.org/ns/shacl#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
     SELECT ?path WHERE { GRAPH <%1$s> {
-      ?s sh:targetClass <%2$s> ; sh:property ?p . ?p sh:path ?path } }
+      { ?s sh:targetClass <%2$s> ; sh:property ?p . ?p sh:path ?path }
+      UNION
+      { <%2$s> rdfs:subClassOf ?anc . ?s sh:targetClass ?anc ; sh:property ?p . ?p sh:path ?path }
+    } }
   $q$;
 BEGIN
   IF p_type IS NULL OR btrim(p_type) = '' THEN
@@ -1118,6 +1250,258 @@ BEGIN
     ) p;
   END LOOP;
   RETURN v_map;
+  -- (ancestors included since 0.4.60 — see v_q above)
+END;
+$function$
+;
+
+-- 0.4.59 — STAMP PROJECTION: the sealed spine becomes SPARQL-visible.
+--
+-- pgRDF's v0.6.30 spec §4.4 states the contract this implements: seals land
+-- through the door → stamps projected into instances graphs → the fence census
+-- (judged-or-fenced, the MINUS-pair pgRDF proved) runs CONTINUOUSLY over RDF.
+-- Until now sealed instances were relational-only (pgck-mcp's CL-A3, filed as
+-- F20: "sealed instances are not in RDF, so this question is not expressible as
+-- an affordance today"), which forced every oracle signal into a pgck-only
+-- built-in — the exact SQL escape hatch pgRDF's §4.6 wants gone, because a
+-- built-in cannot be adopted by another kernel while a SPARQL affordance can.
+--
+-- What is projected: the instance's @id as subject, rdf:type, and every
+-- top-level IRI-keyed property of the SEALED body — which includes the four
+-- stamps, since seal merges them before storage. Additive, never clearing: RDF
+-- set semantics dedupe re-seals. A projection failure WARNs loudly and never
+-- aborts the seal — a refusal is the gate's job; killing the write over a
+-- mirror is the transport-death class PASS-29 closed. Drift between store and
+-- mirror is repaired (and thereby detected) by the wave.project rebuild verb.
+CREATE OR REPLACE FUNCTION ckp._project_instance_spine(p_id text, p_body jsonb, p_project text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_g    bigint;
+  v_subj text;
+  v_ttl  text := '';
+  v_key  text;
+  v_val  jsonb;
+  v_el   jsonb;
+  v_type text := p_body->>'type';
+BEGIN
+  v_subj := COALESCE(NULLIF(p_body->>'@id',''), '');
+  IF v_subj !~ '^[A-Za-z][A-Za-z0-9+.-]*:' THEN
+    v_subj := 'urn:ckp:'||p_project||'/inst/'||ckp._slug(p_id);
+  END IF;
+  IF v_type IS NOT NULL AND position(':' in v_type) > 0 THEN
+    v_ttl := v_ttl || format('<%s> a <%s> .%s', v_subj, v_type, chr(10));
+  END IF;
+  FOR v_key, v_val IN SELECT key, value FROM jsonb_each(p_body) LOOP
+    CONTINUE WHEN v_key !~ '^(https?://|urn:)';
+    IF jsonb_typeof(v_val) = 'array' THEN
+      FOR v_el IN SELECT * FROM jsonb_array_elements(v_val) LOOP
+        v_ttl := v_ttl || ckp._spine_triple(v_subj, v_key, v_el);
+      END LOOP;
+    ELSIF jsonb_typeof(v_val) IN ('string','number','boolean') THEN
+      v_ttl := v_ttl || ckp._spine_triple(v_subj, v_key, v_val);
+    END IF;   -- objects are payload structure, not spine
+  END LOOP;
+  IF v_ttl = '' THEN RETURN; END IF;
+  -- 0.4.64 — SAME deterministic id as project_instance_label's trigger. Two
+  -- registration paths for one IRI meant first-writer-wins: when a seal's spine
+  -- projection auto-registered <p>/instances at a low id first, the trigger's
+  -- deterministic add_graph raised, its swallow hid it, and the label search
+  -- index silently went dark (s32: governed match found 0 of 3). One IRI, one
+  -- id formula, both writers.
+  v_g := 1300000000 + (abs(hashtext(format('urn:ckp:%s/instances', p_project))) % 90000000);
+  PERFORM pgrdf.add_graph(v_g, format('urn:ckp:%s/instances', p_project));
+  PERFORM pgrdf.parse_turtle(v_ttl, v_g, 'urn:ckp:spine#');
+EXCEPTION WHEN OTHERS THEN
+  RAISE WARNING 'ckp._project_instance_spine: % (instance % sealed and ledgered; the RDF mirror is behind — run wave.project to rebuild)', SQLERRM, p_id;
+END;
+$function$
+;
+
+-- One triple, one place: IRI-looking string values become IRI objects, all else
+-- a quoted literal with backslash/quote/newline escaped. Numbers and booleans
+-- stay plain literals — the census needs existence, not xsd fidelity.
+CREATE OR REPLACE FUNCTION ckp._spine_triple(p_subj text, p_pred text, p_val jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE v_s text;
+BEGIN
+  IF jsonb_typeof(p_val) = 'string' THEN
+    v_s := p_val #>> '{}';
+    IF v_s ~ '^(https?://|urn:|ckp://)[^[:space:]"<>{}|\\^`]+$' THEN
+      RETURN format('<%s> <%s> <%s> .%s', p_subj, p_pred, v_s, chr(10));
+    END IF;
+    v_s := replace(replace(v_s, '\', '\\'), '"', '\"');
+    v_s := replace(replace(v_s, chr(10), '\n'), chr(13), '\n');
+    RETURN format('<%s> <%s> "%s" .%s', p_subj, p_pred, v_s, chr(10));
+  END IF;
+  RETURN format('<%s> <%s> "%s" .%s', p_subj, p_pred, p_val #>> '{}', chr(10));
+END;
+$function$
+;
+
+-- The rebuild: clears the mirror and re-projects EVERY sealed instance of the
+-- calling project. Doubles as the drift detector — mirror ≠ rebuild is the
+-- finding. Registered as wave.project.
+CREATE OR REPLACE FUNCTION ckp.wave_project_spine(p_payload jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_proj text := ckp._project();
+  v_g bigint; v_n int := 0; r record;
+BEGIN
+  v_g := 1300000000 + (abs(hashtext(format('urn:ckp:%s/instances', v_proj))) % 90000000);
+  PERFORM pgrdf.add_graph(v_g, format('urn:ckp:%s/instances', v_proj));
+  PERFORM pgrdf.clear_graph(v_g);
+  FOR r IN SELECT id, body FROM ckp.instances ORDER BY ts_created LOOP
+    PERFORM ckp._project_instance_spine(r.id, r.body, v_proj);
+    v_n := v_n + 1;
+  END LOOP;
+  RETURN jsonb_build_object('ok', true, 'kernel', v_proj,
+    'graph', 'urn:ckp:'||v_proj||'/instances', 'projected', v_n,
+    'note', 'the sealed spine is now SPARQL-visible: rdf:type + every IRI-keyed property incl. the four stamps. The fence census is the MINUS-pair over this graph — sealedAtEpoch MINUS conformsToShape.');
+END;
+$function$
+;
+
+-- 0.4.63 — WAVE.SIGNALS (né wave.oracle, 0.4.58 — renamed before it ever
+-- shipped in a tag: "oracle" is Oracle Corp's strongest mark in exactly our
+-- product class, and the verb never prophesied anything anyway — it DERIVES
+-- signals from sealed facts, so the accurate name and the cautious name are
+-- the same name). Signals are DERIVED from
+-- sealed facts, never asserted; the pass boundary is a query, never a memory.
+--
+-- The question it answers: WHAT GOES ON THIS PASS, AND WHAT GOES ON THE NEXT?
+-- The rule, encoded rather than remembered:
+--   THIS pass  = facts stamped with its number (discoveredAtPass / resolvedAtPass
+--                / ruledAtPass / opAtPass / rebasedAtPass / forPass), plus the
+--                epochs those acts advanced. Closed when its Index is sealed and
+--                its Confirmations reference re-run gates.
+--   NEXT pass  = whatever `next` returns AT INDEX-SEAL TIME: open findings,
+--                pending unretired proposals, operations addressed to this
+--                component and not yet answered. Nobody decides the carry-over
+--                by memory; the queue IS the derivation.
+--   THIS wave  = everything bound to one root digest (wave:Statement bindsRoot).
+--                The NEXT wave begins when the root moves — never mid-root.
+--
+-- Facts are relational (sealed instances), so this is a built-in, not a SPARQL
+-- affordance — the F20 limit, stated by pgck-mcp: sealed instances are not in
+-- RDF yet. When stamp projection lands, each signal becomes a governed SPARQL
+-- read and this function retires into compatibility.
+CREATE OR REPLACE FUNCTION ckp.wave_signals(p_payload jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  W text := 'https://conceptkernel.org/ontology/v3.11/wave#';
+  v_proj  text := ckp._project();
+  v_pass  int  := (p_payload->>'pass')::int;
+  -- component alias convention: c-<project, dashes stripped> (c-pgck, c-pgckmcp);
+  -- override with {component} where the convention doesn't hold (ck-lib-js → c-cklib).
+  v_comp  text := COALESCE(p_payload->>'component', W||'c-'||replace(v_proj,'-',''));
+  v_epoch int  := COALESCE((SELECT epoch FROM ckp.kernel_epoch WHERE kernel = v_proj), 0);
+  v_this jsonb; v_next jsonb; v_sig jsonb;
+BEGIN
+  -- THIS PASS — everything stamped with the number, any of the six stamps.
+  IF v_pass IS NOT NULL THEN
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'id', i.id,
+        'type', regexp_replace(i.body->>'type','^.*[/#]',''),
+        'by',   i.body->>(C||'producedBy'),
+        'judged', (i.body ? (C||'conformsToShape'))) ORDER BY i.ts_created), '[]'::jsonb)
+      INTO v_this
+    FROM ckp.instances i
+    WHERE COALESCE((i.body->>(W||'discoveredAtPass'))::numeric, -1) = v_pass
+       OR COALESCE((i.body->>(W||'resolvedAtPass'))::numeric,  -1) = v_pass
+       OR COALESCE((i.body->>(W||'ruledAtPass'))::numeric,     -1) = v_pass
+       OR COALESCE((i.body->>(W||'opAtPass'))::numeric,        -1) = v_pass
+       OR COALESCE((i.body->>(W||'rebasedAtPass'))::numeric,   -1) = v_pass
+       OR i.body->>(W||'forPass') = W||'pass-'||v_pass;
+  END IF;
+
+  -- THE NEXT-PASS QUEUE — derived, so carry-over is never a memory exercise.
+  v_next := jsonb_build_object(
+    'openFindings', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'id', i.id,
+        'label', left(COALESCE(i.body->>'http://www.w3.org/2000/01/rdf-schema#label',
+                               i.body->>(W||'label')), 140),
+        'by', i.body->>(C||'producedBy')) ORDER BY i.ts_created), '[]'::jsonb)
+      FROM ckp.instances i
+      WHERE i.body->>'type' = W||'Finding' AND i.body->>(W||'findingState') = 'open'),
+    'pendingProposals', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'id', i.id, 'about', i.body->>(C||'about'), 'op', i.body->>(C||'proposalOp'),
+        'by', i.body->>(C||'createdBy')) ORDER BY i.ts_created), '[]'::jsonb)
+      FROM ckp.instances i
+      WHERE i.body->>'type' = C||'Proposal'
+        AND i.body->>(C||'proposalState') = 'pending'
+        AND NOT i.body ? (C||'retiredAtEpoch')),
+    'inbox', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'id', i.id, 'opKind', i.body->>(W||'opKind'),
+        'from', i.body->>(C||'producedBy')) ORDER BY i.ts_created), '[]'::jsonb)
+      FROM ckp.instances i
+      WHERE i.body->>'type' = W||'Operation'
+        -- 0.4.62: opTarget has no canonical spelling — components address this
+        -- kernel as its wave alias, its kernel URN, or its kernel/ck graph. Two
+        -- escalations from ck-dev sat unseen for a day because this matched the
+        -- alias alone. Same defect family as the intoProject spellings.
+        AND i.body->>(W||'opTarget') IN (v_comp,
+              'urn:ckp:'||v_proj||'/kernel', 'urn:ckp:'||v_proj||'/kernel/ck')));
+
+  -- SIGNALS — health counts a third party can recompute. Never one boolean.
+  v_sig := jsonb_build_object(
+    'unjudged',       (SELECT count(*) FROM ckp.instances i
+                       WHERE COALESCE((i.body->>(C||'sealedAtEpoch'))::numeric, -1) >= 1
+                         AND NOT i.body ? (C||'conformsToShape')),
+    'preEnforcement', (SELECT count(*) FROM ckp.instances i
+                       WHERE NOT i.body ? (C||'sealedAtEpoch')),
+    'anonymousSeals', (SELECT count(*) FROM ckp.instances i
+                       WHERE i.body->>(C||'createdBy') LIKE 'urn:ckp:participant:anon%'),
+    'openFindings',   (SELECT count(*) FROM ckp.instances i
+                       WHERE i.body->>'type' = W||'Finding'
+                         AND i.body->>(W||'findingState') = 'open'),
+    'pendingProposalsFleet', (SELECT count(*) FROM ckp.instances i
+                       WHERE i.body->>'type' = C||'Proposal'
+                         AND i.body->>(C||'proposalState') = 'pending'
+                         AND NOT i.body ? (C||'retiredAtEpoch')),
+    -- 0.4.65 (§5b): the agreements guarding this kernel's seal-exit. A guard
+    -- two parties agreed to must be READABLE by the third who meets it.
+    'obligations',    (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                         'obligation', o.obligation,
+                         'targetType', regexp_replace(o.target_type,'^.*[/#]',''),
+                         'check', o.check_name,
+                         'sinceEpoch', o.added_epoch) ORDER BY o.obligation), '[]'::jsonb)
+                       FROM ckp.proof_obligations o
+                       WHERE o.active AND o.project = v_proj));
+
+  RETURN jsonb_build_object(
+    'ok', true, 'kernel', v_proj, 'component', v_comp, 'epoch', v_epoch,
+    'pass', v_pass, 'thisPass', COALESCE(v_this, '[]'::jsonb),
+    'next', v_next, 'signals', v_sig,
+    -- 0.4.71 — R-11 (pgRDF I9): every list-shaped reply states its
+    -- completeness, and this census is INCOMPLETE BY CONSTRUCTION until its
+    -- measured blind spots close. Three legitimate arrivals were missed in one
+    -- day; a reader who treats this as the whole wire builds on absence.
+    'completeness', jsonb_build_object(
+      'verdict', 'INCOMPLETE — blind spots declared below',
+      'blindSpots', jsonb_build_array(
+        'thisPass matches only the six *AtPass stamps and forPass — an unstamped fact (e.g. a Confirmation) is invisible here',
+        'inbox matches opTarget in three spellings of THIS component — an Operation addressed to another component, or a fourth spelling, is invisible',
+        'openFindings/pendingProposals are fleet-wide, but Passes and Epochs of other projects are not surfaced',
+        'no acknowledgement lifecycle: answered Operations remain in inbox forever'),
+      'counters', ckp._engine_counters()),
+    'boundary', 'THIS pass = facts stamped with its number + the epochs they advanced; closed at Index seal. NEXT pass = this `next` object AT close — derived, never remembered. NEXT wave = when bindsRoot moves. unjudged means sealedAtEpoch>=1 with conformsToShape ABSENT: admitted, ledgered, judged by nothing — the fence.');
 END;
 $function$
 ;
@@ -1299,11 +1683,203 @@ END;
 $function$
 ;
 
+-- 0.4.71 — the engine's silent-incompleteness counters, guarded. NULL means the
+-- engine cannot answer, and per R-11 a caller must then say UNKNOWN — never
+-- complete. Used by the census verbs to compute per-call deltas.
+CREATE OR REPLACE FUNCTION ckp._engine_counters()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE v jsonb;
+BEGIN
+  BEGIN
+    SELECT jsonb_build_object(
+      'truncations', (pgrdf.stats()->>'path_depth_truncations')::bigint,
+      'filtersDropped', (pgrdf.stats()->>'filter_clauses_dropped')::bigint)
+    INTO v;
+  EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+  END;
+  RETURN v;
+END;
+$function$
+;
+
+-- 0.4.61 — adoption.check: is any adopted module still what it was at first
+-- sight, and is the sealed pin verifiable at all? Answers ck-dev's Cluster-F
+-- defect (defect-1786649168553127000: a sourceDigest of 64 zeros composes) the
+-- honest way: per adopted module, the FILE-BYTE sourceDigest is reported as
+-- verifiable:false with the reason (triples cannot recompute file bytes — that
+-- verification belongs to whatever loads the file), and the GRAPH digest is
+-- compared against the pin taken at first composition, so a swapped or drifted
+-- module is DETECTED from adoption onward. Reports, never gates (B4).
+CREATE OR REPLACE FUNCTION ckp.adoption_check(p_payload jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  N text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_proj text := ckp._project();
+  v_iri  text;
+  v_rows jsonb := '[]'::jsonb;
+  v_pin  text; v_now text; v_drift boolean := false;
+  -- 0.4.71 — pgRDF#118 CONSUMED: since engine 0.6.31 the loader records the
+  -- exact input bytes' sha256 on _pgrdf_graphs (turtle funnel; staged/bulk/
+  -- nquads do not yet — the boundary their PR states). When the column exists,
+  -- the sealed Adoption's file-byte sourceDigest stops being decorative: it is
+  -- COMPARED against what the loader measured. Guarded: on an older engine
+  -- the fields read null and verifiable stays false with the old reason.
+  v_has_src boolean := EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema='pgrdf' AND table_name='_pgrdf_graphs' AND column_name='source_sha256');
+  v_src text; v_loads int; v_sealed_src text;
+BEGIN
+  FOREACH v_iri IN ARRAY ckp._adopted_graphs(v_proj) LOOP
+    SELECT graph_digest INTO v_pin FROM ckp.adoption_pins WHERE graph_iri = v_iri;
+    v_now := ckp._surface_digest(pgrdf.add_graph(v_iri));
+    IF v_pin IS NOT NULL AND v_pin <> v_now THEN v_drift := true; END IF;
+    v_src := NULL; v_loads := NULL;
+    IF v_has_src THEN
+      SELECT g.source_sha256, g.source_loads INTO v_src, v_loads
+        FROM pgrdf._pgrdf_graphs g WHERE g.iri = v_iri;
+    END IF;
+    SELECT a.body->>(N||'sourceDigest') INTO v_sealed_src FROM ckp.instances a
+      WHERE a.body->>'type' = N||'Adoption' AND a.body->>(N||'adopts') = v_iri
+      ORDER BY a.ts_created DESC LIMIT 1;
+    v_rows := v_rows || jsonb_build_object(
+      'module', v_iri,
+      'graphDigestNow', v_now,
+      'graphDigestPinned', v_pin,
+      'drifted', (v_pin IS NOT NULL AND v_pin <> v_now),
+      -- 0.4.67: the structural plane, reported beside the copy plane. This is
+      -- the value a party on ANOTHER store compares (finding-1786716790912211000:
+      -- no consumer read path exposed a composed module's digest — this is that
+      -- path, both planes, counts included). NULL structural pin = pinned
+      -- before the structural plane existed; re-pins at next fresh composition.
+      'structuralDigestNow', ckp._structural_digest(pgrdf.add_graph(v_iri)),
+      'structuralDigestPinned', (SELECT p.structural_digest FROM ckp.adoption_pins p WHERE p.graph_iri = v_iri),
+      'counts', (SELECT jsonb_build_object('nodeshapes', p.nodeshapes, 'properties', p.properties, 'asserted', p.asserted)
+                   FROM ckp.adoption_pins p WHERE p.graph_iri = v_iri),
+      'sourceDigest', (SELECT a.body->>(N||'sourceDigest') FROM ckp.instances a
+                        WHERE a.body->>'type' = N||'Adoption'
+                          AND a.body->>(N||'adopts') = v_iri
+                        ORDER BY a.ts_created DESC LIMIT 1),
+      'sourceRecorded',  v_src,
+      'sourceLoads',     v_loads,
+      'sourceDigestVerifiable', (v_src IS NOT NULL),
+      'sourceDigestMatch', CASE WHEN v_src IS NULL OR v_sealed_src IS NULL THEN NULL
+                                ELSE (v_src = v_sealed_src) END,
+      'why', CASE WHEN v_src IS NOT NULL
+        THEN 'the LOADER measured these bytes (pgRDF#118, engine >= 0.6.31): sourceRecorded is the sha256 of the exact input the parser consumed, sourceLoads > 1 self-reports that whole-graph byte identity no longer holds. sourceDigestMatch compares the sealed Adoption claim against the loader record — false is a finding, null means one side is absent. Coverage boundary per pgRDF#120: turtle funnel records; staged/bulk/nquads do not yet — an unrecorded graph on a new engine loaded by those paths reads null honestly.'
+        ELSE 'sourceDigest is a FILE-BYTE sha256; a graph cannot recompute file bytes, and this engine does not record loader-side digests (pgRDF#118 lands at 0.6.31). The substrate''s halves: the COPY pin detects in-store drift; the STRUCTURAL pin survives reload. Equal structural digests are evidence, not proof; unequal ARE proof of difference.' END);
+  END LOOP;
+  RETURN jsonb_build_object('ok', true, 'kernel', v_proj,
+    'modules', v_rows, 'drifted', v_drift,
+    'completeness', jsonb_build_object(
+      'verdict', CASE WHEN v_has_src THEN 'complete for recorded loads'
+                      ELSE 'UNKNOWN — engine predates loader-side recording' END,
+      'counters', ckp._engine_counters()),
+    'note', 'drifted:true means an adopted module''s graph no longer matches its first-composition pin — the module was swapped or edited under an unsuperseded Adoption. A legitimate update arrives as a NEW Adoption + Supersession, which re-pins.');
+END;
+$function$
+;
+
+-- 0.4.67 — surface.grounding: the three-digest-plane census of this kernel's
+-- ground, as a verb (a check that is not a verb does not exist). Per graph in
+-- the kernel's world — composed surface, own kernel graph, every adopted
+-- module — the existential census (ground/bnode triples, distinct blanks), the
+-- COPY digest (this store's bytes, moves on reload), the STRUCTURAL digest
+-- (survives reload, fleet algorithm), and the blank-node-immune counts. This is
+-- how a kernel grounds itself in the founding graphs and how a brought graph is
+-- examined at the door before adoption (the §14.3 admission contract's
+-- fingerprint gate, at pgck's door).
+CREATE OR REPLACE FUNCTION ckp.surface_grounding(p_payload jsonb, p_project text DEFAULT NULL)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_proj text := COALESCE(p_project, ckp._project());
+  v_iris text[];
+  v_iri  text;
+  v_g    bigint;
+  v_rows jsonb := '[]'::jsonb;
+BEGIN
+  -- an explicit {iri} examines ONE graph (the brought-graph admission read);
+  -- with no payload the kernel's whole ground is censused.
+  IF COALESCE(btrim(p_payload->>'iri'),'') <> '' THEN
+    v_iris := ARRAY[p_payload->>'iri'];
+  ELSE
+    v_iris := ARRAY[format('urn:ckp:%s/shapes/composed', v_proj),
+                    format('urn:ckp:%s/kernel/ck', v_proj)]
+              || ckp._adopted_graphs(v_proj);
+  END IF;
+  FOREACH v_iri IN ARRAY v_iris LOOP
+    v_g := pgrdf.add_graph(v_iri);
+    v_rows := v_rows || (
+      SELECT jsonb_build_object(
+        'iri', v_iri,
+        'asserted',        count(*),
+        'groundTriples',   count(*) FILTER (WHERE s.term_type <> 2 AND o.term_type <> 2),
+        'bnodeTriples',    count(*) FILTER (WHERE s.term_type = 2 OR o.term_type = 2),
+        'distinctBnodes',  (SELECT count(DISTINCT d) FROM (
+                              SELECT q2.subject_id d FROM pgrdf._pgrdf_quads q2
+                                JOIN pgrdf._pgrdf_dictionary s2 ON s2.id = q2.subject_id
+                               WHERE q2.graph_id = v_g AND NOT q2.is_inferred AND s2.term_type = 2
+                              UNION
+                              SELECT q3.object_id FROM pgrdf._pgrdf_quads q3
+                                JOIN pgrdf._pgrdf_dictionary o3 ON o3.id = q3.object_id
+                               WHERE q3.graph_id = v_g AND NOT q3.is_inferred AND o3.term_type = 2) u),
+        'copyDigest',       ckp._surface_digest(v_g),
+        'structuralDigest', ckp._structural_digest(v_g),
+        -- 0.4.68 — COUNTS NAME THEIR METHOD (F3: two shape counts disagreed in
+        -- the same instant because neither named its method; this verb shipped
+        -- a third). Measured on the founding graphs, three methods, three
+        -- numbers: declared vocabulary properties 80/33/17 (the fleet's
+        -- arithmetic), asserted property shapes 107/44/10, sh:path rows with
+        -- inferred = a fourth. All counts here are ASSERTED-ONLY and distinct.
+        'nodeshapes', (SELECT count(DISTINCT q4.subject_id) FROM pgrdf._pgrdf_quads q4
+           JOIN pgrdf._pgrdf_dictionary p4 ON p4.id = q4.predicate_id
+           JOIN pgrdf._pgrdf_dictionary o4 ON o4.id = q4.object_id
+          WHERE q4.graph_id = v_g AND NOT q4.is_inferred
+            AND p4.lexical_value = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+            AND o4.lexical_value = 'http://www.w3.org/ns/shacl#NodeShape'),
+        'propertyShapes', (SELECT count(DISTINCT q5.subject_id) FROM pgrdf._pgrdf_quads q5
+           JOIN pgrdf._pgrdf_dictionary p5 ON p5.id = q5.predicate_id
+          WHERE q5.graph_id = v_g AND NOT q5.is_inferred
+            AND p5.lexical_value = 'http://www.w3.org/ns/shacl#path'),
+        'declaredProperties', (SELECT count(DISTINCT q6.subject_id) FROM pgrdf._pgrdf_quads q6
+           JOIN pgrdf._pgrdf_dictionary p6 ON p6.id = q6.predicate_id
+           JOIN pgrdf._pgrdf_dictionary o6 ON o6.id = q6.object_id
+          WHERE q6.graph_id = v_g AND NOT q6.is_inferred
+            AND p6.lexical_value = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+            AND o6.lexical_value IN ('http://www.w3.org/2002/07/owl#DatatypeProperty',
+                                     'http://www.w3.org/2002/07/owl#ObjectProperty',
+                                     'http://www.w3.org/2002/07/owl#AnnotationProperty',
+                                     'http://www.w3.org/1999/02/22-rdf-syntax-ns#Property')))
+      FROM pgrdf._pgrdf_quads q
+      JOIN pgrdf._pgrdf_dictionary s ON s.id = q.subject_id
+      JOIN pgrdf._pgrdf_dictionary o ON o.id = q.object_id
+      WHERE q.graph_id = v_g AND NOT q.is_inferred);
+  END LOOP;
+  RETURN jsonb_build_object('ok', true, 'kernel', v_proj, 'graphs', v_rows,
+    'planes', 'FILE digests pin published bytes (verify with shasum against the sidecar). copyDigest pins THIS store''s bytes and moves on every reload — in-store drift detection only, never cross-bench identity. structuralDigest survives reload (first-degree blank-node signatures, the fleet algorithm) — what a third party recomputes from the published modules. Counts are the blank-node-immune instrument and NAME THEIR METHOD: nodeshapes (asserted sh:NodeShape typing; 42 = 27 core + 11 wave + 4 lexicon fully adopted) · declaredProperties (asserted owl/rdf property declarations; 130 = 80 + 33 + 17) · propertyShapes (asserted distinct sh:path subjects). A count without its method is not a number (F3).',
+    'verdictAsymmetry', 'unequal structural digests PROVE two graphs differ; equal ones are strong evidence of isomorphism and NOT proof (not RDFC-1.0). Never upgrade ISOMORPHIC_LIKELY to identical.');
+END;
+$function$
+;
+
 -- P0-E (pgCK#28): a deterministic digest of a shapes graph — sha256 over the
 -- s|p|o triples in sorted order. Re-derivable by anyone re-running it against
 -- the same graph, so a Materialization's surfaceDigest is a CHECKABLE claim
 -- ("re-derive the surface at that epoch"), not a trusted number. 64 lowercase
--- hex, matching ckp:surfaceDigest's sh:pattern.
+-- hex, matching ckp:surfaceDigest's sh:pattern. 0.4.67 names its plane: this is
+-- the COPY digest (blank-node labels included — parse-scoped); its
+-- reload-surviving sibling is ckp._structural_digest.
 CREATE OR REPLACE FUNCTION ckp._surface_digest(p_graph bigint)
  RETURNS text
  LANGUAGE plpgsql
@@ -1320,6 +1896,94 @@ BEGIN
   FROM pgrdf.sparql(format(
     'SELECT ?s ?p ?o WHERE { GRAPH <%s> { ?s ?p ?o } }', v_iri)) j;
   RETURN encode(digest(convert_to(v_concat, 'UTF8'), 'sha256'), 'hex');
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp._structural_digest(p_graph bigint)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+-- 0.4.67 — THE STRUCTURAL PLANE (§5b alignment, finding-1786862028710113000).
+--
+-- _surface_digest is the COPY plane: sha256 over rendered lines with blank-node
+-- LABELS included, so it moves on every reload and no third party can recompute
+-- it from published files. This is the plane that survives: each blank node is
+-- replaced by a signature over its own incident triples (itself marked _:a,
+-- every other blank node flattened to _:z), so the digest depends on the shape
+-- a node sits in and never on the label it happened to receive.
+--
+-- THE ALGORITHM IS THE FLEET'S, byte-for-byte (pgrdf_fingerprint):
+--   ground     = sorted lines with no blank node, joined by \n, sha256
+--   sig(b)     = sha256 of b's incident lines (self→_:a, other→_:z), sorted
+--   bnode      = sha256 of the sorted signature hexes, joined by \n
+--   structural = sha256( ground_text || '\n--\n' || signature_hexes )
+-- ACCEPTANCE, measured 2026-08-16: three independent loads of the v3.11 core
+-- (bench urn:ckp:core, bench urn:ckp:core/v3.11, test-rig urn:ckp:core) carry
+-- three different byte digests and ONE structural digest, 9a791c6c3d6d07cb… —
+-- reproduced by this function against the client-side tool's published pins.
+--
+-- HONEST LIMITS, never to be flattened: this is FIRST-DEGREE hashing, not
+-- RDFC-1.0 — equal digests are strong evidence of isomorphism, NOT proof
+-- (symmetric blank-node structures can collide); unequal digests ARE proof of
+-- difference. ASSERTED ONLY — inferred triples re-derive and are a check
+-- value, never content.
+--
+-- INTERIM SEAT: reads the engine's quad/dictionary tables directly because the
+-- public SPARQL surface cannot exclude inferred triples. The coupling is pinned
+-- by the co-shipped bundle and fails LOUD on schema drift; pgRDF#117
+-- (pgrdf.graph_digest, RDFC-1.0) retires this function's body.
+DECLARE
+  v_ground text;
+  v_sigs   text;
+BEGIN
+  IF to_regclass('pgrdf._pgrdf_quads') IS NULL OR to_regclass('pgrdf._pgrdf_dictionary') IS NULL THEN
+    RAISE EXCEPTION 'ckp._structural_digest: the engine''s quad/dictionary tables are not where the pinned bundle put them — refusing rather than inventing a digest (interim seat; pgRDF#117 is the lasting one)';
+  END IF;
+  WITH t AS (
+    SELECT x.subject_id sid, x.object_id oid, s.term_type st, o.term_type ot,
+      CASE s.term_type WHEN 1 THEN '<'||s.lexical_value||'>' WHEN 2 THEN '_:'||s.lexical_value
+        ELSE '"'||replace(replace(s.lexical_value, chr(92), chr(92)||chr(92)), '"', chr(92)||'"')||'"' END AS sr,
+      CASE p.term_type WHEN 1 THEN '<'||p.lexical_value||'>' WHEN 2 THEN '_:'||p.lexical_value
+        ELSE '"'||replace(replace(p.lexical_value, chr(92), chr(92)||chr(92)), '"', chr(92)||'"')||'"' END AS pr,
+      CASE o.term_type WHEN 1 THEN '<'||o.lexical_value||'>' WHEN 2 THEN '_:'||o.lexical_value
+        ELSE '"'||replace(replace(replace(o.lexical_value, chr(92), chr(92)||chr(92)), '"', chr(92)||'"'), chr(10), chr(92)||'n')||'"'
+          || coalesce('@'||o.language_tag,
+               CASE WHEN dt.lexical_value IS NOT NULL AND dt.lexical_value <> 'http://www.w3.org/2001/XMLSchema#string'
+                    THEN '^^<'||dt.lexical_value||'>' END, '') END AS orr
+    FROM pgrdf._pgrdf_quads x
+    JOIN pgrdf._pgrdf_dictionary s ON s.id = x.subject_id
+    JOIN pgrdf._pgrdf_dictionary p ON p.id = x.predicate_id
+    JOIN pgrdf._pgrdf_dictionary o ON o.id = x.object_id
+    LEFT JOIN pgrdf._pgrdf_dictionary dt ON dt.id = o.datatype_iri_id
+    WHERE x.graph_id = p_graph AND NOT x.is_inferred
+  ),
+  ground AS (
+    SELECT string_agg(sr||' '||pr||' '||orr||' .', E'\n' ORDER BY (sr||' '||pr||' '||orr||' .') COLLATE "C") AS g
+    FROM t WHERE st <> 2 AND ot <> 2
+  ),
+  bnodes AS (
+    SELECT DISTINCT sid AS b FROM t WHERE st = 2
+    UNION SELECT DISTINCT oid FROM t WHERE ot = 2
+  ),
+  incident AS (
+    SELECT b.b,
+      CASE WHEN t.st=2 THEN CASE WHEN t.sid=b.b THEN '_:a' ELSE '_:z' END ELSE t.sr END
+      ||' '||t.pr||' '||
+      CASE WHEN t.ot=2 THEN CASE WHEN t.oid=b.b THEN '_:a' ELSE '_:z' END ELSE t.orr END
+      ||' .' AS nline
+    FROM bnodes b JOIN t ON (t.st=2 AND t.sid=b.b) OR (t.ot=2 AND t.oid=b.b)
+  ),
+  sigs AS (
+    SELECT encode(digest(convert_to(string_agg(nline, E'\n' ORDER BY nline COLLATE "C"),'UTF8'),'sha256'),'hex') AS sig
+    FROM incident GROUP BY b
+  )
+  SELECT COALESCE((SELECT g FROM ground), ''),
+         COALESCE((SELECT string_agg(sig, E'\n' ORDER BY sig COLLATE "C") FROM sigs), '')
+    INTO v_ground, v_sigs;
+  RETURN encode(digest(convert_to(v_ground||E'\n--\n'||v_sigs, 'UTF8'), 'sha256'), 'hex');
 END;
 $function$
 ;
@@ -1433,6 +2097,19 @@ DECLARE
   v_fs       text;
   v_ts       text;
   v_ttl      text;
+  -- 0.4.67 — NAMED SHAPES, NEVER BRACKETS. The `[ a sh:NodeShape … ]` form
+  -- minted an anonymous NodeShape into the KERNEL graph — a blank node in the
+  -- doctrine. That breaks two things at once: the doctrine stops being
+  -- byte-pinnable (existential-free is the fleet rule, measured 22/22 ground
+  -- on this kernel), and a shape nobody can name can never be superseded by
+  -- name. Caught by the rule BEFORE any governed add_class ever fired on a
+  -- live kernel — the first prevented defect of the alignment. The shape IRI
+  -- is deterministic (project + local names + an 8-hex discriminator over the
+  -- full IRIs), so re-applying the same op re-emits the same subject.
+  -- Project segment from the SEALED producedBy — server-derived, never parsed
+  -- from a caller field.
+  v_seg      text := (regexp_match(COALESCE(p_prop->>(C||'producedBy'),''), '^urn:ckp:([^/]+)/kernel'))[1];
+  v_shape    text;
 BEGIN
   IF v_op = 'add_property' THEN
     v_class := v_detail->>'targetClass';
@@ -1450,9 +2127,18 @@ BEGIN
       IF v_dtype !~ v_iri_re THEN RAISE EXCEPTION 'add_property: datatype must be an IRI, got %', v_dtype; END IF;
       v_dt_line := ' ; sh:datatype <'||v_dtype||'>';
     END IF;
+    IF v_seg IS NULL THEN
+      RAISE EXCEPTION 'add_property: cannot derive the project segment from the proposal''s producedBy — a shape must be NAMED into a kernel graph, never anonymous'; END IF;
+    v_shape := format('urn:ckp:%s/shape/%s--%s--%s', v_seg,
+                      ckp._slug(regexp_replace(v_class,'^.*[/#:]','')),
+                      ckp._slug(regexp_replace(v_path,'^.*[/#:]','')),
+                      left(md5(v_class||'|'||v_path),8));
+    -- the PROPERTY shape is named too — `sh:property [ … ]` would put the
+    -- blank node right back into the doctrine through the inner bracket.
     RETURN '@prefix sh: <http://www.w3.org/ns/shacl#> .'||chr(10)||
-           '[ a sh:NodeShape ; sh:targetClass <'||v_class||'> ; '||
-           'sh:property [ sh:path <'||v_path||'> ; sh:minCount '||v_min::text||v_dt_line||' ] ] .';
+           '<'||v_shape||'> a sh:NodeShape ; sh:targetClass <'||v_class||'> ; '||
+           'sh:property <'||v_shape||'/p> .'||chr(10)||
+           '<'||v_shape||'/p> sh:path <'||v_path||'> ; sh:minCount '||v_min::text||v_dt_line||' .';
 
   ELSIF v_op = 'add_class' THEN
     v_class := COALESCE(v_detail->>'class', v_detail->>'targetClass', p_prop->>(C||'about'));
@@ -1468,7 +2154,12 @@ BEGIN
     -- Emit the NodeShape too, with the same per-property gate add_property uses.
     -- A malformed property is REFUSED here, never dropped: silently narrowing a
     -- shape is un-enforcement nobody sees.
-    v_ts := '';
+    IF v_seg IS NULL THEN
+      RAISE EXCEPTION 'add_class: cannot derive the project segment from the proposal''s producedBy — a shape must be NAMED into a kernel graph, never anonymous'; END IF;
+    v_shape := format('urn:ckp:%s/shape/%s--%s', v_seg,
+                      ckp._slug(regexp_replace(v_class,'^.*[/#:]','')),
+                      left(md5(v_class),8));
+    v_ts := ''; v_ttl := '';
     IF jsonb_typeof(v_detail->'properties') = 'array' THEN
       FOR v_map IN SELECT jsonb_array_elements(v_detail->'properties') LOOP
         v_path := v_map->>'path';
@@ -1485,7 +2176,11 @@ BEGIN
             RAISE EXCEPTION 'add_class: property datatype must be an IRI, got %', v_dtype; END IF;
           v_dt_line := ' ; sh:datatype <'||v_dtype||'>';
         END IF;
-        v_ts := v_ts||' ; sh:property [ sh:path <'||v_path||'> ; sh:minCount '||v_min::text||v_dt_line||' ]';
+        -- named property shapes (…/p0, /p1, …): the inner bracket was the
+        -- other half of the bnode emission — see the DECLARE note.
+        v_fs := v_shape||'/p'||left(md5(v_path),8);
+        v_ts := v_ts||' ; sh:property <'||v_fs||'>';
+        v_ttl := v_ttl||'<'||v_fs||'> sh:path <'||v_path||'> ; sh:minCount '||v_min::text||v_dt_line||' .'||chr(10);
       END LOOP;
     END IF;
     IF v_ts = '' THEN
@@ -1496,10 +2191,35 @@ BEGIN
       RETURN '@prefix owl: <http://www.w3.org/2002/07/owl#> .'||chr(10)||
              '<'||v_class||'> a owl:Class .';
     END IF;
+    -- 0.4.71 — A SHAPE CAN BE LOCKED AND ENFORCED: detail.closed = true emits
+    -- sh:closed with sh:ignoredProperties, so an undeclared key REFUSES at the
+    -- gate instead of minting into the type namespace. The default ignore list
+    -- is the substrate envelope — rdf:type, the four server stamps,
+    -- participant, and the board timestamps — because those are derived onto
+    -- every candidate and a closed shape that forgets them refuses EVERYTHING
+    -- (the total-write-outage-presenting-as-bad-data class). Callers extend it
+    -- via detail.ignoredProperties (IRIs, gated). Closing a FLEET type demands
+    -- the same care through governance: enumerate its client-stamped envelope
+    -- first, or the close is a denial of service dressed as rigor.
+    IF COALESCE(v_detail->>'closed','false') = 'true' THEN
+      v_fs := ' <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>'
+            ||' <'||C||'createdBy> <'||C||'producedBy> <'||C||'sealedAtEpoch>'
+            ||' <'||C||'conformsToShape> <'||C||'participant>'
+            ||' <urn:ckp:board/created_at> <urn:ckp:board/created_by>';
+      IF jsonb_typeof(v_detail->'ignoredProperties') = 'array' THEN
+        FOR v_path IN SELECT jsonb_array_elements_text(v_detail->'ignoredProperties') LOOP
+          IF v_path !~ v_iri_re THEN
+            RAISE EXCEPTION 'add_class: ignoredProperties entry must be an IRI, got %', v_path; END IF;
+          v_fs := v_fs||' <'||v_path||'>';
+        END LOOP;
+      END IF;
+      v_ts := v_ts||' ; sh:closed true ; sh:ignoredProperties ('||v_fs||' )';
+    END IF;
     RETURN '@prefix owl: <http://www.w3.org/2002/07/owl#> .'||chr(10)||
            '@prefix sh: <http://www.w3.org/ns/shacl#> .'||chr(10)||
            '<'||v_class||'> a owl:Class .'||chr(10)||
-           '[ a sh:NodeShape ; sh:targetClass <'||v_class||'>'||v_ts||' ] .';
+           '<'||v_shape||'> a sh:NodeShape ; sh:targetClass <'||v_class||'>'||v_ts||' .'||chr(10)||
+           v_ttl;
 
   ELSIF v_op = 'set_transition_map' THEN
     v_class := v_detail->>'targetClass';
@@ -1962,8 +2682,17 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'error', 'proposal_not_pending', 'state', v_prop->>(C||'proposalState'));
   END IF;
   v_quorum := COALESCE((v_prop->>(C||'requiresQuorum'))::int, 1);
-  SELECT count(*) INTO v_approvals FROM ckp.instances
-    WHERE body->>'type' = C||'Vote' AND body->>(C||'about') = v_about AND body->>(C||'voteValue') = 'approve';
+  -- 0.4.62 — QUORUM IS DISTINCT ACCOUNTABLE PARTIES. This counted VOTES: one
+  -- identity voting twice was two approvals, and ckp.seal mints a FRESH
+  -- anon:<uuid> per unattributed call, so N naked-path seals presented as N
+  -- distinct parties — one psql caller could manufacture any quorum (ck-dev's
+  -- finding-1786732252462817000; measured unexploited, 3 anon votes on 3
+  -- proposals). Now: distinct createdBy, anon:* excluded — an identity nobody
+  -- can be held to cannot be a party to a decision. The three historical
+  -- anon-applied proposals stand as fenced history, not precedent.
+  SELECT count(DISTINCT body->>(C||'createdBy')) INTO v_approvals FROM ckp.instances
+    WHERE body->>'type' = C||'Vote' AND body->>(C||'about') = v_about AND body->>(C||'voteValue') = 'approve'
+      AND COALESCE(body->>(C||'createdBy'),'') NOT LIKE 'urn:ckp:participant:anon:%';
   IF v_approvals < v_quorum THEN
     RETURN jsonb_build_object('ok', false, 'error', 'quorum_not_met', 'approvals', v_approvals, 'quorum', v_quorum);
   END IF;
@@ -2014,10 +2743,19 @@ BEGIN
     v_eiri  := format('urn:ckp:%s/epoch/%s', v_proj, v_epoch);
     v_miri  := format('urn:ckp:%s/materialization/%s', v_proj, v_epoch);
     -- the Epoch resource: the position, named by the digest of its surface.
+    -- 0.4.67: TWO digest planes, each named for what it pins. surfaceDigest is
+    -- the COPY plane — this store's bytes, what surface.check compares in-store
+    -- and what the digest-match obligation consults; it moves on reload and is
+    -- never cross-bench identity. structuralDigest is the plane that survives
+    -- reload (first-degree bnode-signature algorithm, fleet-shared) — the one a
+    -- third party CAN recompute from the published modules, and the one a
+    -- cross-store verifier cites. Nobody minted early: this key ships in the
+    -- same act as the code that derives it.
     PERFORM ckp.seal('epoch-'||v_proj||'-'||v_epoch, jsonb_build_object(
       'type', C||'Epoch', '@id', v_eiri,
       C||'epoch', to_jsonb(v_epoch),
-      C||'surfaceDigest', v_surfd));
+      C||'surfaceDigest', v_surfd,
+      C||'structuralDigest', ckp._structural_digest(v_comp_e)));
     -- the Materialization: the sealed rebuild that produced that epoch.
     PERFORM ckp.seal('mat-'||v_proj||'-'||v_epoch, jsonb_build_object(
       'type', C||'Materialization', '@id', v_miri,
@@ -2037,6 +2775,21 @@ BEGIN
       v_applied := v_applied || jsonb_build_object('query_affordance', v_prop->'proposalDetail'->>'verb');
     EXCEPTION WHEN OTHERS THEN
       RETURN jsonb_build_object('ok', false, 'error', 'affordance_register_failed', 'detail', SQLERRM);
+    END;
+  END IF;
+
+  -- 4d. PROOF OBLIGATION (0.4.65, §5b) — the seal-exit dual of 4c: where
+  --     add_affordance opens a dispatch entry, add_proof_obligation closes the
+  --     seal's exit with a check every future seal of the target type must
+  --     satisfy. The registry row is the projected change (P0-E honoured);
+  --     removal travels the same governed road with detail.active=false.
+  IF v_op = 'add_proof_obligation' THEN
+    BEGIN
+      PERFORM ckp.register_proof_obligation(v_prop, v_proj, v_epoch);
+      v_applied := v_applied || jsonb_build_object('proof_obligation', v_prop->'proposalDetail'->>'obligation',
+                                                   'obligation_active', COALESCE(v_prop->'proposalDetail'->>'active','true'));
+    EXCEPTION WHEN OTHERS THEN
+      RETURN jsonb_build_object('ok', false, 'error', 'obligation_register_failed', 'detail', SQLERRM);
     END;
   END IF;
 
@@ -2780,6 +3533,23 @@ EXCEPTION
     -- so a caller can tell a shape refusal from a transport fault, and keep the
     -- verb so a Trace-Id correlation still resolves. Never re-raise: re-raising
     -- is what killed the worker.
+    --
+    -- 0.4.71 — RESET THE ENGINE'S TERM CACHE after the aborted subtransaction.
+    -- Any term FIRST-interned inside the abort is poisoned: it stores but SHACL
+    -- cannot see it, so a caller's RETRY reusing the same fresh IRIs refuses
+    -- with "MinCount not satisfied" on a field its body demonstrably carries.
+    -- Measured three times on this wave (s56's flake class, s64's build, and
+    -- pgck's own reconciliation seal taking three attempts); the suites carry
+    -- per-file resets, but door callers had no protection until here — the
+    -- catch block is the one place that KNOWS an abort just happened. Guarded:
+    -- engines without the remedy skip silently, and a reset failure must never
+    -- eat the refusal we owe the caller.
+    BEGIN
+      IF to_regprocedure('pgrdf.shmem_reset()') IS NOT NULL THEN
+        PERFORM pgrdf.shmem_reset();
+      END IF;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
     RETURN jsonb_build_object(
       'ok',      false,
       'refused', true,
@@ -3042,6 +3812,21 @@ BEGIN
   -- As governed verbs they are callable by any identity the kernel grants,
   -- their answers are attributable, and the negative control ships WITH the
   -- gate instead of beside it.
+  WHEN 'wave.signals' THEN
+    res := ckp.wave_signals(p_payload);
+
+  -- one-version alias (0.4.63): routes, answers, and says where to go. Removed
+  -- next release — nothing tagged ever carried the old name.
+  WHEN 'wave.oracle' THEN
+    res := ckp.wave_signals(p_payload)
+        || jsonb_build_object('deprecated', 'wave.oracle is wave.signals; this alias is removed next release');
+
+  WHEN 'adoption.check' THEN
+    res := ckp.adoption_check(p_payload);
+
+  WHEN 'wave.project' THEN
+    res := ckp.wave_project_spine(p_payload);
+
   WHEN 'surface.typecheck' THEN
     res := ckp.surface_typecheck(p_payload, v_proj);
 
@@ -3050,6 +3835,9 @@ BEGIN
 
   WHEN 'surface.declared' THEN
     res := ckp.surface_declared(p_payload, v_proj);
+
+  WHEN 'surface.grounding' THEN
+    res := ckp.surface_grounding(p_payload, v_proj);
 
   WHEN 'project.resolve' THEN
     res := ckp.project_resolve(p_payload);
@@ -3074,9 +3862,15 @@ BEGIN
     -- tables use, so provenance(@id) is no longer a hollow envelope (matches reach/link/get).
     DECLARE tid text := ckp._resolve_id(p_payload->>'id');
     BEGIN
+      -- 0.4.66: proofs are PLURAL since obligations (0.4.65). `proof` stays the
+      -- byte-proof (the hmac row — what `verified` checks) so existing readers
+      -- keep their meaning; `proofs` carries EVERY row, obligations included —
+      -- "which agreed checks did this seal pass" must be readable at the door,
+      -- or the obligation mark exists only for parties with table access.
       res := jsonb_build_object('ok', true, 'id', tid, 'verified', ckp.verify(tid),
         'body', (SELECT body FROM ckp.instances WHERE id=tid),
-        'proof', (SELECT jsonb_build_object('digest',digest,'method',method,'verified_at',verified_at) FROM ckp.proof WHERE about=tid ORDER BY id DESC LIMIT 1),
+        'proof', (SELECT jsonb_build_object('digest',digest,'method',method,'verified_at',verified_at) FROM ckp.proof WHERE about=tid AND method='hmac+sha256' ORDER BY id DESC LIMIT 1),
+        'proofs', COALESCE((SELECT jsonb_agg(jsonb_build_object('digest',digest,'method',method,'verified_at',verified_at) ORDER BY id) FROM ckp.proof WHERE about=tid),'[]'::jsonb),
         'ledger', COALESCE((SELECT jsonb_agg(jsonb_build_object('seq',seq,'prev_seq',prev_seq,'body_sha256',body_sha256,'ts',ts) ORDER BY seq) FROM ckp.ledger WHERE instance_id=tid),'[]'::jsonb));
     END;
 
@@ -3635,8 +4429,8 @@ BEGIN
   PERFORM pgrdf.parse_turtle(v_ttl, v_scratch_g, 'urn:ckp:projection#');
 
   -- SHACL gate: validate scratch against the board's shapes. Native mode
-  -- (pgrdf 0.5.1) is sufficient — see _WIP/NOTIFIES.pgRDF.0.5.1.shacl-
-  -- mincount-permissive-RESPONSE.md for the verified semantics.
+  -- (pgrdf >= 0.5.1) is sufficient: minCount violations REFUSE — the earlier
+  -- permissive reading was a measured pgrdf 0.5.0 defect, fixed upstream.
   v_validation := pgrdf.validate(v_scratch_g, v_board_g);
 
   IF NOT (v_validation->>'conforms')::boolean THEN
@@ -3676,8 +4470,10 @@ DECLARE
   -- modify_shape_constraint / set_quorum / set_materialize_policy have none yet
   -- (they would seal and do nothing) — refused until a projector exists,
   -- default-deny per I2. Widening this set requires implementing the projector,
-  -- not editing the list.
-  v_ops    text[] := ARRAY['add_class','add_property','set_transition_map','add_affordance'];
+  -- not editing the list. 0.4.65 adds add_proof_obligation (§5b): its projector
+  -- is ckp.register_proof_obligation at apply — the obligation registry is the
+  -- change it projects, the seal-exit dual of add_affordance's dispatch entry.
+  v_ops    text[] := ARRAY['add_class','add_property','set_transition_map','add_affordance','add_proof_obligation'];
   v_op     text := p_payload->>'op';
   -- ckp.dispatch calls this with v_proj -- the bare project SEGMENT ('pgck'),
   -- not a URN, despite the parameter name. Defaulting `about` to it produced a
@@ -3704,6 +4500,22 @@ BEGIN
     IF NOT (v_detail ? 'verb') OR NOT (v_detail ? 'query') THEN
       RETURN jsonb_build_object('ok', false, 'error', 'detail_projects_nothing', 'op', v_op,
         'hint', 'add_affordance needs detail.verb and detail.query; without them apply bumps the epoch and registers nothing (P0-E)',
+        'got', v_detail);
+    END IF;
+  END IF;
+  -- add_proof_obligation, same P0-E half: an activation must name the obligation,
+  -- its target type AND a check from the fixed registry; a deactivation
+  -- ({active:false}) needs only the obligation name. The strict parse (IRI
+  -- shape, check-in-registry) lives in ckp.register_proof_obligation — refused
+  -- again at apply if it fails there; this gate refuses the detail that could
+  -- not project anything at all.
+  IF v_op = 'add_proof_obligation' THEN
+    v_detail := COALESCE(p_payload->'detail', p_payload->'proposalDetail', '{}'::jsonb);
+    IF NOT (v_detail ? 'obligation')
+       OR (COALESCE(v_detail->>'active','true') <> 'false'
+           AND (NOT (v_detail ? 'targetType') OR NOT (v_detail ? 'check'))) THEN
+      RETURN jsonb_build_object('ok', false, 'error', 'detail_projects_nothing', 'op', v_op,
+        'hint', 'add_proof_obligation needs detail.obligation + detail.targetType + detail.check (or detail.obligation + active:false to deactivate); without them apply bumps the epoch and registers nothing (P0-E)',
         'got', v_detail);
     END IF;
   END IF;
@@ -4137,6 +4949,147 @@ END;
 $function$
 ;
 
+-- 0.4.65 — SEALED PROOF OBLIGATIONS (§5b, ruling-1786820448218277000).
+--
+-- The design fact this builds on: ckp.proof carries NO uniqueness — N proofs
+-- per fact was placed so the seal's exit could grow by agreement. An obligation
+-- is a governed proof-producer: registered through propose→vote→apply, run by
+-- ckp.seal after the shape gate for every candidate of its target type, its
+-- satisfaction appended as a ckp.proof row whose method names it. A failing
+-- obligation REFUSES the seal — that is its point. A buggy one is bounded:
+-- per-kernel scope (the registry row names the project), a FIXED registry of
+-- pure-read checks that call the substrate's own internals (an obligation may
+-- never carry code — it may only NAME a check the substrate implements, the
+-- exact discipline P0-E applies to ops), and removal by the same governed op
+-- that added it. External effects stay out until the validity≠safety gate is
+-- specified: anything touching outside state belongs to the TOOL tier.
+
+CREATE OR REPLACE FUNCTION ckp.register_proof_obligation(p_prop jsonb, p_project text, p_epoch integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_detail  jsonb := COALESCE(p_prop->'proposalDetail', '{}'::jsonb);
+  v_ob      text  := v_detail->>'obligation';
+  v_type    text  := v_detail->>'targetType';
+  v_chk     text  := v_detail->>'check';
+  v_active  boolean;
+  v_name_re text  := '^[a-z][a-z0-9-]*$';
+  v_iri_re  text  := '^[A-Za-z][A-Za-z0-9+.:#/_-]*$';
+  -- THE FIXED CHECK REGISTRY. Widening it means implementing a pure-read check
+  -- in ckp._run_proof_obligations' CASE, never editing this list alone — the
+  -- P0-E sibling: a check that cannot run is refused at registration.
+  v_checks  text[] := ARRAY['digest-match'];
+BEGIN
+  IF v_ob IS NULL OR v_ob !~ v_name_re THEN
+    RAISE EXCEPTION 'add_proof_obligation: obligation must be a lowercase dashed name, got %', v_ob; END IF;
+  BEGIN
+    v_active := COALESCE((v_detail->>'active')::boolean, true);
+  EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION 'add_proof_obligation: active must be a boolean, got %', v_detail->>'active'; END;
+  IF NOT v_active THEN
+    -- deactivation: the same governed road out that led in. The row stays —
+    -- WHICH obligation guarded WHICH epochs remains answerable.
+    UPDATE ckp.proof_obligations SET active = false
+      WHERE project = p_project AND obligation = v_ob;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'add_proof_obligation: no obligation named % on this kernel to deactivate', v_ob; END IF;
+    RETURN v_ob;
+  END IF;
+  IF v_type IS NULL OR v_type !~ v_iri_re THEN
+    RAISE EXCEPTION 'add_proof_obligation: targetType must be a type IRI, got %', v_type; END IF;
+  IF v_chk IS NULL OR NOT (v_chk = ANY(v_checks)) THEN
+    RAISE EXCEPTION 'add_proof_obligation: check % is not in the fixed registry % — an obligation names a check the substrate implements; widening the registry means implementing one, not naming one', v_chk, v_checks; END IF;
+  INSERT INTO ckp.proof_obligations(project, obligation, target_type, check_name, added_epoch, active)
+  VALUES (p_project, v_ob, v_type, v_chk, p_epoch, true)
+  ON CONFLICT (project, obligation) DO UPDATE
+    SET target_type = EXCLUDED.target_type, check_name = EXCLUDED.check_name,
+        added_epoch = EXCLUDED.added_epoch, active = true;
+  RETURN v_ob;
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp._oblig_digest_match(p_instance_id text, p_body jsonb, p_project text)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+-- THE DEBUT CHECK (§5b): "the surfaceDigest this candidate cites was sealed by
+-- an Epoch." Pure read. Returns NULL on satisfaction, the refusal text
+-- otherwise. Closes the fabricated-digest hole ck-lib-js measured
+-- (finding-1786716799509380000): a wave:Pass citing an invented sixty-four-hex
+-- digest sealed verified:true, because the shape gate judges FORM and nothing
+-- judged REFERENCE. This check judges reference — against the sealed Epoch
+-- instances themselves, never a parallel record.
+--
+-- Jurisdiction discipline: an ABSENT surfaceDigest is minCount's business (the
+-- shape gate refuses it); this check rules only on a PRESENT citation. When the
+-- candidate also cites an epoch number, the pair must sit on one sealed Epoch —
+-- citing epoch 13 with epoch 12's digest is exactly the dishonesty this exists
+-- to refuse.
+DECLARE
+  C        text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_digest text := p_body->>(C||'surfaceDigest');
+  v_epoch  text := p_body->>(C||'epoch');
+BEGIN
+  IF v_digest IS NULL THEN
+    RETURN NULL;
+  END IF;
+  IF EXISTS (SELECT 1 FROM ckp.instances i
+             WHERE i.body->>'type' = C||'Epoch'
+               AND i.body->>(C||'surfaceDigest') = v_digest
+               AND (v_epoch IS NULL OR i.body->>(C||'epoch') = v_epoch)) THEN
+    RETURN NULL;
+  END IF;
+  RETURN format('digest-match: the candidate cites surfaceDigest %s…%s but no sealed ckp:Epoch carries that surface — a citation must name a digest an Epoch sealed, exactly as sealed (ck_epochs lists them)',
+                left(v_digest, 12),
+                CASE WHEN v_epoch IS NOT NULL THEN ' at epoch '||v_epoch ELSE '' END);
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp._run_proof_obligations(p_instance_id text, p_type text, p_body jsonb, p_project text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+-- Runs every ACTIVE obligation this kernel registered for the candidate's
+-- declared type. Returns {satisfied: [names]} or {refused: <obligation>,
+-- reason: <text>} — ckp.seal raises on refusal and appends one proof row per
+-- satisfied name. Exact-type match: an obligation on wave:Pass does not reach
+-- ckp:Epoch seals (the apply cascade), and ancestor-aware matching waits for
+-- an agreement that wants it. An obligation naming a check this substrate does
+-- not implement fails CLOSED — registration refuses it (register_proof_
+-- obligation), and if one arrives anyway (downgrade skew), the seal refuses
+-- rather than silently skipping a guard two parties agreed to.
+DECLARE
+  r      record;
+  v_fail text;
+  v_sat  jsonb := '[]'::jsonb;
+BEGIN
+  FOR r IN SELECT obligation, check_name FROM ckp.proof_obligations
+           WHERE active AND project = p_project AND target_type = p_type
+           ORDER BY obligation
+  LOOP
+    CASE r.check_name
+      WHEN 'digest-match' THEN v_fail := ckp._oblig_digest_match(p_instance_id, p_body, p_project);
+      ELSE v_fail := format('check %s is not implemented by this substrate — failing closed rather than skipping an agreed guard', r.check_name);
+    END CASE;
+    IF v_fail IS NOT NULL THEN
+      RETURN jsonb_build_object('refused', r.obligation, 'reason', v_fail);
+    END IF;
+    v_sat := v_sat || to_jsonb(r.obligation);
+  END LOOP;
+  RETURN jsonb_build_object('satisfied', v_sat);
+END;
+$function$
+;
+
 CREATE OR REPLACE FUNCTION ckp.registry_lookup(p_kernel text, p_verb text)
  RETURNS jsonb
  LANGUAGE sql
@@ -4448,6 +5401,10 @@ DECLARE
   v_participant TEXT;
   N        TEXT := 'https://conceptkernel.org/ontology/v3.11/core#';
   v_stamps JSONB := '{}'::jsonb;
+  v_oblig  JSONB := '{}'::jsonb;
+  v_ob     TEXT;
+  v_res    TEXT;
+  v_gref   TEXT;
 BEGIN
   IF v_type IS NULL THEN
     RAISE EXCEPTION 'ckp.seal: body has no "type"';
@@ -4482,7 +5439,17 @@ BEGIN
   ELSIF p_body ? 'participant' AND v_sub IS NOT NULL AND length(trim(v_sub)) > 0 THEN
     v_participant := 'urn:ckp:participant:' || ckp.urn_normalise(v_sub);
   ELSE
-    v_participant := 'urn:ckp:participant:anon:' || gen_random_uuid()::text;
+    -- 0.4.64 — REFUSE, do not mint. This minted anon:<fresh-uuid> per call, so
+    -- every unattributed write became a permanent fact belonging to nobody and
+    -- N naked-path seals presented as N distinct participants (ck-dev's
+    -- finding-1786732252462817000; quorum was closed at 0.4.62, and THIS closes
+    -- unattributability itself). The door is unaffected: its anonymous tier is
+    -- subscribe-only and never reaches seal; a verified connection always sets
+    -- ckp.requester. Only the naked path (psql / pgRDF-side SPI) lands here,
+    -- and the naked path must NAME an identity — a declared service identity
+    -- is acceptable, an absent one is not. The 39 historical anon seals stand
+    -- as fenced history; no new one can be created.
+    RAISE EXCEPTION 'ckp.seal: unattributed write refused — no verified identity on this call. Name one explicitly: SELECT set_config(''ckp.requester'', ''<your declared identity, e.g. svc:smoke-suite>'', true) before sealing. The substrate no longer mints anon:<uuid> participants: a fact belonging to nobody is permanent, and fresh uuids let one caller impersonate many distinct parties.';
     v_display := NULL;
     v_email := NULL;
   END IF;
@@ -4554,6 +5521,19 @@ BEGIN
     END IF;
   END;
 
+  -- 1b. PROOF OBLIGATIONS (0.4.65, §5b) — the seal's exit, extensible by
+  -- agreement. The shape gate above judges FORM; obligations judge whatever the
+  -- registered check judges (the debut, digest-match, judges REFERENCE: a cited
+  -- surfaceDigest must be one an Epoch sealed). Every ACTIVE obligation this
+  -- kernel registered for this exact type runs; one refusal refuses the seal.
+  -- Satisfactions become proof rows at step 4b — the agreement leaves a mark on
+  -- every fact it guarded, so "which checks did this seal pass" is a read.
+  v_oblig := ckp._run_proof_obligations(p_instance_id, v_type, p_body, v_project);
+  IF v_oblig ? 'refused' THEN
+    RAISE EXCEPTION 'ckp.seal: proof obligation % refused this candidate — %',
+      v_oblig->>'refused', v_oblig->>'reason';
+  END IF;
+
   -- 2. MATERIALIZE durable instance.
   --
   -- #59: the stamps join the body BEFORE the digest. Merged last so they win
@@ -4602,8 +5582,87 @@ BEGIN
   END IF;
   INSERT INTO ckp.proof(about, method, digest) VALUES (p_instance_id,'hmac+sha256',v_sha);
 
+  -- 4b. APPEND one proof per SATISFIED obligation (0.4.65, §5b) — same digest,
+  -- method naming the agreement ('obligation:<name>'). ckp.proof's absent
+  -- uniqueness is the placed joint this stands on: the hmac row proves the
+  -- bytes, each obligation row proves one agreed check held when they sealed.
+  -- Validated against ckp:ProofShape like the hmac row — the protocol's own
+  -- ops pass their own gate or nothing does.
+  FOR v_ob IN SELECT jsonb_array_elements_text(COALESCE(v_oblig->'satisfied','[]'::jsonb))
+  LOOP
+    v_prf_ttl := format($t$
+      @prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
+      @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+      <urn:ckp:prf:%s:%s> a ckp:Proof ;
+        ckp:about <%s> ; ckp:method "obligation:%s" ; ckp:digest "%s" ;
+        ckp:verifiedAt "%s"^^xsd:dateTime .$t$,
+      p_instance_id, v_ob, p_instance_id, v_ob, v_sha, to_char(v_now,'YYYY-MM-DD"T"HH24:MI:SS"Z"'));
+    IF NOT ckp.validate(v_prf_ttl, v_core) THEN
+      RAISE EXCEPTION 'ckp.seal: obligation proof % fails ckp:ProofShape (core governance)', v_ob;
+    END IF;
+    INSERT INTO ckp.proof(about, method, digest) VALUES (p_instance_id, 'obligation:'||v_ob, v_sha);
+  END LOOP;
+
+  -- 4c. IDENTITY EVIDENCE (0.4.70) — the sealed half of the fleet identity
+  -- contract (pgRDF operation-1786906298085342000, confirmed by pgck in
+  -- operation-1786897156122855000). Two GUCs, relay-set on the channel clients
+  -- cannot write, land as proof rows so verified-at-time becomes SEALABLE
+  -- EVIDENCE riding the ledger into every future epoch, instead of the
+  -- substrate's unrecorded word. The attach list is CLOSED at these two:
+  -- anything beyond them is argued for on the wire, never slipped in.
+  --
+  --   token-residue   digest = the claims fingerprint itself (iss/kid/sub/exp
+  --                   hash, 64-hex). NEVER the token: a raw JWT (eyJ…) fails
+  --                   the pattern and REFUSES the seal — the never-the-token
+  --                   rule is structural, not conventional. Absent GUC = no
+  --                   row = honestly unattested (tests, raw plane).
+  --   grant-ref       the acting voted Grant's URN rides in the METHOD
+  --                   ('grant-ref:<urn>'), readable for resolve-never-believe
+  --                   custody (pgRDF#122); digest = v_sha, consistent with
+  --                   obligation rows (evidence about THIS sealed body).
+  v_res := NULLIF(trim(COALESCE(current_setting('ckp.token_residue', true), '')), '');
+  IF v_res IS NOT NULL THEN
+    IF v_res !~ '^[0-9a-f]{64}$' THEN
+      RAISE EXCEPTION 'ckp.seal: ckp.token_residue must be a 64-hex claims fingerprint (sha256 over iss/kid/sub/exp), NEVER the token itself — bearer tokens replay, and a raw credential in the evidence plane is permanent. Got a value of length %.', length(v_res);
+    END IF;
+    v_prf_ttl := format($t$
+      @prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
+      @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+      <urn:ckp:prf:%s:tr> a ckp:Proof ;
+        ckp:about <%s> ; ckp:method "token-residue" ; ckp:digest "%s" ;
+        ckp:verifiedAt "%s"^^xsd:dateTime .$t$,
+      p_instance_id, p_instance_id, v_res, to_char(v_now,'YYYY-MM-DD"T"HH24:MI:SS"Z"'));
+    IF NOT ckp.validate(v_prf_ttl, v_core) THEN
+      RAISE EXCEPTION 'ckp.seal: token-residue proof fails ckp:ProofShape (core governance)';
+    END IF;
+    INSERT INTO ckp.proof(about, method, digest) VALUES (p_instance_id, 'token-residue', v_res);
+  END IF;
+  v_gref := NULLIF(trim(COALESCE(current_setting('ckp.grant_ref', true), '')), '');
+  IF v_gref IS NOT NULL THEN
+    IF v_gref !~ '^[A-Za-z][A-Za-z0-9+.:#/_-]*$' THEN
+      RAISE EXCEPTION 'ckp.seal: ckp.grant_ref must be the acting Grant''s URN/IRI, got %', v_gref;
+    END IF;
+    -- the URN character gate above makes this string build injection-safe.
+    v_prf_ttl := format($t$
+      @prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
+      @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+      <urn:ckp:prf:%s:gr> a ckp:Proof ;
+        ckp:about <%s> ; ckp:method "grant-ref:%s" ; ckp:digest "%s" ;
+        ckp:verifiedAt "%s"^^xsd:dateTime .$t$,
+      p_instance_id, p_instance_id, v_gref, v_sha, to_char(v_now,'YYYY-MM-DD"T"HH24:MI:SS"Z"'));
+    IF NOT ckp.validate(v_prf_ttl, v_core) THEN
+      RAISE EXCEPTION 'ckp.seal: grant-ref proof fails ckp:ProofShape (core governance)';
+    END IF;
+    INSERT INTO ckp.proof(about, method, digest) VALUES (p_instance_id, 'grant-ref:'||v_gref, v_sha);
+  END IF;
+
   -- 5. PROJECT link triples for Task/Goal instances into the project board graph (CKB-5).
   PERFORM ckp.project_links(v_project, p_instance_id, p_body);
+
+  -- 6. PROJECT THE SPINE (0.4.59, pgRDF §4.4): the sealed body — stamps included,
+  -- since they merged at step 2 — becomes quads in <project>/instances, so the
+  -- fence census and every oracle signal are SPARQL, adoptable by any kernel.
+  PERFORM ckp._project_instance_spine(p_instance_id, p_body, v_project);
 
   RETURN v_sha;
 END;
@@ -5003,7 +6062,20 @@ BEGIN
   END LOOP;
 
   -- project the resolved candidate body to RDF in a scratch graph.
-  v_ttl := ckp._body_to_ttl(v_resolved, v_subj, v_comp);
+  -- 0.4.62 — THE DRY-RUN CANDIDATE IS THE SEAL'S CANDIDATE, all three parts.
+  -- This serialized the body alone, so every requirement arriving by PARENT
+  -- CLOSURE was invisible: wave:Pass receives EpochShape via wave:Pass ⊑
+  -- ckp:Epoch, so epoch and surfaceDigest are demanded at seal — and this
+  -- dry-run said conforms:true to a body missing both (ck-dev's escalation
+  -- operation-1786642612862085000, reproduced here on 0.4.61 before fixing).
+  -- Same root as the 0.4.60 propmap fix, one layer over: ancestors resolved in
+  -- the property MAP but never STAMPED on the dry-run candidate. The derived
+  -- stamps join too, exactly as seal composes them, so InstanceShape's
+  -- requirements are previewed rather than falsely refused.
+  v_ttl := ckp._body_to_ttl(v_resolved, v_subj, v_comp)
+        || ckp._parent_closure_ttl(v_type, v_subj, v_comp)
+        || ckp._stamps_to_ttl(v_subj, ckp._derived_stamps(v_subj, v_type, v_proj,
+             NULLIF(trim(COALESCE(current_setting('ckp.requester', true), '')), ''), v_comp));
   v_scratch := pgrdf.add_graph('urn:ckp:validate:'||pg_backend_pid());
   PERFORM pgrdf.clear_graph(v_scratch);
   BEGIN
@@ -5171,10 +6243,19 @@ BEGIN
   ORDER BY seq DESC
   LIMIT 1;
 
+  -- 0.4.66 — VERIFY THE BYTE-PROOF, BY NAME. This took the LAST proof row and
+  -- demanded it be hmac+sha256 — true exactly as long as ckp.proof held one row
+  -- per fact. 0.4.65's obligations made proofs PLURAL (that was the point), the
+  -- obligation row lands after the hmac row, and the first obligation-guarded
+  -- fact on the bench (pass-1786830306955914000) verified FALSE seconds after
+  -- sealing cleanly. The writer moved and this reader did not — caught by the
+  -- mechanism's own debut, the day it shipped. The byte-proof is selected by
+  -- METHOD now; obligation rows are attestations of agreed checks, never
+  -- substitutes for the bytes.
   SELECT method, digest
   INTO v_proof_method, v_proof_digest
   FROM ckp.proof
-  WHERE about = p_instance_id
+  WHERE about = p_instance_id AND method = 'hmac+sha256'
   ORDER BY id DESC
   LIMIT 1;
 
@@ -5260,11 +6341,13 @@ BEGIN
   );
   PERFORM ckp.seal(v_vid, v_body);
 
-  -- 5. quorum check: COUNT approve-votes about this Proposal vs requiresQuorum.
-  SELECT count(*) INTO v_approvals FROM ckp.instances
+  -- 5. quorum: DISTINCT accountable parties (0.4.62) — see ckp.apply for the
+  -- mechanism and ck-dev's finding. Votes are not approvals; parties are.
+  SELECT count(DISTINCT body->>(C||'createdBy')) INTO v_approvals FROM ckp.instances
     WHERE body->>'type' = C||'Vote'
       AND body->>(C||'about') = v_about
-      AND body->>(C||'voteValue') = 'approve';
+      AND body->>(C||'voteValue') = 'approve'
+      AND COALESCE(body->>(C||'createdBy'),'') NOT LIKE 'urn:ckp:participant:anon:%';
 
   RETURN jsonb_build_object('ok', true, 'vote', v_vid, 'proposal', v_about, 'value', v_value,
                             'approvals', v_approvals, 'quorum', v_quorum,

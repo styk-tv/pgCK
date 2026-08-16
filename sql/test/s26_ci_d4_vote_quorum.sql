@@ -31,6 +31,7 @@ DO $$
 DECLARE res jsonb; piri text := (SELECT piri FROM s26);
 BEGIN
   SET LOCAL ROLE ck_participant;
+  PERFORM set_config('ckp.requester', 'svc:s26-voter-one', true);
   res := ckp.dispatch('kernel.vote', jsonb_build_object('about', piri, 'value', 'approve'));
   RESET ROLE;
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's26 FAIL: first vote not ok: %', res; END IF;
@@ -43,6 +44,10 @@ DO $$
 DECLARE res jsonb; piri text := (SELECT piri FROM s26);
 BEGIN
   SET LOCAL ROLE ck_participant;
+  -- 0.4.62 golden migration: approvals count DISTINCT accountable parties, so
+  -- the second approval must come from a SECOND identity — one voter twice was
+  -- two approvals under the old count, which was the defect, not the contract.
+  PERFORM set_config('ckp.requester', 'svc:s26-voter-two', true);
   res := ckp.dispatch('kernel.vote', jsonb_build_object('about', piri, 'value', 'approve'));
   RESET ROLE;
   IF (res->>'approvals')::int <> 2 THEN RAISE EXCEPTION 's26 FAIL: approvals=% (want 2)', res->>'approvals'; END IF;

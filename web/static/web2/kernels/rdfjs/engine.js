@@ -5,9 +5,10 @@
    size, distinct types/predicates, and a live triple feed.
 
    NOTE: this is a PLACEHOLDER quad store. The real RDF/JS (@rdfjs/data-model + N3)
-   integration + typed-message envelope is requested from CK.Lib.Js via
-   _WIP/NOTIFIES.CK.Lib.Js.v1.3.11.rdfjs-typed-message-store.md — when that lands,
-   this migrates to CK.toQuads()/CK.rdf.store. */
+   integration + typed-message envelope was requested from CK.Lib.Js — when that
+   lands, this migrates to CK.toQuads()/CK.rdf.store. (Historical: CK.Lib.Js
+   v1.5.0 later CUT the browser quad store entirely, so this placeholder is the
+   only in-browser store on this surface.) */
 (function () {
   const N = "https://conceptkernel.org/ontology/v3.7/";
   const CAP = 4000;

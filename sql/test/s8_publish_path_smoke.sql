@@ -1,6 +1,10 @@
+
+-- 0.4.64: unattributed seals REFUSE (the anon mint is gone). A test names
+-- its service identity explicitly — the sanctioned operator form.
+SELECT set_config('ckp.requester','svc:smoke-suite',false);
 -- CKA-6 / S4 step 6 — SQL-side verification of the outbox publish path.
 --
--- Acceptance (per _WIP/TASKS.PGCK.S4-BUNDLED-NATS.v0.1 step 6):
+-- Acceptance (bundled-NATS publish path, final integration step):
 --   After sealing a Task via ckp.seal(), exactly one ckp.outbox row
 --   appears with subject = 'event.kernel.pgck.Task.sealed', headers
 --   containing Ck-Seq matching the ledger.seq of the seal, payload

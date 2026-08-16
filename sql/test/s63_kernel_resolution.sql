@@ -21,6 +21,10 @@
 -- optional. NATS subjects are case-sensitive, so an uppercase segment in the
 -- seed is a surface no conforming client can address.
 \set ON_ERROR_STOP 1
+-- 0.4.64: unattributed seals REFUSE (the anon mint is gone). A test names
+-- its service identity explicitly — the sanctioned operator form.
+SELECT set_config('ckp.requester','svc:smoke-suite',false);
+
 
 -- (a) alpha registers a query affordance through the governance plane and calls it.
 SET ckp.project = 's63-alpha';

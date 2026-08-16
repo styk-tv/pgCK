@@ -1,8 +1,10 @@
--- CKF-3: ckp.seal() participant identity mapping.
--- Acceptance (per SPEC.pgCK.ROADMAP.v0.2-devel §9, line 179):
---   seal with participant {sub:"alice"} → instance body carries
---   urn:ckp:participant:alice; seal without participant → an anonymous URN
---   urn:ckp:participant:anon:<nonce> is minted into the body.
+-- CKF-3: ckp.seal() participant identity mapping — MIGRATED at 0.4.64.
+-- The original acceptance pinned two behaviours the substrate has since
+-- outlawed: a payload {sub} honoured as identity (the E1 claim path — identity
+-- is SERVER-derived, a claim is ignored when a verified requester exists), and
+-- an anon:<nonce> minted when nobody was present (unattributed writes now
+-- REFUSE; ck-dev's finding-1786732252462817000). The golden now pins the
+-- doctrine: requester wins, claims decorate at most, absence refuses.
 --
 -- Canonical IRI key is the v3.11 core predicate
 -- https://conceptkernel.org/ontology/v3.11/core#participant; display claims
@@ -21,8 +23,10 @@ CALL ckp.bootstrap_kernel();
 INSERT INTO ckp.config(k,v) VALUES ('identity_key','demo-secret')
 ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v;
 
--- (a) WITH participant {sub:"alice", ...}: canonical IRI urn:ckp:participant:alice
--- is persisted, the raw claims object is replaced, and display fields ride along.
+-- (a) the REQUESTER is alice: canonical IRI urn:ckp:participant:alice is
+-- persisted from the VERIFIED identity — the payload claims agree here and add
+-- only display fields. Identity comes from the session, never the payload.
+SELECT set_config('ckp.requester','alice',false);
 DO $$
 DECLARE
   v_body jsonb := jsonb_build_object(
@@ -66,39 +70,30 @@ BEGIN
   END IF;
 END $$;
 
--- (b) WITHOUT participant: an anonymous URN urn:ckp:participant:anon:<nonce>
--- is minted into the body.
+-- (b) WITHOUT any identity: the seal REFUSES (0.4.64). The anon mint is gone —
+-- a fact belonging to nobody is permanent, and per-call fresh uuids let one
+-- caller impersonate many distinct parties. The refusal must name the clause.
 DO $$
 DECLARE
   v_body jsonb := '{"type":"urn:ckp:kernel#Greeting","urn:ckp:kernel#name":"Bob"}'::jsonb;
-  v_stored jsonb;
-  v_iri text;
 BEGIN
-  PERFORM ckp.seal('cf3-anon', v_body);
-
-  SELECT body INTO v_stored FROM ckp.instances WHERE id = 'cf3-anon';
-  v_iri := v_stored->>'https://conceptkernel.org/ontology/v3.11/core#participant';
-
-  IF v_iri NOT LIKE 'urn:ckp:participant:anon:%' THEN
-    RAISE EXCEPTION 's9 FAIL: anon URN not minted, got %', v_iri;
-  END IF;
-
-  -- A nonce must follow the anon: prefix.
-  IF length(v_iri) <= length('urn:ckp:participant:anon:') THEN
-    RAISE EXCEPTION 's9 FAIL: anon URN has no nonce, got %', v_iri;
-  END IF;
-
-  -- No display fields when anonymous.
-  IF v_stored ? 'participant_display_name' OR v_stored ? 'participant_email' THEN
-    RAISE EXCEPTION 's9 FAIL: anon instance carries display fields';
-  END IF;
-
-  IF NOT ckp.verify('cf3-anon') THEN
-    RAISE EXCEPTION 's9 FAIL: verify() failed for anon instance';
+  PERFORM set_config('ckp.requester','',true);   -- txn-local: clear the suite identity
+  BEGIN
+    PERFORM ckp.seal('cf3-anon', v_body);
+    RAISE EXCEPTION 's9 FAIL: unattributed seal was ACCEPTED — the refusal is not enforced';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM NOT LIKE '%unattributed write refused%' THEN RAISE; END IF;
+    RAISE NOTICE 's9 PASS: unattributed seal refused with the clause named';
+  END;
+  IF EXISTS (SELECT 1 FROM ckp.instances WHERE id = 'cf3-anon') THEN
+    RAISE EXCEPTION 's9 FAIL: refused seal left a row behind';
   END IF;
 END $$;
 
--- (c) participant present but sub empty → treated as anonymous.
+-- (c) MIGRATED (0.4.64): an empty payload sub used to fall back to a minted
+-- anon. Now: the empty CLAIM is simply ignored and the verified REQUESTER
+-- wins — which is the doctrine (claims never beat the session identity), and
+-- with no requester either, (b) already proved it refuses.
 DO $$
 DECLARE
   v_body jsonb := jsonb_build_object(
@@ -111,22 +106,23 @@ BEGIN
   PERFORM ckp.seal('cf3-empty-sub', v_body);
   SELECT body->>'https://conceptkernel.org/ontology/v3.11/core#participant'
     INTO v_iri FROM ckp.instances WHERE id = 'cf3-empty-sub';
-  IF v_iri NOT LIKE 'urn:ckp:participant:anon:%' THEN
-    RAISE EXCEPTION 's9 FAIL: empty sub should fall back to anon, got %', v_iri;
+  IF v_iri <> 'urn:ckp:participant:alice' THEN
+    RAISE EXCEPTION 's9 FAIL: empty claim must lose to the verified requester, got %', v_iri;
   END IF;
 END $$;
 
--- (d) non-trivial sub exercises the normaliser: mixed case + spaces + dot/@
--- 'Alice Smith ' → trim/lower → 'alice smith' → non-[a-z0-9-]+ → 'alice-smith'.
+-- (d) the normaliser, exercised through the REQUESTER (0.4.64: the payload
+-- claim path is dead while a requester exists, so the normaliser is fed by the
+-- session identity — the same path the relay uses).
 DO $$
 DECLARE
   v_body jsonb := jsonb_build_object(
     'type', 'urn:ckp:kernel#Greeting',
-    'urn:ckp:kernel#name', 'Dia',
-    'participant', jsonb_build_object('sub', 'Alice Smith ')
+    'urn:ckp:kernel#name', 'Dia'
   );
   v_iri text;
 BEGIN
+  PERFORM set_config('ckp.requester', 'Alice Smith ', true);
   PERFORM ckp.seal('cf3-norm', v_body);
   SELECT body->>'https://conceptkernel.org/ontology/v3.11/core#participant'
     INTO v_iri FROM ckp.instances WHERE id = 'cf3-norm';
