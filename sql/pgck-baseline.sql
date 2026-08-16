@@ -340,6 +340,7 @@ INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane) VALUES
   ('pgck','surface.typecheck',   'input.kernel.pgck.action.surface.typecheck',   'instance'),
   ('pgck','surface.unshaped',    'input.kernel.pgck.action.surface.unshaped',    'instance'),
   ('pgck','surface.declared',    'input.kernel.pgck.action.surface.declared',    'instance'),
+  ('pgck','surface.grounding',   'input.kernel.pgck.action.surface.grounding',   'instance'),
   ('pgck','project.resolve',     'input.kernel.pgck.action.project.resolve',     'instance'),
   ('pgck','instance.create',      'input.kernel.pgck.action.instance.create',      'instance'),
   ('pgck','instance.update',      'input.kernel.pgck.action.instance.update',      'instance'),
@@ -502,6 +503,14 @@ BEGIN
     graph_digest TEXT NOT NULL,
     pinned_at    TIMESTAMPTZ NOT NULL DEFAULT now()
   );
+  -- 0.4.67: the structural plane joins the pin (reload-surviving digest +
+  -- blank-node-immune counts). ADD COLUMN keeps pre-0.4.67 pins valid: their
+  -- structural fields backfill at the next composition's re-pin or stay NULL,
+  -- honestly reported as "pinned before the structural plane existed".
+  ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS structural_digest TEXT;
+  ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS nodeshapes INTEGER;
+  ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS properties INTEGER;
+  ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS asserted INTEGER;
   -- 0.4.65 — the obligation registry (§5b): governed proof-producers run at
   -- seal-exit. Registered only through add_proof_obligation (propose→vote→
   -- apply); consulted by ckp.seal via ckp._run_proof_obligations.
@@ -1018,8 +1027,18 @@ BEGIN
     -- happens in adoption.check / the oracle, never here — B4's rule: a report
     -- may be wrong cheaply, a gate may not, and a false drift-positive in the
     -- hot path would refuse every seal for the project. Detection, declared.
-    INSERT INTO ckp.adoption_pins(graph_iri, graph_digest)
-    VALUES (v_iri, ckp._surface_digest(v_mod))
+    -- 0.4.67: the pin carries BOTH planes plus the structural counts. The copy
+    -- digest detects in-store drift; the structural digest is what a party on
+    -- ANOTHER store verifies against (three loads of one module share it); the
+    -- counts (NodeShapes/properties/asserted) are the blank-node-immune third
+    -- instrument — the 27+11+4=42 arithmetic, per module.
+    INSERT INTO ckp.adoption_pins(graph_iri, graph_digest, structural_digest, nodeshapes, properties, asserted)
+    VALUES (v_iri, ckp._surface_digest(v_mod), ckp._structural_digest(v_mod),
+      (SELECT count(*) FROM pgrdf.sparql(format(
+         'SELECT ?s WHERE { GRAPH <%s> { ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/shacl#NodeShape> } }', v_iri))),
+      (SELECT count(*) FROM pgrdf.sparql(format(
+         'SELECT ?s WHERE { GRAPH <%s> { ?s <http://www.w3.org/ns/shacl#path> ?p } }', v_iri))),
+      (SELECT count(*) FROM pgrdf._pgrdf_quads q WHERE q.graph_id = v_mod AND NOT q.is_inferred))
     ON CONFLICT (graph_iri) DO NOTHING;
     PERFORM pgrdf.copy_graph(v_mod, v_comp);
   END LOOP;
@@ -1653,12 +1672,21 @@ BEGIN
       'graphDigestNow', v_now,
       'graphDigestPinned', v_pin,
       'drifted', (v_pin IS NOT NULL AND v_pin <> v_now),
+      -- 0.4.67: the structural plane, reported beside the copy plane. This is
+      -- the value a party on ANOTHER store compares (finding-1786716790912211000:
+      -- no consumer read path exposed a composed module's digest — this is that
+      -- path, both planes, counts included). NULL structural pin = pinned
+      -- before the structural plane existed; re-pins at next fresh composition.
+      'structuralDigestNow', ckp._structural_digest(pgrdf.add_graph(v_iri)),
+      'structuralDigestPinned', (SELECT p.structural_digest FROM ckp.adoption_pins p WHERE p.graph_iri = v_iri),
+      'counts', (SELECT jsonb_build_object('nodeshapes', p.nodeshapes, 'properties', p.properties, 'asserted', p.asserted)
+                   FROM ckp.adoption_pins p WHERE p.graph_iri = v_iri),
       'sourceDigest', (SELECT a.body->>(N||'sourceDigest') FROM ckp.instances a
                         WHERE a.body->>'type' = N||'Adoption'
                           AND a.body->>(N||'adopts') = v_iri
                         ORDER BY a.ts_created DESC LIMIT 1),
       'sourceDigestVerifiable', false,
-      'why', 'sourceDigest is a FILE-BYTE sha256; a graph cannot recompute file bytes. Verify it where the file is loaded. The substrate''s half is the graph pin: taken at first composition, drift detectable ever after.');
+      'why', 'sourceDigest is a FILE-BYTE sha256; a graph cannot recompute file bytes. Verify it where the file is loaded (pgRDF#118 is that seat). The substrate''s halves: the COPY pin detects in-store drift; the STRUCTURAL pin survives reload and is what a third party recomputes. Equal structural digests are evidence, not proof (first-degree); unequal ARE proof of difference.');
   END LOOP;
   RETURN jsonb_build_object('ok', true, 'kernel', v_proj,
     'modules', v_rows, 'drifted', v_drift,
@@ -1667,11 +1695,78 @@ END;
 $function$
 ;
 
+-- 0.4.67 — surface.grounding: the three-digest-plane census of this kernel's
+-- ground, as a verb (a check that is not a verb does not exist). Per graph in
+-- the kernel's world — composed surface, own kernel graph, every adopted
+-- module — the existential census (ground/bnode triples, distinct blanks), the
+-- COPY digest (this store's bytes, moves on reload), the STRUCTURAL digest
+-- (survives reload, fleet algorithm), and the blank-node-immune counts. This is
+-- how a kernel grounds itself in the founding graphs and how a brought graph is
+-- examined at the door before adoption (the §14.3 admission contract's
+-- fingerprint gate, at pgck's door).
+CREATE OR REPLACE FUNCTION ckp.surface_grounding(p_payload jsonb, p_project text DEFAULT NULL)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_proj text := COALESCE(p_project, ckp._project());
+  v_iris text[];
+  v_iri  text;
+  v_g    bigint;
+  v_rows jsonb := '[]'::jsonb;
+BEGIN
+  -- an explicit {iri} examines ONE graph (the brought-graph admission read);
+  -- with no payload the kernel's whole ground is censused.
+  IF COALESCE(btrim(p_payload->>'iri'),'') <> '' THEN
+    v_iris := ARRAY[p_payload->>'iri'];
+  ELSE
+    v_iris := ARRAY[format('urn:ckp:%s/shapes/composed', v_proj),
+                    format('urn:ckp:%s/kernel/ck', v_proj)]
+              || ckp._adopted_graphs(v_proj);
+  END IF;
+  FOREACH v_iri IN ARRAY v_iris LOOP
+    v_g := pgrdf.add_graph(v_iri);
+    v_rows := v_rows || (
+      SELECT jsonb_build_object(
+        'iri', v_iri,
+        'asserted',        count(*),
+        'groundTriples',   count(*) FILTER (WHERE s.term_type <> 2 AND o.term_type <> 2),
+        'bnodeTriples',    count(*) FILTER (WHERE s.term_type = 2 OR o.term_type = 2),
+        'distinctBnodes',  (SELECT count(DISTINCT d) FROM (
+                              SELECT q2.subject_id d FROM pgrdf._pgrdf_quads q2
+                                JOIN pgrdf._pgrdf_dictionary s2 ON s2.id = q2.subject_id
+                               WHERE q2.graph_id = v_g AND NOT q2.is_inferred AND s2.term_type = 2
+                              UNION
+                              SELECT q3.object_id FROM pgrdf._pgrdf_quads q3
+                                JOIN pgrdf._pgrdf_dictionary o3 ON o3.id = q3.object_id
+                               WHERE q3.graph_id = v_g AND NOT q3.is_inferred AND o3.term_type = 2) u),
+        'copyDigest',       ckp._surface_digest(v_g),
+        'structuralDigest', ckp._structural_digest(v_g),
+        'nodeshapes', (SELECT count(*) FROM pgrdf.sparql(format(
+          'SELECT ?s WHERE { GRAPH <%s> { ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/shacl#NodeShape> } }', v_iri))),
+        'properties', (SELECT count(*) FROM pgrdf.sparql(format(
+          'SELECT ?s WHERE { GRAPH <%s> { ?s <http://www.w3.org/ns/shacl#path> ?p } }', v_iri))))
+      FROM pgrdf._pgrdf_quads q
+      JOIN pgrdf._pgrdf_dictionary s ON s.id = q.subject_id
+      JOIN pgrdf._pgrdf_dictionary o ON o.id = q.object_id
+      WHERE q.graph_id = v_g AND NOT q.is_inferred);
+  END LOOP;
+  RETURN jsonb_build_object('ok', true, 'kernel', v_proj, 'graphs', v_rows,
+    'planes', 'FILE digests pin published bytes (verify with shasum against the sidecar). copyDigest pins THIS store''s bytes and moves on every reload — in-store drift detection only, never cross-bench identity. structuralDigest survives reload (first-degree blank-node signatures, the fleet algorithm) — what a third party recomputes from the published modules. Counts are the blank-node-immune instrument: 42 NodeShapes = 27 core + 11 wave + 4 lexicon on a fully-adopted kernel.',
+    'verdictAsymmetry', 'unequal structural digests PROVE two graphs differ; equal ones are strong evidence of isomorphism and NOT proof (not RDFC-1.0). Never upgrade ISOMORPHIC_LIKELY to identical.');
+END;
+$function$
+;
+
 -- P0-E (pgCK#28): a deterministic digest of a shapes graph — sha256 over the
 -- s|p|o triples in sorted order. Re-derivable by anyone re-running it against
 -- the same graph, so a Materialization's surfaceDigest is a CHECKABLE claim
 -- ("re-derive the surface at that epoch"), not a trusted number. 64 lowercase
--- hex, matching ckp:surfaceDigest's sh:pattern.
+-- hex, matching ckp:surfaceDigest's sh:pattern. 0.4.67 names its plane: this is
+-- the COPY digest (blank-node labels included — parse-scoped); its
+-- reload-surviving sibling is ckp._structural_digest.
 CREATE OR REPLACE FUNCTION ckp._surface_digest(p_graph bigint)
  RETURNS text
  LANGUAGE plpgsql
@@ -1688,6 +1783,94 @@ BEGIN
   FROM pgrdf.sparql(format(
     'SELECT ?s ?p ?o WHERE { GRAPH <%s> { ?s ?p ?o } }', v_iri)) j;
   RETURN encode(digest(convert_to(v_concat, 'UTF8'), 'sha256'), 'hex');
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp._structural_digest(p_graph bigint)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+-- 0.4.67 — THE STRUCTURAL PLANE (§5b alignment, finding-1786862028710113000).
+--
+-- _surface_digest is the COPY plane: sha256 over rendered lines with blank-node
+-- LABELS included, so it moves on every reload and no third party can recompute
+-- it from published files. This is the plane that survives: each blank node is
+-- replaced by a signature over its own incident triples (itself marked _:a,
+-- every other blank node flattened to _:z), so the digest depends on the shape
+-- a node sits in and never on the label it happened to receive.
+--
+-- THE ALGORITHM IS THE FLEET'S, byte-for-byte (pgrdf_fingerprint):
+--   ground     = sorted lines with no blank node, joined by \n, sha256
+--   sig(b)     = sha256 of b's incident lines (self→_:a, other→_:z), sorted
+--   bnode      = sha256 of the sorted signature hexes, joined by \n
+--   structural = sha256( ground_text || '\n--\n' || signature_hexes )
+-- ACCEPTANCE, measured 2026-08-16: three independent loads of the v3.11 core
+-- (bench urn:ckp:core, bench urn:ckp:core/v3.11, test-rig urn:ckp:core) carry
+-- three different byte digests and ONE structural digest, 9a791c6c3d6d07cb… —
+-- reproduced by this function against the client-side tool's published pins.
+--
+-- HONEST LIMITS, never to be flattened: this is FIRST-DEGREE hashing, not
+-- RDFC-1.0 — equal digests are strong evidence of isomorphism, NOT proof
+-- (symmetric blank-node structures can collide); unequal digests ARE proof of
+-- difference. ASSERTED ONLY — inferred triples re-derive and are a check
+-- value, never content.
+--
+-- INTERIM SEAT: reads the engine's quad/dictionary tables directly because the
+-- public SPARQL surface cannot exclude inferred triples. The coupling is pinned
+-- by the co-shipped bundle and fails LOUD on schema drift; pgRDF#117
+-- (pgrdf.graph_digest, RDFC-1.0) retires this function's body.
+DECLARE
+  v_ground text;
+  v_sigs   text;
+BEGIN
+  IF to_regclass('pgrdf._pgrdf_quads') IS NULL OR to_regclass('pgrdf._pgrdf_dictionary') IS NULL THEN
+    RAISE EXCEPTION 'ckp._structural_digest: the engine''s quad/dictionary tables are not where the pinned bundle put them — refusing rather than inventing a digest (interim seat; pgRDF#117 is the lasting one)';
+  END IF;
+  WITH t AS (
+    SELECT x.subject_id sid, x.object_id oid, s.term_type st, o.term_type ot,
+      CASE s.term_type WHEN 1 THEN '<'||s.lexical_value||'>' WHEN 2 THEN '_:'||s.lexical_value
+        ELSE '"'||replace(replace(s.lexical_value, chr(92), chr(92)||chr(92)), '"', chr(92)||'"')||'"' END AS sr,
+      CASE p.term_type WHEN 1 THEN '<'||p.lexical_value||'>' WHEN 2 THEN '_:'||p.lexical_value
+        ELSE '"'||replace(replace(p.lexical_value, chr(92), chr(92)||chr(92)), '"', chr(92)||'"')||'"' END AS pr,
+      CASE o.term_type WHEN 1 THEN '<'||o.lexical_value||'>' WHEN 2 THEN '_:'||o.lexical_value
+        ELSE '"'||replace(replace(replace(o.lexical_value, chr(92), chr(92)||chr(92)), '"', chr(92)||'"'), chr(10), chr(92)||'n')||'"'
+          || coalesce('@'||o.language_tag,
+               CASE WHEN dt.lexical_value IS NOT NULL AND dt.lexical_value <> 'http://www.w3.org/2001/XMLSchema#string'
+                    THEN '^^<'||dt.lexical_value||'>' END, '') END AS orr
+    FROM pgrdf._pgrdf_quads x
+    JOIN pgrdf._pgrdf_dictionary s ON s.id = x.subject_id
+    JOIN pgrdf._pgrdf_dictionary p ON p.id = x.predicate_id
+    JOIN pgrdf._pgrdf_dictionary o ON o.id = x.object_id
+    LEFT JOIN pgrdf._pgrdf_dictionary dt ON dt.id = o.datatype_iri_id
+    WHERE x.graph_id = p_graph AND NOT x.is_inferred
+  ),
+  ground AS (
+    SELECT string_agg(sr||' '||pr||' '||orr||' .', E'\n' ORDER BY (sr||' '||pr||' '||orr||' .') COLLATE "C") AS g
+    FROM t WHERE st <> 2 AND ot <> 2
+  ),
+  bnodes AS (
+    SELECT DISTINCT sid AS b FROM t WHERE st = 2
+    UNION SELECT DISTINCT oid FROM t WHERE ot = 2
+  ),
+  incident AS (
+    SELECT b.b,
+      CASE WHEN t.st=2 THEN CASE WHEN t.sid=b.b THEN '_:a' ELSE '_:z' END ELSE t.sr END
+      ||' '||t.pr||' '||
+      CASE WHEN t.ot=2 THEN CASE WHEN t.oid=b.b THEN '_:a' ELSE '_:z' END ELSE t.orr END
+      ||' .' AS nline
+    FROM bnodes b JOIN t ON (t.st=2 AND t.sid=b.b) OR (t.ot=2 AND t.oid=b.b)
+  ),
+  sigs AS (
+    SELECT encode(digest(convert_to(string_agg(nline, E'\n' ORDER BY nline COLLATE "C"),'UTF8'),'sha256'),'hex') AS sig
+    FROM incident GROUP BY b
+  )
+  SELECT COALESCE((SELECT g FROM ground), ''),
+         COALESCE((SELECT string_agg(sig, E'\n' ORDER BY sig COLLATE "C") FROM sigs), '')
+    INTO v_ground, v_sigs;
+  RETURN encode(digest(convert_to(v_ground||E'\n--\n'||v_sigs, 'UTF8'), 'sha256'), 'hex');
 END;
 $function$
 ;
@@ -1801,6 +1984,19 @@ DECLARE
   v_fs       text;
   v_ts       text;
   v_ttl      text;
+  -- 0.4.67 — NAMED SHAPES, NEVER BRACKETS. The `[ a sh:NodeShape … ]` form
+  -- minted an anonymous NodeShape into the KERNEL graph — a blank node in the
+  -- doctrine. That breaks two things at once: the doctrine stops being
+  -- byte-pinnable (existential-free is the fleet rule, measured 22/22 ground
+  -- on this kernel), and a shape nobody can name can never be superseded by
+  -- name. Caught by the rule BEFORE any governed add_class ever fired on a
+  -- live kernel — the first prevented defect of the alignment. The shape IRI
+  -- is deterministic (project + local names + an 8-hex discriminator over the
+  -- full IRIs), so re-applying the same op re-emits the same subject.
+  -- Project segment from the SEALED producedBy — server-derived, never parsed
+  -- from a caller field.
+  v_seg      text := (regexp_match(COALESCE(p_prop->>(C||'producedBy'),''), '^urn:ckp:([^/]+)/kernel'))[1];
+  v_shape    text;
 BEGIN
   IF v_op = 'add_property' THEN
     v_class := v_detail->>'targetClass';
@@ -1818,9 +2014,18 @@ BEGIN
       IF v_dtype !~ v_iri_re THEN RAISE EXCEPTION 'add_property: datatype must be an IRI, got %', v_dtype; END IF;
       v_dt_line := ' ; sh:datatype <'||v_dtype||'>';
     END IF;
+    IF v_seg IS NULL THEN
+      RAISE EXCEPTION 'add_property: cannot derive the project segment from the proposal''s producedBy — a shape must be NAMED into a kernel graph, never anonymous'; END IF;
+    v_shape := format('urn:ckp:%s/shape/%s--%s--%s', v_seg,
+                      ckp._slug(regexp_replace(v_class,'^.*[/#:]','')),
+                      ckp._slug(regexp_replace(v_path,'^.*[/#:]','')),
+                      left(md5(v_class||'|'||v_path),8));
+    -- the PROPERTY shape is named too — `sh:property [ … ]` would put the
+    -- blank node right back into the doctrine through the inner bracket.
     RETURN '@prefix sh: <http://www.w3.org/ns/shacl#> .'||chr(10)||
-           '[ a sh:NodeShape ; sh:targetClass <'||v_class||'> ; '||
-           'sh:property [ sh:path <'||v_path||'> ; sh:minCount '||v_min::text||v_dt_line||' ] ] .';
+           '<'||v_shape||'> a sh:NodeShape ; sh:targetClass <'||v_class||'> ; '||
+           'sh:property <'||v_shape||'/p> .'||chr(10)||
+           '<'||v_shape||'/p> sh:path <'||v_path||'> ; sh:minCount '||v_min::text||v_dt_line||' .';
 
   ELSIF v_op = 'add_class' THEN
     v_class := COALESCE(v_detail->>'class', v_detail->>'targetClass', p_prop->>(C||'about'));
@@ -1836,7 +2041,12 @@ BEGIN
     -- Emit the NodeShape too, with the same per-property gate add_property uses.
     -- A malformed property is REFUSED here, never dropped: silently narrowing a
     -- shape is un-enforcement nobody sees.
-    v_ts := '';
+    IF v_seg IS NULL THEN
+      RAISE EXCEPTION 'add_class: cannot derive the project segment from the proposal''s producedBy — a shape must be NAMED into a kernel graph, never anonymous'; END IF;
+    v_shape := format('urn:ckp:%s/shape/%s--%s', v_seg,
+                      ckp._slug(regexp_replace(v_class,'^.*[/#:]','')),
+                      left(md5(v_class),8));
+    v_ts := ''; v_ttl := '';
     IF jsonb_typeof(v_detail->'properties') = 'array' THEN
       FOR v_map IN SELECT jsonb_array_elements(v_detail->'properties') LOOP
         v_path := v_map->>'path';
@@ -1853,7 +2063,11 @@ BEGIN
             RAISE EXCEPTION 'add_class: property datatype must be an IRI, got %', v_dtype; END IF;
           v_dt_line := ' ; sh:datatype <'||v_dtype||'>';
         END IF;
-        v_ts := v_ts||' ; sh:property [ sh:path <'||v_path||'> ; sh:minCount '||v_min::text||v_dt_line||' ]';
+        -- named property shapes (…/p0, /p1, …): the inner bracket was the
+        -- other half of the bnode emission — see the DECLARE note.
+        v_fs := v_shape||'/p'||left(md5(v_path),8);
+        v_ts := v_ts||' ; sh:property <'||v_fs||'>';
+        v_ttl := v_ttl||'<'||v_fs||'> sh:path <'||v_path||'> ; sh:minCount '||v_min::text||v_dt_line||' .'||chr(10);
       END LOOP;
     END IF;
     IF v_ts = '' THEN
@@ -1867,7 +2081,8 @@ BEGIN
     RETURN '@prefix owl: <http://www.w3.org/2002/07/owl#> .'||chr(10)||
            '@prefix sh: <http://www.w3.org/ns/shacl#> .'||chr(10)||
            '<'||v_class||'> a owl:Class .'||chr(10)||
-           '[ a sh:NodeShape ; sh:targetClass <'||v_class||'>'||v_ts||' ] .';
+           '<'||v_shape||'> a sh:NodeShape ; sh:targetClass <'||v_class||'>'||v_ts||' .'||chr(10)||
+           v_ttl;
 
   ELSIF v_op = 'set_transition_map' THEN
     v_class := v_detail->>'targetClass';
@@ -2391,10 +2606,19 @@ BEGIN
     v_eiri  := format('urn:ckp:%s/epoch/%s', v_proj, v_epoch);
     v_miri  := format('urn:ckp:%s/materialization/%s', v_proj, v_epoch);
     -- the Epoch resource: the position, named by the digest of its surface.
+    -- 0.4.67: TWO digest planes, each named for what it pins. surfaceDigest is
+    -- the COPY plane — this store's bytes, what surface.check compares in-store
+    -- and what the digest-match obligation consults; it moves on reload and is
+    -- never cross-bench identity. structuralDigest is the plane that survives
+    -- reload (first-degree bnode-signature algorithm, fleet-shared) — the one a
+    -- third party CAN recompute from the published modules, and the one a
+    -- cross-store verifier cites. Nobody minted early: this key ships in the
+    -- same act as the code that derives it.
     PERFORM ckp.seal('epoch-'||v_proj||'-'||v_epoch, jsonb_build_object(
       'type', C||'Epoch', '@id', v_eiri,
       C||'epoch', to_jsonb(v_epoch),
-      C||'surfaceDigest', v_surfd));
+      C||'surfaceDigest', v_surfd,
+      C||'structuralDigest', ckp._structural_digest(v_comp_e)));
     -- the Materialization: the sealed rebuild that produced that epoch.
     PERFORM ckp.seal('mat-'||v_proj||'-'||v_epoch, jsonb_build_object(
       'type', C||'Materialization', '@id', v_miri,
@@ -3457,6 +3681,9 @@ BEGIN
 
   WHEN 'surface.declared' THEN
     res := ckp.surface_declared(p_payload, v_proj);
+
+  WHEN 'surface.grounding' THEN
+    res := ckp.surface_grounding(p_payload, v_proj);
 
   WHEN 'project.resolve' THEN
     res := ckp.project_resolve(p_payload);
