@@ -1037,6 +1037,19 @@ BEGIN
     -- lexicon); properties = declared vocabulary properties (33, 17) — the
     -- fleet's 27+11+4 / 80+33+17 arithmetic, per module. The first cut read
     -- sh:path rows through SPARQL, which counts the inferred closure too.
+    --
+    -- 0.4.69 — DIGESTS AT THE DOOR, NEVER IN THE LOOP. This runs on EVERY seal
+    -- (ckp.seal composes the surface it judges against), and ON CONFLICT DO
+    -- NOTHING evaluates the VALUES first — so 0.4.67 silently computed both
+    -- digests and two counts of every adopted module per seal and threw them
+    -- away. The fleet's boundary rule ("if anyone proposes a fingerprint
+    -- inside a hot step, that's the smell — admission happens once") caught
+    -- its second defect in two days, this one in pgck's own day-old code. The
+    -- pin is trust-on-FIRST-sight by definition: compute only when absent.
+    IF EXISTS (SELECT 1 FROM ckp.adoption_pins ap WHERE ap.graph_iri = v_iri) THEN
+      PERFORM pgrdf.copy_graph(v_mod, v_comp);
+      CONTINUE;
+    END IF;
     INSERT INTO ckp.adoption_pins(graph_iri, graph_digest, structural_digest, nodeshapes, properties, asserted)
     VALUES (v_iri, ckp._surface_digest(v_mod), ckp._structural_digest(v_mod),
       (SELECT count(DISTINCT q4.subject_id) FROM pgrdf._pgrdf_quads q4
