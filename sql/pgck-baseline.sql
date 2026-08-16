@@ -5299,6 +5299,8 @@ DECLARE
   v_stamps JSONB := '{}'::jsonb;
   v_oblig  JSONB := '{}'::jsonb;
   v_ob     TEXT;
+  v_res    TEXT;
+  v_gref   TEXT;
 BEGIN
   IF v_type IS NULL THEN
     RAISE EXCEPTION 'ckp.seal: body has no "type"';
@@ -5496,6 +5498,59 @@ BEGIN
     END IF;
     INSERT INTO ckp.proof(about, method, digest) VALUES (p_instance_id, 'obligation:'||v_ob, v_sha);
   END LOOP;
+
+  -- 4c. IDENTITY EVIDENCE (0.4.70) — the sealed half of the fleet identity
+  -- contract (pgRDF operation-1786906298085342000, confirmed by pgck in
+  -- operation-1786897156122855000). Two GUCs, relay-set on the channel clients
+  -- cannot write, land as proof rows so verified-at-time becomes SEALABLE
+  -- EVIDENCE riding the ledger into every future epoch, instead of the
+  -- substrate's unrecorded word. The attach list is CLOSED at these two:
+  -- anything beyond them is argued for on the wire, never slipped in.
+  --
+  --   token-residue   digest = the claims fingerprint itself (iss/kid/sub/exp
+  --                   hash, 64-hex). NEVER the token: a raw JWT (eyJ…) fails
+  --                   the pattern and REFUSES the seal — the never-the-token
+  --                   rule is structural, not conventional. Absent GUC = no
+  --                   row = honestly unattested (tests, raw plane).
+  --   grant-ref       the acting voted Grant's URN rides in the METHOD
+  --                   ('grant-ref:<urn>'), readable for resolve-never-believe
+  --                   custody (pgRDF#122); digest = v_sha, consistent with
+  --                   obligation rows (evidence about THIS sealed body).
+  v_res := NULLIF(trim(COALESCE(current_setting('ckp.token_residue', true), '')), '');
+  IF v_res IS NOT NULL THEN
+    IF v_res !~ '^[0-9a-f]{64}$' THEN
+      RAISE EXCEPTION 'ckp.seal: ckp.token_residue must be a 64-hex claims fingerprint (sha256 over iss/kid/sub/exp), NEVER the token itself — bearer tokens replay, and a raw credential in the evidence plane is permanent. Got a value of length %.', length(v_res);
+    END IF;
+    v_prf_ttl := format($t$
+      @prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
+      @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+      <urn:ckp:prf:%s:tr> a ckp:Proof ;
+        ckp:about <%s> ; ckp:method "token-residue" ; ckp:digest "%s" ;
+        ckp:verifiedAt "%s"^^xsd:dateTime .$t$,
+      p_instance_id, p_instance_id, v_res, to_char(v_now,'YYYY-MM-DD"T"HH24:MI:SS"Z"'));
+    IF NOT ckp.validate(v_prf_ttl, v_core) THEN
+      RAISE EXCEPTION 'ckp.seal: token-residue proof fails ckp:ProofShape (core governance)';
+    END IF;
+    INSERT INTO ckp.proof(about, method, digest) VALUES (p_instance_id, 'token-residue', v_res);
+  END IF;
+  v_gref := NULLIF(trim(COALESCE(current_setting('ckp.grant_ref', true), '')), '');
+  IF v_gref IS NOT NULL THEN
+    IF v_gref !~ '^[A-Za-z][A-Za-z0-9+.:#/_-]*$' THEN
+      RAISE EXCEPTION 'ckp.seal: ckp.grant_ref must be the acting Grant''s URN/IRI, got %', v_gref;
+    END IF;
+    -- the URN character gate above makes this string build injection-safe.
+    v_prf_ttl := format($t$
+      @prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> .
+      @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+      <urn:ckp:prf:%s:gr> a ckp:Proof ;
+        ckp:about <%s> ; ckp:method "grant-ref:%s" ; ckp:digest "%s" ;
+        ckp:verifiedAt "%s"^^xsd:dateTime .$t$,
+      p_instance_id, p_instance_id, v_gref, v_sha, to_char(v_now,'YYYY-MM-DD"T"HH24:MI:SS"Z"'));
+    IF NOT ckp.validate(v_prf_ttl, v_core) THEN
+      RAISE EXCEPTION 'ckp.seal: grant-ref proof fails ckp:ProofShape (core governance)';
+    END IF;
+    INSERT INTO ckp.proof(about, method, digest) VALUES (p_instance_id, 'grant-ref:'||v_gref, v_sha);
+  END IF;
 
   -- 5. PROJECT link triples for Task/Goal instances into the project board graph (CKB-5).
   PERFORM ckp.project_links(v_project, p_instance_id, p_body);
