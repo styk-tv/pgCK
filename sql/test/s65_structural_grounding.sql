@@ -102,4 +102,19 @@ BEGIN
   END LOOP;
 END $$;
 
+-- (5) counts NAME their method and reproduce the founding arithmetic (F3):
+--     the v3.11 core = 27 NodeShapes · 80 declared vocabulary properties.
+DO $$
+DECLARE res jsonb; g jsonb;
+BEGIN
+  res := ckp.dispatch('surface.grounding', jsonb_build_object('iri','urn:ckp:core'));
+  g := res->'graphs'->0;
+  IF (g->>'nodeshapes')::int <> 27 THEN
+    RAISE EXCEPTION 's65 FAIL (5): core nodeshapes % <> 27 (asserted sh:NodeShape typing)', g->>'nodeshapes'; END IF;
+  IF (g->>'declaredProperties')::int <> 80 THEN
+    RAISE EXCEPTION 's65 FAIL (5): core declaredProperties % <> 80 (asserted owl/rdf property declarations)', g->>'declaredProperties'; END IF;
+  IF NOT (g ? 'propertyShapes') THEN
+    RAISE EXCEPTION 's65 FAIL (5): propertyShapes instrument missing — a count without its method is not a number'; END IF;
+END $$;
+
 \echo s65_structural_grounding: PASS

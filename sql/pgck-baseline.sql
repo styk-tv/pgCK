@@ -1032,12 +1032,28 @@ BEGIN
     -- ANOTHER store verifies against (three loads of one module share it); the
     -- counts (NodeShapes/properties/asserted) are the blank-node-immune third
     -- instrument — the 27+11+4=42 arithmetic, per module.
+    -- 0.4.68: pin counts are ASSERTED-ONLY, distinct, and use the two named
+    -- methods (F3): nodeshapes = asserted sh:NodeShape typing (11 wave, 4
+    -- lexicon); properties = declared vocabulary properties (33, 17) — the
+    -- fleet's 27+11+4 / 80+33+17 arithmetic, per module. The first cut read
+    -- sh:path rows through SPARQL, which counts the inferred closure too.
     INSERT INTO ckp.adoption_pins(graph_iri, graph_digest, structural_digest, nodeshapes, properties, asserted)
     VALUES (v_iri, ckp._surface_digest(v_mod), ckp._structural_digest(v_mod),
-      (SELECT count(*) FROM pgrdf.sparql(format(
-         'SELECT ?s WHERE { GRAPH <%s> { ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/shacl#NodeShape> } }', v_iri))),
-      (SELECT count(*) FROM pgrdf.sparql(format(
-         'SELECT ?s WHERE { GRAPH <%s> { ?s <http://www.w3.org/ns/shacl#path> ?p } }', v_iri))),
+      (SELECT count(DISTINCT q4.subject_id) FROM pgrdf._pgrdf_quads q4
+         JOIN pgrdf._pgrdf_dictionary p4 ON p4.id = q4.predicate_id
+         JOIN pgrdf._pgrdf_dictionary o4 ON o4.id = q4.object_id
+        WHERE q4.graph_id = v_mod AND NOT q4.is_inferred
+          AND p4.lexical_value = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+          AND o4.lexical_value = 'http://www.w3.org/ns/shacl#NodeShape'),
+      (SELECT count(DISTINCT q6.subject_id) FROM pgrdf._pgrdf_quads q6
+         JOIN pgrdf._pgrdf_dictionary p6 ON p6.id = q6.predicate_id
+         JOIN pgrdf._pgrdf_dictionary o6 ON o6.id = q6.object_id
+        WHERE q6.graph_id = v_mod AND NOT q6.is_inferred
+          AND p6.lexical_value = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+          AND o6.lexical_value IN ('http://www.w3.org/2002/07/owl#DatatypeProperty',
+                                   'http://www.w3.org/2002/07/owl#ObjectProperty',
+                                   'http://www.w3.org/2002/07/owl#AnnotationProperty',
+                                   'http://www.w3.org/1999/02/22-rdf-syntax-ns#Property')),
       (SELECT count(*) FROM pgrdf._pgrdf_quads q WHERE q.graph_id = v_mod AND NOT q.is_inferred))
     ON CONFLICT (graph_iri) DO NOTHING;
     PERFORM pgrdf.copy_graph(v_mod, v_comp);
@@ -1744,17 +1760,38 @@ BEGIN
                                WHERE q3.graph_id = v_g AND NOT q3.is_inferred AND o3.term_type = 2) u),
         'copyDigest',       ckp._surface_digest(v_g),
         'structuralDigest', ckp._structural_digest(v_g),
-        'nodeshapes', (SELECT count(*) FROM pgrdf.sparql(format(
-          'SELECT ?s WHERE { GRAPH <%s> { ?s <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/shacl#NodeShape> } }', v_iri))),
-        'properties', (SELECT count(*) FROM pgrdf.sparql(format(
-          'SELECT ?s WHERE { GRAPH <%s> { ?s <http://www.w3.org/ns/shacl#path> ?p } }', v_iri))))
+        -- 0.4.68 — COUNTS NAME THEIR METHOD (F3: two shape counts disagreed in
+        -- the same instant because neither named its method; this verb shipped
+        -- a third). Measured on the founding graphs, three methods, three
+        -- numbers: declared vocabulary properties 80/33/17 (the fleet's
+        -- arithmetic), asserted property shapes 107/44/10, sh:path rows with
+        -- inferred = a fourth. All counts here are ASSERTED-ONLY and distinct.
+        'nodeshapes', (SELECT count(DISTINCT q4.subject_id) FROM pgrdf._pgrdf_quads q4
+           JOIN pgrdf._pgrdf_dictionary p4 ON p4.id = q4.predicate_id
+           JOIN pgrdf._pgrdf_dictionary o4 ON o4.id = q4.object_id
+          WHERE q4.graph_id = v_g AND NOT q4.is_inferred
+            AND p4.lexical_value = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+            AND o4.lexical_value = 'http://www.w3.org/ns/shacl#NodeShape'),
+        'propertyShapes', (SELECT count(DISTINCT q5.subject_id) FROM pgrdf._pgrdf_quads q5
+           JOIN pgrdf._pgrdf_dictionary p5 ON p5.id = q5.predicate_id
+          WHERE q5.graph_id = v_g AND NOT q5.is_inferred
+            AND p5.lexical_value = 'http://www.w3.org/ns/shacl#path'),
+        'declaredProperties', (SELECT count(DISTINCT q6.subject_id) FROM pgrdf._pgrdf_quads q6
+           JOIN pgrdf._pgrdf_dictionary p6 ON p6.id = q6.predicate_id
+           JOIN pgrdf._pgrdf_dictionary o6 ON o6.id = q6.object_id
+          WHERE q6.graph_id = v_g AND NOT q6.is_inferred
+            AND p6.lexical_value = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+            AND o6.lexical_value IN ('http://www.w3.org/2002/07/owl#DatatypeProperty',
+                                     'http://www.w3.org/2002/07/owl#ObjectProperty',
+                                     'http://www.w3.org/2002/07/owl#AnnotationProperty',
+                                     'http://www.w3.org/1999/02/22-rdf-syntax-ns#Property')))
       FROM pgrdf._pgrdf_quads q
       JOIN pgrdf._pgrdf_dictionary s ON s.id = q.subject_id
       JOIN pgrdf._pgrdf_dictionary o ON o.id = q.object_id
       WHERE q.graph_id = v_g AND NOT q.is_inferred);
   END LOOP;
   RETURN jsonb_build_object('ok', true, 'kernel', v_proj, 'graphs', v_rows,
-    'planes', 'FILE digests pin published bytes (verify with shasum against the sidecar). copyDigest pins THIS store''s bytes and moves on every reload — in-store drift detection only, never cross-bench identity. structuralDigest survives reload (first-degree blank-node signatures, the fleet algorithm) — what a third party recomputes from the published modules. Counts are the blank-node-immune instrument: 42 NodeShapes = 27 core + 11 wave + 4 lexicon on a fully-adopted kernel.',
+    'planes', 'FILE digests pin published bytes (verify with shasum against the sidecar). copyDigest pins THIS store''s bytes and moves on every reload — in-store drift detection only, never cross-bench identity. structuralDigest survives reload (first-degree blank-node signatures, the fleet algorithm) — what a third party recomputes from the published modules. Counts are the blank-node-immune instrument and NAME THEIR METHOD: nodeshapes (asserted sh:NodeShape typing; 42 = 27 core + 11 wave + 4 lexicon fully adopted) · declaredProperties (asserted owl/rdf property declarations; 130 = 80 + 33 + 17) · propertyShapes (asserted distinct sh:path subjects). A count without its method is not a number (F3).',
     'verdictAsymmetry', 'unequal structural digests PROVE two graphs differ; equal ones are strong evidence of isomorphism and NOT proof (not RDFC-1.0). Never upgrade ISOMORPHIC_LIKELY to identical.');
 END;
 $function$
