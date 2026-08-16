@@ -2,6 +2,63 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.71 - 2026-08-16
+
+**The seal's exit is extensible by agreement, identity evidence is sealable, and a digest that
+survives reload joins the one that does not.** Fourteen versions (0.4.58–0.4.71), each proven on
+the bench through the door before the next began; this tag ships them together. The recurring
+shape of the wave: capabilities landing on joints the v3.11 root placed deliberately — the proof
+table's absent uniqueness, the sourceDigest/surfaceDigest pair, the frozen primitive set — so
+extension composes instead of carving.
+
+- **The pass boundary is a query and the spine is SPARQL** (0.4.58–0.4.60): sealed bodies —
+  stamps included — project as quads into a per-project instances graph under one deterministic
+  graph id, so the fence census and every coordination signal are derivable by any adopted kernel
+  rather than remembered by one.
+- **Adoption pins are consulted, quorum counts parties, unattributed writes refuse**
+  (0.4.61–0.4.64): graph digests pin at first composition with drift detectable via
+  `adoption.check`; quorum counts *distinct accountable* `createdBy` with anonymous excluded —
+  one caller could previously manufacture any quorum by letting the seal mint a fresh
+  `anon:<uuid>` per unattributed call; now the naked path must name a declared identity or the
+  seal refuses with the remedy in the message. The 39 historical anonymous seals stand as fenced
+  history; no new one can exist.
+- **Sealed proof obligations** (0.4.65): `ckp.proof` carries N rows per fact *by design*, and a
+  governed op (`add_proof_obligation`, propose→vote→apply) registers proof-producers that run at
+  the seal's exit for their target type. Failing refuses; each satisfaction lands as a proof row
+  naming the agreement. Bounds: per-kernel scope, a fixed registry of pure-read checks (an
+  obligation names a check, never carries code), removal by the same governed road, unimplemented
+  checks fail closed. Debut check `digest-match`: the (epoch, surfaceDigest) pair a `wave:Pass`
+  cites must sit on one sealed Epoch — form is the shape gate's jurisdiction, *reference* is the
+  obligation's. Registered on two kernels by two-party agreement; the first fabricated-digest
+  citation refused the same day.
+- **Plural proofs reach the readers** (0.4.66): the first obligation-guarded fact verified
+  `false` seconds after sealing cleanly, because `ckp.verify` took the *last* proof row and
+  demanded it be hmac. The byte-proof is now selected by method; the provenance verb returns
+  every proof row in seal order.
+- **The structural plane** (0.4.67–0.4.69): blank nodes are existential variables, so a
+  SHACL-bearing graph serializes to different bytes on every load forever — byte digests answer
+  "same bytes," never "same graph." `ckp._structural_digest` implements the fleet's first-degree
+  blank-node-signature algorithm byte-for-byte (verified: independent loads of the v3.11 core
+  carry distinct byte digests and ONE structural digest); Epoch seals carry `structuralDigest`
+  beside `surfaceDigest`; adoption pins carry both planes plus counts that *name their method*
+  (asserted NodeShape typing / declared vocabulary properties / property shapes — three methods,
+  three numbers, F3's lesson); `surface.grounding` is the census as a verb; governed shape
+  projection emits *named* NodeShapes with named property shapes, keeping kernel doctrine
+  blank-node-free and every shape supersedable by name. And the boundary rule enforced on
+  ourselves: pin digests compute at first sight only, never per seal — the fleet's
+  "digests at the door, never in the loop" caught its own consumer's regression in a day.
+- **Identity evidence is sealable** (0.4.70): two relay-set GUCs on the channel clients cannot
+  write land as proof rows — `token-residue` (a claims fingerprint; a JWT-shaped value refuses
+  the seal structurally, never-the-token) and `grant-ref:<urn>` (the acting voted Grant, readable
+  for resolve-never-believe custody). Absent GUCs leave no rows: absence is the honest record.
+- **Enforcement features in use** (0.4.71): governed `add_class` can declare a **closed** shape
+  (`sh:closed` + ignored envelope), so an undeclared key refuses instead of minting into the type
+  namespace; `adoption.check` consults the loader-recorded source byte digest (pgRDF ≥ 0.6.31) so
+  a sealed `sourceDigest` is compared rather than decorative; census verbs state their
+  completeness with blind spots enumerated (a short answer must say so — never `complete` when it
+  cannot know); and the transport wrapper resets the engine term cache after any aborted
+  dispatch, ending the stores-but-cannot-be-seen retry failure for door callers.
+
 ## v0.4.57 - 2026-08-13
 
 **The admitted-type gate is scoped to the surface it names, one kernel has one spelling, and the
