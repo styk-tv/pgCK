@@ -1489,6 +1489,18 @@ BEGIN
     'ok', true, 'kernel', v_proj, 'component', v_comp, 'epoch', v_epoch,
     'pass', v_pass, 'thisPass', COALESCE(v_this, '[]'::jsonb),
     'next', v_next, 'signals', v_sig,
+    -- 0.4.71 — R-11 (pgRDF I9): every list-shaped reply states its
+    -- completeness, and this census is INCOMPLETE BY CONSTRUCTION until its
+    -- measured blind spots close. Three legitimate arrivals were missed in one
+    -- day; a reader who treats this as the whole wire builds on absence.
+    'completeness', jsonb_build_object(
+      'verdict', 'INCOMPLETE — blind spots declared below',
+      'blindSpots', jsonb_build_array(
+        'thisPass matches only the six *AtPass stamps and forPass — an unstamped fact (e.g. a Confirmation) is invisible here',
+        'inbox matches opTarget in three spellings of THIS component — an Operation addressed to another component, or a fourth spelling, is invisible',
+        'openFindings/pendingProposals are fleet-wide, but Passes and Epochs of other projects are not surfaced',
+        'no acknowledgement lifecycle: answered Operations remain in inbox forever'),
+      'counters', ckp._engine_counters()),
     'boundary', 'THIS pass = facts stamped with its number + the epochs they advanced; closed at Index seal. NEXT pass = this `next` object AT close — derived, never remembered. NEXT wave = when bindsRoot moves. unjudged means sealedAtEpoch>=1 with conformsToShape ABSENT: admitted, ledgered, judged by nothing — the fence.');
 END;
 $function$
@@ -1671,6 +1683,30 @@ END;
 $function$
 ;
 
+-- 0.4.71 — the engine's silent-incompleteness counters, guarded. NULL means the
+-- engine cannot answer, and per R-11 a caller must then say UNKNOWN — never
+-- complete. Used by the census verbs to compute per-call deltas.
+CREATE OR REPLACE FUNCTION ckp._engine_counters()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE v jsonb;
+BEGIN
+  BEGIN
+    SELECT jsonb_build_object(
+      'truncations', (pgrdf.stats()->>'path_depth_truncations')::bigint,
+      'filtersDropped', (pgrdf.stats()->>'filter_clauses_dropped')::bigint)
+    INTO v;
+  EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+  END;
+  RETURN v;
+END;
+$function$
+;
+
 -- 0.4.61 — adoption.check: is any adopted module still what it was at first
 -- sight, and is the sealed pin verifiable at all? Answers ck-dev's Cluster-F
 -- defect (defect-1786649168553127000: a sourceDigest of 64 zeros composes) the
@@ -1691,11 +1727,28 @@ DECLARE
   v_iri  text;
   v_rows jsonb := '[]'::jsonb;
   v_pin  text; v_now text; v_drift boolean := false;
+  -- 0.4.71 — pgRDF#118 CONSUMED: since engine 0.6.31 the loader records the
+  -- exact input bytes' sha256 on _pgrdf_graphs (turtle funnel; staged/bulk/
+  -- nquads do not yet — the boundary their PR states). When the column exists,
+  -- the sealed Adoption's file-byte sourceDigest stops being decorative: it is
+  -- COMPARED against what the loader measured. Guarded: on an older engine
+  -- the fields read null and verifiable stays false with the old reason.
+  v_has_src boolean := EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema='pgrdf' AND table_name='_pgrdf_graphs' AND column_name='source_sha256');
+  v_src text; v_loads int; v_sealed_src text;
 BEGIN
   FOREACH v_iri IN ARRAY ckp._adopted_graphs(v_proj) LOOP
     SELECT graph_digest INTO v_pin FROM ckp.adoption_pins WHERE graph_iri = v_iri;
     v_now := ckp._surface_digest(pgrdf.add_graph(v_iri));
     IF v_pin IS NOT NULL AND v_pin <> v_now THEN v_drift := true; END IF;
+    v_src := NULL; v_loads := NULL;
+    IF v_has_src THEN
+      SELECT g.source_sha256, g.source_loads INTO v_src, v_loads
+        FROM pgrdf._pgrdf_graphs g WHERE g.iri = v_iri;
+    END IF;
+    SELECT a.body->>(N||'sourceDigest') INTO v_sealed_src FROM ckp.instances a
+      WHERE a.body->>'type' = N||'Adoption' AND a.body->>(N||'adopts') = v_iri
+      ORDER BY a.ts_created DESC LIMIT 1;
     v_rows := v_rows || jsonb_build_object(
       'module', v_iri,
       'graphDigestNow', v_now,
@@ -1714,11 +1767,21 @@ BEGIN
                         WHERE a.body->>'type' = N||'Adoption'
                           AND a.body->>(N||'adopts') = v_iri
                         ORDER BY a.ts_created DESC LIMIT 1),
-      'sourceDigestVerifiable', false,
-      'why', 'sourceDigest is a FILE-BYTE sha256; a graph cannot recompute file bytes. Verify it where the file is loaded (pgRDF#118 is that seat). The substrate''s halves: the COPY pin detects in-store drift; the STRUCTURAL pin survives reload and is what a third party recomputes. Equal structural digests are evidence, not proof (first-degree); unequal ARE proof of difference.');
+      'sourceRecorded',  v_src,
+      'sourceLoads',     v_loads,
+      'sourceDigestVerifiable', (v_src IS NOT NULL),
+      'sourceDigestMatch', CASE WHEN v_src IS NULL OR v_sealed_src IS NULL THEN NULL
+                                ELSE (v_src = v_sealed_src) END,
+      'why', CASE WHEN v_src IS NOT NULL
+        THEN 'the LOADER measured these bytes (pgRDF#118, engine >= 0.6.31): sourceRecorded is the sha256 of the exact input the parser consumed, sourceLoads > 1 self-reports that whole-graph byte identity no longer holds. sourceDigestMatch compares the sealed Adoption claim against the loader record — false is a finding, null means one side is absent. Coverage boundary per pgRDF#120: turtle funnel records; staged/bulk/nquads do not yet — an unrecorded graph on a new engine loaded by those paths reads null honestly.'
+        ELSE 'sourceDigest is a FILE-BYTE sha256; a graph cannot recompute file bytes, and this engine does not record loader-side digests (pgRDF#118 lands at 0.6.31). The substrate''s halves: the COPY pin detects in-store drift; the STRUCTURAL pin survives reload. Equal structural digests are evidence, not proof; unequal ARE proof of difference.' END);
   END LOOP;
   RETURN jsonb_build_object('ok', true, 'kernel', v_proj,
     'modules', v_rows, 'drifted', v_drift,
+    'completeness', jsonb_build_object(
+      'verdict', CASE WHEN v_has_src THEN 'complete for recorded loads'
+                      ELSE 'UNKNOWN — engine predates loader-side recording' END,
+      'counters', ckp._engine_counters()),
     'note', 'drifted:true means an adopted module''s graph no longer matches its first-composition pin — the module was swapped or edited under an unsuperseded Adoption. A legitimate update arrives as a NEW Adoption + Supersession, which re-pins.');
 END;
 $function$
@@ -2127,6 +2190,30 @@ BEGIN
       -- VACUOUSLY. That window is a doctrine question, not a projector bug.
       RETURN '@prefix owl: <http://www.w3.org/2002/07/owl#> .'||chr(10)||
              '<'||v_class||'> a owl:Class .';
+    END IF;
+    -- 0.4.71 — A SHAPE CAN BE LOCKED AND ENFORCED: detail.closed = true emits
+    -- sh:closed with sh:ignoredProperties, so an undeclared key REFUSES at the
+    -- gate instead of minting into the type namespace. The default ignore list
+    -- is the substrate envelope — rdf:type, the four server stamps,
+    -- participant, and the board timestamps — because those are derived onto
+    -- every candidate and a closed shape that forgets them refuses EVERYTHING
+    -- (the total-write-outage-presenting-as-bad-data class). Callers extend it
+    -- via detail.ignoredProperties (IRIs, gated). Closing a FLEET type demands
+    -- the same care through governance: enumerate its client-stamped envelope
+    -- first, or the close is a denial of service dressed as rigor.
+    IF COALESCE(v_detail->>'closed','false') = 'true' THEN
+      v_fs := ' <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>'
+            ||' <'||C||'createdBy> <'||C||'producedBy> <'||C||'sealedAtEpoch>'
+            ||' <'||C||'conformsToShape> <'||C||'participant>'
+            ||' <urn:ckp:board/created_at> <urn:ckp:board/created_by>';
+      IF jsonb_typeof(v_detail->'ignoredProperties') = 'array' THEN
+        FOR v_path IN SELECT jsonb_array_elements_text(v_detail->'ignoredProperties') LOOP
+          IF v_path !~ v_iri_re THEN
+            RAISE EXCEPTION 'add_class: ignoredProperties entry must be an IRI, got %', v_path; END IF;
+          v_fs := v_fs||' <'||v_path||'>';
+        END LOOP;
+      END IF;
+      v_ts := v_ts||' ; sh:closed true ; sh:ignoredProperties ('||v_fs||' )';
     END IF;
     RETURN '@prefix owl: <http://www.w3.org/2002/07/owl#> .'||chr(10)||
            '@prefix sh: <http://www.w3.org/ns/shacl#> .'||chr(10)||
@@ -3446,6 +3533,23 @@ EXCEPTION
     -- so a caller can tell a shape refusal from a transport fault, and keep the
     -- verb so a Trace-Id correlation still resolves. Never re-raise: re-raising
     -- is what killed the worker.
+    --
+    -- 0.4.71 — RESET THE ENGINE'S TERM CACHE after the aborted subtransaction.
+    -- Any term FIRST-interned inside the abort is poisoned: it stores but SHACL
+    -- cannot see it, so a caller's RETRY reusing the same fresh IRIs refuses
+    -- with "MinCount not satisfied" on a field its body demonstrably carries.
+    -- Measured three times on this wave (s56's flake class, s64's build, and
+    -- pgck's own reconciliation seal taking three attempts); the suites carry
+    -- per-file resets, but door callers had no protection until here — the
+    -- catch block is the one place that KNOWS an abort just happened. Guarded:
+    -- engines without the remedy skip silently, and a reset failure must never
+    -- eat the refusal we owe the caller.
+    BEGIN
+      IF to_regprocedure('pgrdf.shmem_reset()') IS NOT NULL THEN
+        PERFORM pgrdf.shmem_reset();
+      END IF;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
     RETURN jsonb_build_object(
       'ok',      false,
       'refused', true,
