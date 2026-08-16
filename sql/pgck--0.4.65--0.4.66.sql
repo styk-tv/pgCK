@@ -27,6 +27,11 @@
 -- rows — so this cannot regress silently.
 --
 -- Changed: verify, dispatch.
+--
+-- Also re-ships project_links: a comment inside its body cited a private
+-- working document by name; the citation is replaced with the fact it stood
+-- for (pgrdf >= 0.5.1 minCount semantics). No functional change — re-shipped
+-- so the fresh-install and upgrade paths stay the same bytes.
 CREATE OR REPLACE FUNCTION ckp.verify(p_instance_id text)
  RETURNS boolean
  LANGUAGE plpgsql
@@ -514,6 +519,125 @@ BEGIN
   END CASE;
 
   RETURN res || jsonb_build_object('req', req);
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp.project_links(p_project text, p_instance_id text, p_body jsonb)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_type        text := p_body->>'type';
+  v_short_type  text;
+  v_board_iri   text := format('urn:ckp:%s/kernel/board', p_project);
+  v_board_g     bigint;
+  v_scratch_iri text;
+  v_scratch_g   bigint;
+  v_id          text;
+  v_goal_id     text;
+  v_kernel      text;
+  v_label       text;
+  v_subject     text;
+  v_ttl         text;
+  v_validation  jsonb;
+  v_results     jsonb;
+  v_added       bigint := 0;
+BEGIN
+  -- Class detection: only Task and Goal project link triples in v0.1.
+  IF v_type ILIKE '%/Task' OR v_type = 'ckp:Task' THEN
+    v_short_type := 'Task';
+  ELSIF v_type ILIKE '%/Goal' OR v_type = 'ckp:Goal' THEN
+    v_short_type := 'Goal';
+  ELSE
+    RETURN 0;
+  END IF;
+
+  -- Build the Turtle that represents this instance's link triples.
+  IF v_short_type = 'Task' THEN
+    v_id      := p_body->>'urn:ckp:board/task_id';
+    v_goal_id := p_body->>'urn:ckp:board/part_of_goal';
+    v_kernel  := p_body->>'urn:ckp:board/target_kernel';
+
+    -- Bodies missing any required link field reach the SHACL gate below
+    -- with an empty/partial scratch graph — the gate catches them and
+    -- rolls back the seal. That keeps the rejection path single-sourced.
+    v_subject := 'ckp://Task#' || ckp.urn_normalise(COALESCE(v_id, p_instance_id));
+
+    v_ttl := format(
+      '@prefix ckp: <https://conceptkernel.org/ontology/v3.11/core#> . '
+      || '<%s> a ckp:Task',
+      v_subject);
+
+    IF v_goal_id IS NOT NULL THEN
+      v_ttl := v_ttl || format(
+        ' ; ckp:part_of_goal <ckp://Goal#%s>',
+        ckp.urn_normalise(v_goal_id));
+    END IF;
+    IF v_kernel IS NOT NULL THEN
+      v_ttl := v_ttl || format(
+        ' ; ckp:target_kernel <ckp://Kernel#%s>',
+        ckp.urn_normalise(v_kernel));
+    END IF;
+    v_ttl := v_ttl || ' .';
+
+  ELSIF v_short_type = 'Goal' THEN
+    v_id    := p_body->>'urn:ckp:board/goal_id';
+    v_label := p_body->>'urn:ckp:board/title';
+
+    v_subject := 'ckp://Goal#' || ckp.urn_normalise(COALESCE(v_id, p_instance_id));
+
+    v_ttl := format(
+      '@prefix ckp:  <https://conceptkernel.org/ontology/v3.11/core#> . '
+      || '@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . '
+      || '<%s> a ckp:Goal',
+      v_subject);
+
+    IF v_label IS NOT NULL THEN
+      v_ttl := v_ttl || format(
+        ' ; rdfs:label "%s"',
+        replace(v_label, '"', '\"'));
+    END IF;
+    v_ttl := v_ttl || ' .';
+  END IF;
+
+  -- CKB-4 pre-flight: refuse to validate if the project board's shapes
+  -- are missing (stale /ontology/ mount, project never imported the
+  -- modules, etc.). shapes_self_test RAISES on missing shape — propagate.
+  PERFORM ckp.shapes_self_test(p_project);
+
+  -- Project into a private scratch graph so the gate decides whether the
+  -- triples ever land in the board. add_graph is get-or-create; clear
+  -- before parse so a duplicate seal (same id) doesn't pollute.
+  v_board_g     := pgrdf.add_graph(v_board_iri);
+  v_scratch_iri := format('urn:ckp:%s/seal-scratch/%s', p_project, p_instance_id);
+  v_scratch_g   := pgrdf.add_graph(v_scratch_iri);
+  PERFORM pgrdf.clear_graph(v_scratch_g);
+  PERFORM pgrdf.parse_turtle(v_ttl, v_scratch_g, 'urn:ckp:projection#');
+
+  -- SHACL gate: validate scratch against the board's shapes. Native mode
+  -- (pgrdf >= 0.5.1) is sufficient: minCount violations REFUSE — the earlier
+  -- permissive reading was a measured pgrdf 0.5.0 defect, fixed upstream.
+  v_validation := pgrdf.validate(v_scratch_g, v_board_g);
+
+  IF NOT (v_validation->>'conforms')::boolean THEN
+    v_results := v_validation->'results';
+    PERFORM pgrdf.drop_graph(v_scratch_g);
+    RAISE EXCEPTION 'ckp.seal: SHACL gate rejected % % — % violation(s); first: %',
+      v_short_type,
+      p_instance_id,
+      jsonb_array_length(v_results),
+      v_results->0->>'sourceConstraintComponent';
+  END IF;
+
+  -- Validation passed: commit the same Turtle into the board graph and
+  -- discard the scratch.
+  v_added := pgrdf.parse_turtle(v_ttl, v_board_g, 'urn:ckp:projection#');
+  PERFORM pgrdf.drop_graph(v_scratch_g);
+
+  RETURN v_added::int;
 END;
 $function$
 ;

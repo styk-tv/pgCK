@@ -12,9 +12,9 @@
 //!     default `nats://127.0.0.1:4222`). First tick spawns the async-nats
 //!     thread (`nats_client::init`); every tick drains up to 100 rows
 //!     from `ckp.outbox` via SPI (`publish_drain::drain_once`) and
-//!     enqueues publishes onto the async-nats thread. Per
-//!     `_WIP/SPEC.PGCK.NATS-BIDIRECTIONAL.v0.2` §3 and
-//!     `_WIP/TASKS.PGCK.S4-BUNDLED-NATS.v0.1` step 5.
+//!     enqueues publishes onto the async-nats thread. The contract: the
+//!     outbox is the only publish source, the drain is at-least-once, and
+//!     the bgworker never blocks the postmaster on a broker outage.
 //!
 //!   * (no NATS feature) — tick is a no-op; the bgworker still runs so
 //!     wait_latch has something to call. Useful for minimal builds that

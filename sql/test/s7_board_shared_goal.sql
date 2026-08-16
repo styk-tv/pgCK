@@ -3,7 +3,7 @@
 -- its service identity explicitly — the sanctioned operator form.
 SELECT set_config('ckp.requester','svc:smoke-suite',false);
 -- CKB-2: worked example — four Tasks across four kernels sharing one Goal.
--- Acceptance (per _WIP/SPEC.PGCK.TASK-GOAL-KERNEL-RDF.v0.1.md §6):
+-- Acceptance (the v3.8-era board worked example, retained as regression):
 --   After sealing one Goal + four Tasks (target_kernel ∈ {pgCK, pgRDF,
 --   CK.Lib.Js, oci-germination}) part_of the same Goal, SPARQL
 --   recovers exactly four distinct kernel URNs from the projected board.

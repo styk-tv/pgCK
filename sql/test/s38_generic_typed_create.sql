@@ -113,6 +113,14 @@ BEGIN
     RAISE EXCEPTION 's38 FAIL (2): a rejected create still left a row'; END IF;
 END $$;
 
+-- engine hygiene: case (2)'s rejected create is an aborted (sub)transaction, and
+-- any term first-interned inside it is poisoned in pgrdf's shmem cache — stored
+-- but invisible to SHACL, which later fails a DIFFERENT case with "MinCount,
+-- value null" on a property its TTL demonstrably carries (measured here on
+-- urn:ckp:board/created_at, case 4). Known engine defect; documented remedy is
+-- a reset after ANY aborted seal. Guarded like bootstrap's.
+DO $$ BEGIN IF to_regprocedure('pgrdf.shmem_reset()') IS NOT NULL THEN PERFORM pgrdf.shmem_reset(); END IF; END $$;
+
 -- (3) instance.validate predicts the same gate for the generic type (validate ⟺ seal).
 DO $$
 DECLARE res jsonb;

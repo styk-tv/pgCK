@@ -4048,8 +4048,8 @@ BEGIN
   PERFORM pgrdf.parse_turtle(v_ttl, v_scratch_g, 'urn:ckp:projection#');
 
   -- SHACL gate: validate scratch against the board's shapes. Native mode
-  -- (pgrdf 0.5.1) is sufficient — see _WIP/NOTIFIES.pgRDF.0.5.1.shacl-
-  -- mincount-permissive-RESPONSE.md for the verified semantics.
+  -- (pgrdf >= 0.5.1) is sufficient: minCount violations REFUSE — the earlier
+  -- permissive reading was a measured pgrdf 0.5.0 defect, fixed upstream.
   v_validation := pgrdf.validate(v_scratch_g, v_board_g);
 
   IF NOT (v_validation->>'conforms')::boolean THEN

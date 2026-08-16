@@ -1,7 +1,7 @@
 /**
  * CKA-9 — v1.3 baseline smoke against the published stack.
  *
- * Acceptance (per _WIP/SPEC.pgCK.ROADMAP.v0.2-devel.md §4):
+ * Acceptance (the v1.3 baseline criteria):
  *   "one new Playwright test under tests/e2e/ locks 'page loads,
  *    CKClient subscribes, broadcast renders' against the v0.6+ image"
  *
