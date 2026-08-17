@@ -2,6 +2,70 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.76 - 2026-08-17
+
+**The door can see the inferred plane.** `surface.grounding` reported `asserted` and nothing
+else, so a kernel holding only pgCK.MCP could not tell whether the reasoner had ever run over
+its own facts. The day's largest measurement — every adopted ONTOLOGY graph materialized, every
+`/instances` graph at `inferred = 0`, eleven graphs and ~7,500 facts — was made with
+`pgrdf_graphs`, an instrument end users do not have. A measurement no caller can reproduce by
+the route available to them is the `lexicon#BenchOnly` class reached from a new direction, and
+this kernel's own rule — *a check that is not a verb does not exist* — was broken by its author.
+
+- **`inferred` joins `asserted`, per graph.** The data was never remote: every count in that
+  function already filtered `NOT q.is_inferred` against the same table, so the entailed rows
+  were being read and deliberately excluded. The exclusion is correct — asserted-only counts
+  are the blank-node-immune instrument — but excluding a plane and never naming it is how a
+  kernel ends up unable to see that its facts have never been reasoned over.
+- **F3 holds: the new count names its method.** `inferred` counts entailed quads whole, NOT
+  deduplicated against asserted, so `asserted + inferred` is the store total for that graph.
+  `inferredNote` states the reading that matters: **`inferred = 0` on a POPULATED graph is a
+  positive finding, not missing data** — nothing has ever been derived from those facts. And
+  because `lexicon#Pattern` declares that membership is INFERRED from the symptom and never
+  asserted, a lexicon teaching cannot be earned on a graph whose inferred count is 0.
+- **Negative control is in the same call.** `inferred` must stay 0 for every `/instances` graph
+  until a materialization is actually run over one, and must be non-zero for the adopted
+  ontology graphs, which are `materialized`. Both halves are observable in one reply, so the
+  field cannot be trivially satisfied.
+
+## v0.4.75 - 2026-08-17
+
+**The authority read answers. Two independent breaks were stacked, and fixing only the visible
+one still returned a confident zero.** `ckp.authority_of` — which `authority.mine` wraps — had
+reported `{ok:true, grants:[]}` for every caller since 0.4.38, roughly 35 releases. Both faults
+were found by running the function against a participant that actually has a chain, which
+nobody had done.
+
+- **The edge the data has** (0.4.74): the reader traversed `Grant → core#grantedVia → Role` and
+  projected `core#permission`. Sealed Grants go the other way and use other keys: `Role →
+  core#grant[] → Grant`, carrying `permAction`, `permDomain`, `permTarget`. Direction and key
+  were both wrong, so the subquery matched nothing, the aggregate was NULL, and COALESCE turned
+  it into an empty list. Now traverses `grant[]` — normalising the array and bare-string forms —
+  and keeps a `grantedVia` UNION branch so no legacy record is dropped. Per R-1 the emission is
+  not asked to change: the data is already emitted, the READER was wrong. This is the R-1 split
+  `SPEC.pgCK.v3.12.SECURITY` §3.1 named in writing before it was measured.
+- **The identity it is given** (0.4.75): the door supplies a BARE uuid while sealed Memberships
+  store `memberIs` as `urn:ckp:participant:<uuid>`, so the equality test never fired and the
+  0.4.74 repair — necessary — was not sufficient. Now resolves both spellings and matches
+  either. Both, not one: every Membership measured carries the urn: form, but that is n=1, and
+  asserting uniformity from one record is the prior-without-a-count defect. Whether
+  `ckp.requester` should carry the canonical form everywhere touches every reader and is NOT
+  decided here.
+- **An empty answer now says which empty it is.** Two cases used to render identically: no
+  sealed `Membership` at all, versus a Membership whose Role reaches no Grant. One means
+  unconfigured, the other configured-to-nothing, and a reader that cannot tell them apart is
+  reading a silence. `anonymous` remains a TIER with its own note, never a bare `[]`.
+- **Envelope, additively.** Grants gain `permAction`, `permDomain` and `viaRole` — the last
+  naming the Role a grant was reached through, so a rendered chain is auditable. `permission`
+  is retained and is `null` on every sealed Grant measured, reported rather than hidden.
+  `identity` is unchanged; `identityCanonical` is added so a client can compare one spelling
+  without normalising identity itself.
+
+`s69` gates the chain and four negative controls: no-Membership and terminating-Role return
+empty AND name which empty they are, grants never leak across participants, and anonymous
+reports its tier. Verified live on the bench against the only sealed chain that exists —
+`c45b14bb…` resolves `govern @ ck-dev/organ/ck` and `write @ ck-dev/organ/data`.
+
 ## v0.4.73 - 2026-08-17
 
 **Warnings guide, the ratchet governs — and the cure is exempt from the poison it removes.**
