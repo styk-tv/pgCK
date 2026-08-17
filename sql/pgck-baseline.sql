@@ -997,7 +997,7 @@ BEGIN
 END;
 $function$
 ;
-CREATE OR REPLACE FUNCTION ckp._composed_shapes(p_project text DEFAULT 'demo'::text)
+CREATE OR REPLACE FUNCTION ckp._composed_shapes(p_project text DEFAULT 'demo'::text, p_exclude text DEFAULT NULL)
  RETURNS integer
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -1019,11 +1019,23 @@ BEGIN
   -- dangling or empty reference — a vanished module silently narrowing the
   -- gate is un-enforcement nobody would see.
   FOREACH v_iri IN ARRAY ckp._adopted_graphs(p_project) LOOP
+    -- 0.4.73 — THE CURE IS EXEMPT FROM THE POISON IT REMOVES. p_exclude names
+    -- the ONE graph a core#Supersession being sealed right now is about to
+    -- un-adopt (derived by ckp.seal from the candidate itself, never caller-
+    -- supplied). Without this, a dangling adoption DEADLOCKS its project: every
+    -- seal composes, composition raises on the dangling graph, and the raise's
+    -- own remedy — "seal a Supersession" — is itself a seal. Measured live:
+    -- ontosys, poisoned within hours of germinating, could not reach its cure;
+    -- s68's victim project proves both halves. The exclusion is content-honest:
+    -- skipping a graph the Supersession removes narrows nothing the resulting
+    -- surface should still carry — and for the dangling case the graph is
+    -- empty anyway. Fail-closed stands for every other seal.
+    CONTINUE WHEN p_exclude IS NOT NULL AND v_iri = p_exclude;
     v_mod := pgrdf.add_graph(v_iri);
     SELECT count(*) INTO v_cnt
       FROM pgrdf.sparql(format('SELECT ?s WHERE { GRAPH <%s> { ?s ?p ?o } } LIMIT 1', v_iri));
     IF v_cnt = 0 THEN
-      RAISE EXCEPTION 'ckp._composed_shapes: adopted module graph % is absent or empty — a sealed Adoption names it, so composing without it would silently narrow the enforcement surface. Load the module graph or seal a Supersession.', v_iri;
+      RAISE EXCEPTION 'ckp._composed_shapes: adopted module graph % is absent or empty — a sealed Adoption names it, so composing without it would silently narrow the enforcement surface. Load the module graph or seal a Supersession (the Supersession seal itself is exempt from this check for the graph it removes).', v_iri;
     END IF;
     -- 0.4.61: pin the graph's canonical digest at FIRST composition. Verification
     -- happens in adoption.check / the oracle, never here — B4's rule: a report
@@ -5701,8 +5713,21 @@ BEGIN
     v_comp    int;
     v_cand    text;
     v_report  jsonb;
+    v_excl    text := NULL;
   BEGIN
-    v_comp := ckp._composed_shapes(v_project);
+    -- 0.4.73 — deadlock escape, derived never claimed: when the candidate IS a
+    -- core#Supersession, the graph named by its target Adoption's adopts value
+    -- is excluded from the fail-closed composition — the cure must not be
+    -- gated by the poison it removes. Derived from the SEALED target, so a
+    -- caller cannot exclude arbitrary graphs by asserting supersedes at random:
+    -- a supersedes that names no sealed Adoption excludes nothing.
+    IF v_type = 'https://conceptkernel.org/ontology/v3.11/core#Supersession' THEN
+      SELECT a.body->>'https://conceptkernel.org/ontology/v3.11/core#adopts' INTO v_excl
+        FROM ckp.instances a
+       WHERE a.body->>'@id' = p_body->>'https://conceptkernel.org/ontology/v3.11/core#supersedes'
+         AND a.body->>'type' = 'https://conceptkernel.org/ontology/v3.11/core#Adoption';
+    END IF;
+    v_comp := ckp._composed_shapes(v_project, v_excl);
     -- P0-D mechanism 2 (pgCK#27): fail closed on the UNDECLARED TYPE, BEFORE
     -- validation runs. This is the half that produced the live defect — an
     -- invented type URN is targeted by no shape, so SHACL never runs and the

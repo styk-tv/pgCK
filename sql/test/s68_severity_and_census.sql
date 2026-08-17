@@ -188,6 +188,45 @@ END $$;
 
 DO $$ BEGIN IF to_regprocedure('pgrdf.shmem_reset()') IS NOT NULL THEN PERFORM pgrdf.shmem_reset(); END IF; END $$;
 
+-- (7) THE DEADLOCK AND ITS CURE (0.4.73, the live ontosys condition): the
+--     victim project is poisoned — a normal seal REFUSES at the fail-closed
+--     composer; the Supersession (the raise's own named remedy) is EXEMPT for
+--     exactly the graph it removes, seals, and the project heals.
+DO $$
+DECLARE res jsonb; v_bad_iri text;
+BEGIN
+  PERFORM set_config('ckp.project', 's68-victim', false);
+  -- (7a) the deadlock is real: any normal seal refuses.
+  res := ckp.dispatch('instance.create', jsonb_build_object(
+    'type','https://conceptkernel.org/ontology/v3.11/core#Adoption', '@id','urn:s68:victim-any-seal',
+    'https://conceptkernel.org/ontology/v3.11/core#adopts','urn:ckp:core',
+    'https://conceptkernel.org/ontology/v3.11/core#intoProject','urn:ckp:project:s68-victim',
+    'https://conceptkernel.org/ontology/v3.11/core#sourceDigest','e5f7d1e54b32fa0ba2d41ba248e0909b96ee1ebb4344e2d9e9ccdf4e0b25348d',
+    'https://conceptkernel.org/ontology/v3.11/core#intoEpoch', 1));
+  IF (res->>'ok') IS NOT DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 's68 FAIL (7a): a poisoned project sealed normally — the fail-closed composer is not failing closed'; END IF;
+  IF res->>'error' !~ 'absent or empty' THEN
+    RAISE EXCEPTION 's68 FAIL (7a): refused for the wrong reason: %', res->>'error'; END IF;
+  -- (7b) the cure is reachable: the Supersession seals despite the poison.
+  SELECT body->>'@id' INTO v_bad_iri FROM ckp.instances
+   WHERE body->>'https://conceptkernel.org/ontology/v3.11/core#adopts' = 'urn:ckp:s68-test/no-such-graph' LIMIT 1;
+  res := ckp.dispatch('instance.create', jsonb_build_object(
+    'type','https://conceptkernel.org/ontology/v3.11/core#Supersession', '@id','urn:s68:victim-cure',
+    'https://conceptkernel.org/ontology/v3.11/core#supersedes', v_bad_iri));
+  IF (res->>'ok') IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 's68 FAIL (7b): the cure is still gated by the poison — the deadlock stands: %', res; END IF;
+  -- (7c) healed: the same normal seal now works.
+  res := ckp.dispatch('instance.create', jsonb_build_object(
+    'type','https://conceptkernel.org/ontology/v3.11/core#Adoption', '@id','urn:s68:victim-healed',
+    'https://conceptkernel.org/ontology/v3.11/core#adopts','urn:ckp:core',
+    'https://conceptkernel.org/ontology/v3.11/core#intoProject','urn:ckp:project:s68-victim',
+    'https://conceptkernel.org/ontology/v3.11/core#sourceDigest','e5f7d1e54b32fa0ba2d41ba248e0909b96ee1ebb4344e2d9e9ccdf4e0b25348d',
+    'https://conceptkernel.org/ontology/v3.11/core#intoEpoch', 1));
+  IF (res->>'ok') IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 's68 FAIL (7c): the project did not heal after supersession: %', res; END IF;
+  PERFORM set_config('ckp.project', 's68-test', false);
+END $$;
+
 -- (6) the shape teaches its prose.
 DO $$
 DECLARE res jsonb;
