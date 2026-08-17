@@ -2,6 +2,39 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.73 - 2026-08-17
+
+**Warnings guide, the ratchet governs — and the cure is exempt from the poison it removes.**
+Two versions ship together: 0.4.72 gives guidance a severity-aware gate, and 0.4.73 fixes the
+deadlock that 0.4.72's own test suite measured on the first cut.
+
+- **The gate learns severity** (0.4.72): `sh:Violation` — and absent severity, SHACL's default,
+  so nothing pre-existing weakens — refuses as before; `sh:Warning` and `sh:Info` results seal
+  AND surface in the reply. `validate` gains the same partition: the fourth validate⟺seal axis.
+- **Guidance becomes law by adoption** (0.4.72): three checks join the fixed obligation registry.
+  `no-warnings` is the ratchet — a kernel that adopts it makes warnings binding, and every
+  conforming seal carries the warranty as a proof row, so reliance is a row rather than a
+  reputation. `adopts-resolves` refuses a graph-less `adopts`. `structural-pin` refuses a
+  swap under a pinned name, so reload relabelling cannot fool the structural plane.
+- **The census becomes a verb** (0.4.72): `fleet.adoptions` returns the cross-kernel adoption
+  matrix with malformed references flagged mechanically — re-runnable by anyone, not a
+  hand-audit. `surface.explain` reads `rdfs:comment` through the door so the shape teaches its
+  own prose; a declared-but-untaught property shows its null honestly. `adoption.check`'s
+  why-text separates row-state from engine capability.
+- **The cure is reachable** (0.4.73): the fail-closed composer (0.4.61) and adoption-derived
+  composition are each correct and compose into a deadlock — a dangling `Adoption` poisons its
+  project, so every subsequent seal raises on the missing graph and refuses, including the
+  `Supersession` that the refusal's own remedy text names. Now, when the candidate is a
+  `core#Supersession`, seal derives the SEALED target Adoption's `adopts` value from the record
+  and exempts precisely that one graph. The escape is derived, never claimed: a `supersedes`
+  naming no sealed Adoption excludes nothing, so the hatch cannot be steered from outside, and
+  the exempted graph is exactly what the act removes. The one-arg `_composed_shapes` overload is
+  dropped in the migration so legacy call sites resolve to the new definition.
+
+`s68` gates all six faces of the guidance work, and its case 7 proves the deadlock arc end to
+end on a poisoned project: a normal seal refuses, the Supersession seals, the next normal seal
+succeeds. Both gates green (48 warm + fresh install).
+
 ## v0.4.71 - 2026-08-16
 
 **The seal's exit is extensible by agreement, identity evidence is sealable, and a digest that
