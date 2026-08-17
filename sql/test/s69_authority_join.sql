@@ -44,42 +44,49 @@ DECLARE
   g1 text; g2 text; rA text; rC text;
   res jsonb; grants jsonb; acts text[];
 BEGIN
+  -- 0.4.64 refuses an unattributed write rather than minting anon:<uuid>, so a
+  -- suite MUST name itself. This is the closure working, not a test workaround:
+  -- a fact belonging to nobody is permanent, and fresh uuids would let one
+  -- caller impersonate many distinct parties.
+  PERFORM set_config('ckp.requester', 'svc:s69-suite', true);
+
   ----------------------------------------------------------------------------
   -- fixture: two Grants, a Role that reaches both, a Membership binding pA.
+  -- Payload is FLAT: instance.create takes {type, ...fields}. A nested 'body'
+  -- is not unwrapped, and the fields then read as absent — three MinCount
+  -- violations that look like a shape problem and are a payload-shape problem.
   ----------------------------------------------------------------------------
   res := ckp.dispatch('instance.create', jsonb_build_object(
            'type', N||'Grant',
-           'body', jsonb_build_object(
-             'permAction','govern', 'permDomain','governance',
-             'permTarget','urn:ckp:s69-test/organ/ck')));
+           'permAction','govern', 'permDomain','governance',
+           'permTarget','urn:ckp:s69-test/organ/ck'));
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN
     RAISE EXCEPTION 's69 FAIL (0): seal Grant #1: %', res; END IF;
-  g1 := COALESCE(res->>'urn', res->>'id');
+  -- the reply returns the LOCAL id; the stored @id is ckp://<Type>#<local>, and
+  -- that is what Role.grant[] must carry or the join finds nothing.
+  g1 := 'ckp://Grant#' || COALESCE(res->>'urn', res->>'id');
 
   res := ckp.dispatch('instance.create', jsonb_build_object(
            'type', N||'Grant',
-           'body', jsonb_build_object(
-             'permAction','write', 'permDomain','instance',
-             'permTarget','urn:ckp:s69-test/organ/data')));
+           'permAction','write', 'permDomain','instance',
+           'permTarget','urn:ckp:s69-test/organ/data'));
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN
     RAISE EXCEPTION 's69 FAIL (0): seal Grant #2: %', res; END IF;
-  g2 := COALESCE(res->>'urn', res->>'id');
+  g2 := 'ckp://Grant#' || COALESCE(res->>'urn', res->>'id');
 
   -- core#grant is an ARRAY on the Role — the edge the reader must traverse.
   res := ckp.dispatch('instance.create', jsonb_build_object(
            'type', N||'Role',
-           'body', jsonb_build_object(
-             'label','s69 operator',
-             'grant', jsonb_build_array(g1, g2))));
+           'label','s69 operator',
+           'grant', jsonb_build_array(g1, g2)));
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN
     RAISE EXCEPTION 's69 FAIL (0): seal Role: %', res; END IF;
-  rA := COALESCE(res->>'urn', res->>'id');
+  rA := 'ckp://Role#' || COALESCE(res->>'urn', res->>'id');
 
   res := ckp.dispatch('instance.create', jsonb_build_object(
            'type', N||'Membership',
-           'body', jsonb_build_object(
-             'memberIs', pA, 'memberOf','urn:ckp:project:s69-test',
-             'holdsRole', rA)));
+           'memberIs', pA, 'memberOf','urn:ckp:project:s69-test',
+           'holdsRole', rA));
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN
     RAISE EXCEPTION 's69 FAIL (0): seal Membership pA: %', res; END IF;
 
@@ -89,8 +96,8 @@ BEGIN
   res := ckp.authority_of(pA);
   grants := res->'grants';
   IF jsonb_array_length(COALESCE(grants,'[]'::jsonb)) <> 2 THEN
-    RAISE EXCEPTION 's69 FAIL (1): expected 2 grants for pA, got %. '||
-      'This is the 0.4.38 defect: reader joined grantedVia/permission, data '||
+    RAISE EXCEPTION 's69 FAIL (1): expected 2 grants for pA, got %. '
+      'This is the 0.4.38 defect: reader joined grantedVia/permission, data '
       'carries grant[]/permAction. full=%', jsonb_array_length(COALESCE(grants,'[]'::jsonb)), res;
   END IF;
 
@@ -105,7 +112,7 @@ BEGIN
 
   IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(grants) e
                   WHERE e->>'viaRole' = rA) THEN
-    RAISE EXCEPTION 's69 FAIL (1): viaRole not reported — a grant must name the '||
+    RAISE EXCEPTION 's69 FAIL (1): viaRole not reported — a grant must name the '
       'role it was reached through, or the chain is unauditable. full=%', res; END IF;
 
   ----------------------------------------------------------------------------
@@ -121,16 +128,23 @@ BEGIN
   -- (3) NEGATIVE CONTROL: chain resolves then TERMINATES (Role, zero Grants).
   --     An empty list here means something different from (2) and must say so.
   ----------------------------------------------------------------------------
+  -- A GRANTLESS Role is UNSEALABLE: RoleShape declares core#grant MinCount(1),
+  -- measured 2026-08-17 when this fixture was refused. So the terminating chain
+  -- cannot be reached by omitting the grant — it is reached by a grant that
+  -- DANGLES, naming a Grant IRI nothing sealed. That is the same dangling-
+  -- reference class as the Adoption that deadlocked ontosys, and it is the only
+  -- route by which authority_of's "resolves and TERMINATES" branch can fire.
   res := ckp.dispatch('instance.create', jsonb_build_object(
-           'type', N||'Role', 'body', jsonb_build_object('label','s69 grantless')));
+           'type', N||'Role', 'label','s69 dangling',
+           'grant', jsonb_build_array('ckp://Grant#grant-s69-nothing-sealed-this')));
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN
-    RAISE EXCEPTION 's69 FAIL (3): seal grantless Role: %', res; END IF;
-  rC := COALESCE(res->>'urn', res->>'id');
+    RAISE EXCEPTION 's69 FAIL (3): seal dangling Role: %', res; END IF;
+  rC := 'ckp://Role#' || COALESCE(res->>'urn', res->>'id');
 
   res := ckp.dispatch('instance.create', jsonb_build_object(
            'type', N||'Membership',
-           'body', jsonb_build_object('memberIs', pC,
-             'memberOf','urn:ckp:project:s69-test', 'holdsRole', rC)));
+           'memberIs', pC,
+           'memberOf','urn:ckp:project:s69-test', 'holdsRole', rC));
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN
     RAISE EXCEPTION 's69 FAIL (3): seal Membership pC: %', res; END IF;
 
@@ -140,7 +154,7 @@ BEGIN
   IF jsonb_array_length(COALESCE(res->'memberships','[]'::jsonb)) <> 1 THEN
     RAISE EXCEPTION 's69 FAIL (3): pC membership did not resolve: %', res; END IF;
   IF COALESCE(res->>'note','') NOT LIKE '%TERMINAT%' THEN
-    RAISE EXCEPTION 's69 FAIL (3): a resolved-but-terminating chain must be '||
+    RAISE EXCEPTION 's69 FAIL (3): a resolved-but-terminating chain must be '
       'distinguishable from an absent one. full=%', res; END IF;
 
   ----------------------------------------------------------------------------
@@ -171,16 +185,16 @@ BEGIN
     r_bar jsonb := ckp.authority_of(bare);
   BEGIN
     IF jsonb_array_length(r_bar->'grants') <> jsonb_array_length(r_urn->'grants') THEN
-      RAISE EXCEPTION 's69 FAIL (6): bare form resolved % grants, urn form resolved % — '||
+      RAISE EXCEPTION 's69 FAIL (6): bare form resolved % grants, urn form resolved % — '
         'one identity must not have two answers. bare=% urn=%',
         jsonb_array_length(r_bar->'grants'), jsonb_array_length(r_urn->'grants'), r_bar, r_urn;
     END IF;
     IF jsonb_array_length(r_bar->'memberships') <> 1 THEN
-      RAISE EXCEPTION 's69 FAIL (6): bare form lost the Membership — this is the pre-0.4.75 '||
+      RAISE EXCEPTION 's69 FAIL (6): bare form lost the Membership — this is the pre-0.4.75 '
         'defect where authority.mine returned empty for every door caller. full=%', r_bar;
     END IF;
     IF (r_bar->>'identityCanonical') IS DISTINCT FROM pA THEN
-      RAISE EXCEPTION 's69 FAIL (6): identityCanonical must carry the urn: form regardless of '||
+      RAISE EXCEPTION 's69 FAIL (6): identityCanonical must carry the urn: form regardless of '
         'which spelling was supplied, got %', r_bar->>'identityCanonical';
     END IF;
     IF (r_bar->>'identity') IS DISTINCT FROM bare THEN
@@ -192,7 +206,7 @@ BEGIN
     -- BOTH spellings. The widened match must not manufacture a chain.
     IF jsonb_array_length(ckp.authority_of('s69-nobody-0000-0000-0000-000000000000')->'grants') <> 0
     OR jsonb_array_length(ckp.authority_of('urn:ckp:participant:s69-nobody-0000-0000-0000-000000000000')->'grants') <> 0 THEN
-      RAISE EXCEPTION 's69 FAIL (6-NC): widened identity match manufactured a chain for a '||
+      RAISE EXCEPTION 's69 FAIL (6-NC): widened identity match manufactured a chain for a '
         'participant that does not exist';
     END IF;
   END;

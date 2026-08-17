@@ -1844,6 +1844,12 @@ BEGIN
       SELECT jsonb_build_object(
         'iri', v_iri,
         'asserted',        count(*),
+        -- 0.4.76 — the entailed plane, reported rather than filtered away. Every
+        -- other count here is asserted-only BY DESIGN; this one is its complement,
+        -- so a caller can see whether the reasoner has ever run over this graph
+        -- without borrowing an instrument it does not have.
+        'inferred',        (SELECT count(*) FROM pgrdf._pgrdf_quads qi
+                             WHERE qi.graph_id = v_g AND qi.is_inferred),
         'groundTriples',   count(*) FILTER (WHERE s.term_type <> 2 AND o.term_type <> 2),
         'bnodeTriples',    count(*) FILTER (WHERE s.term_type = 2 OR o.term_type = 2),
         'distinctBnodes',  (SELECT count(DISTINCT d) FROM (
@@ -1887,7 +1893,8 @@ BEGIN
       WHERE q.graph_id = v_g AND NOT q.is_inferred);
   END LOOP;
   RETURN jsonb_build_object('ok', true, 'kernel', v_proj, 'graphs', v_rows,
-    'planes', 'FILE digests pin published bytes (verify with shasum against the sidecar). copyDigest pins THIS store''s bytes and moves on every reload — in-store drift detection only, never cross-bench identity. structuralDigest survives reload (first-degree blank-node signatures, the fleet algorithm) — what a third party recomputes from the published modules. Counts are the blank-node-immune instrument and NAME THEIR METHOD: nodeshapes (asserted sh:NodeShape typing; 42 = 27 core + 11 wave + 4 lexicon fully adopted) · declaredProperties (asserted owl/rdf property declarations; 130 = 80 + 33 + 17) · propertyShapes (asserted distinct sh:path subjects). A count without its method is not a number (F3).',
+    'planes', 'FILE digests pin published bytes (verify with shasum against the sidecar). copyDigest pins THIS store''s bytes and moves on every reload — in-store drift detection only, never cross-bench identity. structuralDigest survives reload (first-degree blank-node signatures, the fleet algorithm) — what a third party recomputes from the published modules. Counts are the blank-node-immune instrument and NAME THEIR METHOD: nodeshapes (asserted sh:NodeShape typing; 42 = 27 core + 11 wave + 4 lexicon fully adopted) · declaredProperties (asserted owl/rdf property declarations; 130 = 80 + 33 + 17) · propertyShapes (asserted distinct sh:path subjects). asserted counts ASSERTED-ONLY quads; inferred (0.4.76) counts ENTAILED quads — the reasoner''s output for this graph, whole and NOT deduplicated against asserted, so asserted+inferred is the store total. A count without its method is not a number (F3).',
+    'inferredNote', 'inferred = 0 on a POPULATED graph is a positive finding, not an absence of data: nothing has ever been derived from those facts. lexicon#Pattern declares that membership is INFERRED from the symptom and never asserted, so a lexicon teaching cannot be earned on a graph whose inferred count is 0.',
     'verdictAsymmetry', 'unequal structural digests PROVE two graphs differ; equal ones are strong evidence of isomorphism and NOT proof (not RDFC-1.0). Never upgrade ISOMORPHIC_LIKELY to identical.');
 END;
 $function$
@@ -3591,56 +3598,104 @@ BEGIN
 END;
 $function$
 ;
-CREATE OR REPLACE FUNCTION ckp.authority_of(p_participant text DEFAULT NULL)
+CREATE OR REPLACE FUNCTION ckp.authority_of(p_participant text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
-  N     text := 'https://conceptkernel.org/ontology/v3.11/core#';
-  v_who text := COALESCE(p_participant, NULLIF(current_setting('ckp.requester', true), ''));
-  v_anon boolean := v_who IS NULL;
+  N      text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  P      text := 'urn:ckp:participant:';
+  v_in   text := COALESCE(p_participant, NULLIF(current_setting('ckp.requester', true), ''));
+  v_anon boolean := v_in IS NULL;
+  v_urn  text; v_bare text; v_forms text[];
   v_mem jsonb; v_grants jsonb;
 BEGIN
-  -- Anonymous is a TIER, not an identity: nothing durable accretes to it
-  -- (persona spec PR1), so it has no chain to traverse and saying so is the
-  -- answer — not an empty list that reads like "checked and found none".
   IF v_anon THEN
-    RETURN jsonb_build_object('ok', true, 'identity', NULL, 'tier', 'anonymous',
-      'memberships', '[]'::jsonb, 'grants', '[]'::jsonb,
+    RETURN jsonb_build_object('ok', true, 'identity', NULL, 'identityCanonical', NULL,
+      'tier', 'anonymous', 'memberships', '[]'::jsonb, 'grants', '[]'::jsonb,
       'note', 'anonymous tier: no verified identity, so no authority chain exists to resolve. '||
               'Transport grants (events-only, no publish) are minted at admission and are not '||
               'readable here — see SPEC.PGCK.IDENTITY-PATH.');
   END IF;
+
+  -- Both spellings of one identity. The door supplies the bare uuid; sealed
+  -- Memberships carry the urn: form. Neither is normalised away, because which
+  -- one is canonical at the REQUESTER is a separate question from which one is
+  -- stored, and this function must answer correctly under either answer.
+  IF v_in LIKE P||'%' THEN
+    v_urn := v_in;  v_bare := substring(v_in from length(P)+1);
+  ELSE
+    v_bare := v_in; v_urn := P||v_in;
+  END IF;
+  v_forms := ARRAY[v_urn, v_bare];
 
   SELECT jsonb_agg(jsonb_build_object('membership', m.body->>'@id',
                                       'memberOf',  m.body->>(N||'memberOf'),
                                       'holdsRole', m.body->>(N||'holdsRole')))
     INTO v_mem
   FROM ckp.instances m
-  WHERE m.body->>'type' = N||'Membership' AND m.body->>(N||'memberIs') = v_who;
+  WHERE m.body->>'type' = N||'Membership'
+    AND m.body->>(N||'memberIs') = ANY(v_forms);
 
-  SELECT jsonb_agg(jsonb_build_object('grant', g.body->>'@id',
-                                      'permTarget', g.body->>(N||'permTarget'),
-                                      'permission', g.body->>(N||'permission')))
+  WITH held AS (
+    SELECT r.body AS rbody, r.body->>'@id' AS role_iri
+      FROM ckp.instances r
+     WHERE r.body->>'type' = N||'Role'
+       AND r.body->>'@id' IN (SELECT m.body->>(N||'holdsRole')
+                                FROM ckp.instances m
+                               WHERE m.body->>'type' = N||'Membership'
+                                 AND m.body->>(N||'memberIs') = ANY(v_forms))
+  ),
+  via_role AS (
+    SELECT g.body AS gbody, h.role_iri
+      FROM held h
+      CROSS JOIN LATERAL jsonb_array_elements_text(
+             CASE jsonb_typeof(h.rbody->(N||'grant'))
+               WHEN 'array'  THEN h.rbody->(N||'grant')
+               WHEN 'string' THEN jsonb_build_array(h.rbody->(N||'grant'))
+               ELSE '[]'::jsonb
+             END) AS gi(iri)
+      JOIN ckp.instances g
+        ON g.body->>'@id' = gi.iri
+       AND g.body->>'type' = N||'Grant'
+  ),
+  via_granted AS (
+    SELECT g.body AS gbody, h.role_iri
+      FROM held h
+      JOIN ckp.instances g
+        ON g.body->>'type' = N||'Grant'
+       AND g.body->>(N||'grantedVia') = h.role_iri
+  ),
+  merged AS (
+    SELECT DISTINCT ON (gbody->>'@id') gbody, role_iri
+      FROM (SELECT * FROM via_role UNION ALL SELECT * FROM via_granted) u
+     ORDER BY gbody->>'@id', role_iri
+  )
+  SELECT jsonb_agg(jsonb_build_object(
+           'grant',      gbody->>'@id',
+           'permTarget', gbody->>(N||'permTarget'),
+           'permAction', gbody->>(N||'permAction'),
+           'permDomain', gbody->>(N||'permDomain'),
+           'permission', gbody->>(N||'permission'),
+           'viaRole',    role_iri))
     INTO v_grants
-  FROM ckp.instances g
-  WHERE g.body->>'type' = N||'Grant'
-    AND g.body->>(N||'grantedVia') IN (
-      SELECT r.body->>'@id' FROM ckp.instances r
-       WHERE r.body->>'type' = N||'Role'
-         AND r.body->>'@id' IN (SELECT m.body->>(N||'holdsRole') FROM ckp.instances m
-                                 WHERE m.body->>'type' = N||'Membership'
-                                   AND m.body->>(N||'memberIs') = v_who));
+    FROM merged;
 
-  RETURN jsonb_build_object('ok', true, 'identity', v_who, 'tier', 'verified',
+  RETURN jsonb_build_object('ok', true,
+    'identity', v_in, 'identityCanonical', v_urn, 'tier', 'verified',
     'memberships', COALESCE(v_mem, '[]'::jsonb),
     'grants', COALESCE(v_grants, '[]'::jsonb),
-    'note', CASE WHEN v_mem IS NULL
-      THEN 'no sealed Membership for this identity — the authority chain is EMPTY, which is '||
-           'not the same as unchecked. Dispatch is currently governed by the transport tier '||
-           'and the role floor, not by this chain.'
+    'note', CASE
+      WHEN v_mem IS NULL
+        THEN 'no sealed Membership for this identity — the authority chain is EMPTY, which is '||
+             'not the same as unchecked. Both the bare and urn:ckp:participant: spellings were '||
+             'tried. Dispatch is currently governed by the transport tier and the role floor, '||
+             'not by this chain.'
+      WHEN v_grants IS NULL
+        THEN 'this identity holds a Membership and a Role, and that Role reaches NO Grant. '||
+             'The chain resolves and TERMINATES — reported as a result, not as silence.'
       ELSE NULL END);
 END;
 $function$
