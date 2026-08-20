@@ -35,6 +35,21 @@ permission to hear.
   fail. This suite stayed green for the entire life of the defect precisely because nothing
   looked here, and a check that cannot fail what it claims is not a check.
 
+> **⚠ WITHDRAWN, same day, before anyone could build on it.** The claim above that s70
+> asserts *"the wire plane and the seal plane resolve to the **same** project"* **overstates
+> what the test establishes.** Claim (c) sets `ckp.project` to the wire segment and only then
+> calls `ckp._project()` — so it asserts *the segment resolves to itself*, not that a
+> deployment's two planes agree. Falsifier, measured on a running container: with `ckp.project`
+> unset (the deployment default) the wire serves the configured kernel while
+> `ckp._project()` falls back to **`demo`** — canonical case since 0.4.78, still two different
+> kernels. Re-measured and passed back by oci-germination against this very release.
+>
+> **What 0.4.78 does fix, unchanged:** the *case* — `pgck.kernels` no longer defaults to a
+> spelling `ckp._project()` raises on. **What it does not fix:** the *disagreement*. Every
+> non-wire write (init.sql, psql, the drain's own SPI) still lands in `demo` unless the
+> deployment sets `ckp.project` explicitly. Bundles that pin both planes are unaffected.
+> The fallback and the missing default-state assertion are both 0.4.79's.
+
 ## v0.4.77 - 2026-08-20
 
 **The pin ledger joins the install floor.** On a fresh install, `ckp.adoption_pins` did not
