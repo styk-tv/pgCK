@@ -364,9 +364,11 @@ pub fn handle_request(
 mod tests {
     use super::*;
 
-    /// The default single-kernel set, as `pgck.kernels` defaults it.
+    /// The default single-kernel set, as `pgck.kernels` defaults it. 0.4.78:
+    /// the canonical spelling — these tests asserted grants on `pgCK`, the very
+    /// segment the substrate refuses, so the unit suite agreed with the defect.
     fn kv() -> Vec<String> {
-        vec!["pgCK".to_string()]
+        vec!["pgck".to_string()]
     }
 
     // Fail-closed admittance: with admit_anonymous=false an unverified connection is
@@ -413,8 +415,8 @@ mod tests {
             p.pub_allow,
             vec![format!("input.kernel.pgCK.id.{sub}.action.>")]
         );
-        assert!(p.sub_allow.iter().any(|s| s == &event_subject("pgCK")));
-        assert!(p.sub_allow.iter().any(|s| s == &result_subject("pgCK")));
+        assert!(p.sub_allow.iter().any(|s| s == &event_subject("pgck")));
+        assert!(p.sub_allow.iter().any(|s| s == &result_subject("pgck")));
     }
 
     // pgCK#30: the grant is DERIVED from the kernel set — a non-pgCK deployment
@@ -517,7 +519,7 @@ mod tests {
     fn anonymous_is_subscribe_only() {
         let p = permissions_for(&Admission::Anonymous, &kv());
         assert!(p.pub_allow.is_empty(), "anonymous must not publish");
-        assert!(p.sub_allow.iter().any(|s| s == &event_subject("pgCK")));
+        assert!(p.sub_allow.iter().any(|s| s == &event_subject("pgck")));
     }
 
     fn fake_request_jwt(user_nkey: &str, server_id: &str, auth_token: Option<&str>) -> String {

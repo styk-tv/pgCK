@@ -2,6 +2,39 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.78 - 2026-08-20
+
+**The wire served a kernel name the substrate refuses.** `pgck.kernels` — the GUC the
+auth-callout mints every `event` / `result` / `input` subject grant from — shipped with a
+compiled-in default of `pgCK`. This substrate's own canonicalizer rejects that spelling:
+`project.resolve {"segment":"pgCK"}` on a fresh install answers *"kernel id 'pgCK' is not
+canonical, no sealed kernel carries it and no kernel graph stands behind it — use 'pgck'
+(`ckp.germinate_kernel` refuses the same name; this door now applies the same rule, so a fact
+can never be sealed into a project that could not be germinated)."* So the callout minted
+grants on a transport segment under which no fact could ever be sealed.
+
+It looked healthy because clause-2 twin resolution rescued it wherever a canonical twin
+happened to be sealed — and that rescue is absent on exactly the fresh installs the default
+exists to serve. The composer's four-spelling defect family, this time inside a compiled
+default. Found downstream by oci-germination while burning `ck-allinone v0.7.33`, where a
+bundle naming its kernel twice sent the two planes apart: seals landed in one kernel while the
+wire served another, so a verified client was correctly refused a type the surface it reached
+did not admit, while the adopted surface emitted sealed events on a subject no client had
+permission to hear.
+
+- **The canonical spelling is the default**, in all three places it was written: the GUC, the
+  callout-policy cache fallback, and the unit-test fixture — which had been *asserting grants
+  on the refused segment*, so the unit suite agreed with the defect.
+- **The wire plane is gated for the first time** (`s70_kernel_planes_agree`). `s63` already
+  asserted the seeded registry names only canonical kernels; **nothing anywhere read
+  `pgck.kernels`** — measured, across the whole suite and `scripts/`. s70 asserts canonical
+  *form*, canonical *by the canonicalizer's own judgment* (so twin-rescue cannot paper over
+  it), and that the wire plane and the seal plane resolve to the **same** project — the
+  v0.7.33 defect as an assertion.
+- **Negative control in the same file:** the identical checks run against `pgCK` and MUST
+  fail. This suite stayed green for the entire life of the defect precisely because nothing
+  looked here, and a check that cannot fail what it claims is not a check.
+
 ## v0.4.77 - 2026-08-20
 
 **The pin ledger joins the install floor.** On a fresh install, `ckp.adoption_pins` did not

@@ -1,0 +1,12 @@
+-- pgck--0.4.77--0.4.78.sql — no SQL surface change.
+--
+-- 0.4.78 is a RUST-side correction: the compiled default of `pgck.kernels` (and
+-- the callout-policy cache fallback, and the unit suite's own fixture) carried
+-- `pgCK` — a spelling this substrate's canonicalizer refuses and
+-- germinate_kernel rejects, so the auth-callout minted event/result/input grants
+-- on a transport segment no fact could ever be sealed under. It survived only
+-- where clause-2 twin resolution rescued it, i.e. never on a fresh install.
+--
+-- The gate is sql/test/s70_kernel_planes_agree.sql (wire plane + seal plane +
+-- the negative control). This file exists so the upgrade chain has no hole.
+SELECT 1;

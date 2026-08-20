@@ -244,9 +244,18 @@ static PGCK_ADMIT_ANONYMOUS: pgrx::GucSetting<bool> = pgrx::GucSetting::<bool>::
 /// event/result/input grants per kernel from this set (pgCK#30) instead of a
 /// hardcoded `pgCK` literal — a `demo`/`Dictionary` deployment grants on its own
 /// subjects. Default `pgCK` preserves the single-kernel deployment unchanged.
+/// 0.4.78 — the default is the CANONICAL spelling. It shipped as `pgCK`, which
+/// this substrate's own canonicalizer REFUSES: `project.resolve {"segment":"pgCK"}`
+/// on a fresh install answers *"kernel id 'pgCK' is not canonical, no sealed kernel
+/// carries it and no kernel graph stands behind it — use 'pgck'"*, and
+/// `germinate_kernel` refuses the same name. So the callout minted event/result/input
+/// grants on a transport segment no fact could ever be sealed under. It looked
+/// healthy only where a canonical twin happened to be sealed, because clause-2 twin
+/// resolution rescued it — an accident, absent on exactly the fresh installs this
+/// default exists to serve. Gated by s70 on both planes, with the negative control.
 #[cfg(feature = "nats-client")]
 static PGCK_KERNELS: pgrx::GucSetting<Option<std::ffi::CString>> =
-    pgrx::GucSetting::<Option<std::ffi::CString>>::new(Some(c"pgCK"));
+    pgrx::GucSetting::<Option<std::ffi::CString>>::new(Some(c"pgck"));
 
 /// Snapshot of `pgck.admit_anonymous` (default `true`).
 ///
@@ -283,14 +292,16 @@ pub(crate) fn refresh_callout_policy() {
 /// The cached (admit_anonymous, kernels) for the responder. Thread-safe, no FFI.
 /// Before the first refresh (unreachable in practice — the bgworker refreshes
 /// before spawning the relay) it falls back to the GUC defaults: admit `true`,
-/// kernel set `["pgCK"]`.
+/// kernel set `["pgck"]` — the CANONICAL spelling (0.4.78). This fallback carried
+/// `pgCK` while the GUC default carried `pgCK`: two copies of one non-canonical
+/// literal, both minting grants on a segment the canonicalizer refuses.
 #[cfg(feature = "nats-client")]
 pub(crate) fn callout_policy() -> (bool, Vec<String>) {
     CALLOUT_POLICY
         .read()
         .ok()
         .and_then(|g| g.clone())
-        .unwrap_or_else(|| (true, vec!["pgCK".to_string()]))
+        .unwrap_or_else(|| (true, vec!["pgck".to_string()]))
 }
 
 /// The configured kernel set for the auth-callout grant (pgCK#30). Splits
