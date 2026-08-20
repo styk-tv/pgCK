@@ -10,7 +10,7 @@
 - **Provable by construction.** Every landing runs `validate → seal → HMAC-chained ledger → verifiable proof`, in one transaction. Nothing lands that violates its shape. Each change carries **PROV-O** provenance and a proof anyone can re-verify.
 - **Self-governing.** A kernel changes its *own* types by consensus — `propose → vote → apply` — so the very next write is bound by a quorum-approved shape, with a proof chain from proposal to applied epoch.
 
-This is the **Concept Kernel Protocol** (CKP v3.11). The root ontology is published at [conceptkernel.org/ontology/v3.11/core.ttl](https://conceptkernel.org/ontology/v3.11/core.ttl) and pinned by digest (`e5f7d1e5…` — verify with `shasum` against the published sidecar); coordination (`wave`) and learning (`lexicon`) vocabularies are governed **modules**, adopted per-kernel by a sealed, digest-pinned `ckp:Adoption` — never composed by proximity. Reference authority: [conceptkernel.org](https://conceptkernel.org).
+This is the **Concept Kernel Protocol** (CKP v3.11). The root ontology is published at [conceptkernel.org/ontology/v3.11/core.ttl](https://conceptkernel.org/ontology/v3.11/core.ttl) and pinned by digest (`e5f7d1e5…` — verify with `shasum` against the published sidecar). Reference authority: [conceptkernel.org](https://conceptkernel.org).
 
 ## See it in 30 seconds — over the real wire
 
@@ -51,15 +51,21 @@ await k.reach(p.id, '…/core#ownedBy');         // traverse the links you've se
 
 Every step asserts. The client holds exactly one capability — `ckp.dispatch` — and **cannot** run SQL, reach the query engine, or land a fact that did not pass its shape gate and mint a proof. That is the point: the door is the only surface, the engine is invisible. *(Full runnable example: [oci-germination `hello-kernel`](https://github.com/sporaxis-com/oci-germination/tree/main/examples/hello-kernel).)*
 
-## What a concept kernel is
+## What a concept kernel means
 
-Three aspects — the **[three loops](https://conceptkernel.org/v3.7/three-loops)** — of one sovereign entity, in a strict order, with a boundary enforced by **write authority, not convention**:
+Strip away every mechanism, and this is what remains: **a concept kernel is a place where meaning lives and is answerable for itself.**
 
-- **Identity** — its ontology: classes, SHACL shapes, the action catalogue. *What kinds of things exist.*
-- **Capability** — the governed verbs + materialization rules that transform state. *How things relate and change.*
-- **Knowledge** — the sealed instances, each a shaped, proof-chained fact. *What has actually happened.*
+Not a database — a database stores what you tell it and does not care what it means. Not a service — a service does what it is told and does not know why. A concept kernel is closer to a small, sovereign institution of meaning: it declares what kinds of things exist for it, it accepts only facts that honor those declarations, it remembers who said each thing and under which of its laws the thing was judged, and it changes its laws only by the agreement of those who live under them.
 
-A participant (role `ck_participant`) holds **only** `EXECUTE ckp.dispatch` — it cannot read a table, reach `pgrdf.*`, or rewrite a shape. **Storing a fact can never change the ontology; running a verb can never rewrite the rules.** That separation — enforced by the database's own role authority — is what makes a kernel sovereign and self-governing, and what lets many kernels one day cooperate without surrendering autonomy.
+Three questions define it — the **[three loops](https://conceptkernel.org/v3.7/three-loops)** of one sovereign entity, in a strict order:
+
+- **What can I mean?** — its declared world: the kinds, shapes and relations it recognizes. This is its identity, and nothing outside it can write there.
+- **What can I do?** — the acts it offers others: ways to add to it, ask it, link through it. Capability is always *derived from* meaning, never invented beside it.
+- **What have I done?** — the sealed record. Every fact carries who said it, whose law governed it, which version of that law was in force, and which rule judged it. Knowledge here is never anonymous and never unjudged.
+
+The founding sentence holds all of it: *you do not enforce your own shape — you declare it, and the ground refuses what violates it.* A kernel never argues. It declares, and the substrate beneath it refuses everything that violates the declaration — **including the kernel's own attempts**. That is what makes its record trustworthy to a stranger: the kernel cannot exempt itself from its own law. The boundary is real because it is held by **write authority, not convention**: storing a fact can never change the ontology, and running a verb can never rewrite the rules.
+
+And it is sovereign: whole on its own, joined to others only by its own sealed choice. Everyone who can hold a key is a participant of the same standing — a person, an agent, whatever arrives next. The door does not ask what you are, only whether you can answer for what you say.
 
 ## The substrate — the *how*, not the headline
 
@@ -102,6 +108,21 @@ gh attestation verify oci://ghcr.io/styk-tv/pgck:0.4.77-pg18-amd64 --owner styk-
 - `ed25519` will replace the shipped `hmac+sha256` proof method.
 
 Per-version detail and the full capability boundary: [`CHANGELOG.md`](CHANGELOG.md).
+
+## Quick install — two doors, pick your identity story
+
+Both are attested [oci-germination](https://github.com/sporaxis-com/oci-germination) bundles that carry pgCK + pgRDF + NATS pre-composed. One `docker run`, no build.
+
+**① Localhost, anonymous — the fastest working kernel** (`ociger-pg18-pgrdf-pgck-nats-micro`): PostgreSQL 18 + both extensions + NATS core/WSS in one container. No identity plane — dispatch is anonymous, which is exactly right for a private localhost bench, exploration, and CI.
+
+```sh
+docker run -d -p 5432:5432 -p 4222:4222 -p 9222:9222 \
+  ghcr.io/sporaxis-com/ociger-pg18-pgrdf-pgck-nats-micro:latest
+```
+
+**② Realm-connected — identities sealed from the wire** (`ociger-ck-allinone`): the full bundle with the identity boot-provisioner. Hand it your OIDC realm's **JWKS document** at container start (a document, never a URL — verification is in-memory, zero egress) and pgCK itself answers the NATS auth-callout: each user's EdDSA token is verified at the door, and the verified identity rides the broker-enforced wire onto **every fact they seal** — attribution is derived by the substrate, never claimed by the client. Without a realm configured it boots in the same anonymous mode as ①.
+
+Current tags, digests and the realm environment contract: [oci-germination `LATEST.md`](https://github.com/sporaxis-com/oci-germination/blob/main/LATEST.md).
 
 ## Build & run
 
