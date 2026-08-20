@@ -22,10 +22,10 @@ bash examples/hello-kernel/run.sh
 ```
 
 ```
-① activate the kernel                CK.activate(kernel, { wssEndpoint })
+① activate the kernel                CK.activate(kernel, { wssEndpoint, token })
 ② land sealed, proof-chained state   create(Project) → proof_digest, verified
 ③ read it back + re-verify the proof verify · query
-④ PROVE enforcement is real          an incomplete create is REFUSED at the seal
+④ PROVE enforcement is real          incomplete → REFUSED · anonymous → REFUSED
 ⑤ relate + traverse                  link → reach
 ```
 
@@ -33,17 +33,24 @@ And here's what your app (or browser, or agent) actually writes — cklib over N
 
 ```js
 import { CK } from 'cklib';
-const k = await CK.activate('demo', { wssEndpoint: 'ws://host:9222' });
+// realm-connected (quick-install door ②): your token is verified AT the door,
+// and the seal derives who-you-are from the wire — identity is never payload
+const k = await CK.activate('demo', { wssEndpoint: 'wss://host/wss', token });
 
 const Project = 'https://conceptkernel.org/ontology/v3.11/core#Project';
 const p = await k.create(Project, { label: 'hello', projectKind: 'personal',
                                     ownedBy: 'urn:ckp:participant:you' });
+//   ownedBy is DOMAIN data — any IRI you designate. WHO SEALED IT is not yours
+//   to claim: createdBy is stamped from your verified connection.
 //   → { ok: true, id, verified: true, proof_digest }   — sealed + proof-chained in one
 //     transaction, stamped createdBy / producedBy / sealedAtEpoch / conformsToShape
 
 await k.create(Project, { label: 'incomplete' });   // omit shape-required fields
-//   → { ok: false }   — REFUSED at the seal, with every violated clause named;
-//     you cannot land a fact that violates its shape
+//   → { ok: false }   — REFUSED at the seal, with every violated clause named
+
+// and on the ANONYMOUS bundle (door ①), this same create refuses too:
+//   → 'unattributed write refused' — there are no anonymous facts, only
+//     anonymous readers. A fact belonging to nobody never lands.
 
 await k.verify(p.id);                          // independently re-checks the proof chain
 await k.reach(p.id, '…/core#ownedBy');         // traverse the links you've sealed
@@ -113,7 +120,7 @@ Per-version detail and the full capability boundary: [`CHANGELOG.md`](CHANGELOG.
 
 Both are attested [oci-germination](https://github.com/sporaxis-com/oci-germination) bundles that carry pgCK + pgRDF + NATS pre-composed. One `docker run`, no build.
 
-**① Localhost, anonymous — the fastest working kernel** (`ociger-pg18-pgrdf-pgck-nats-micro`): PostgreSQL 18 + both extensions + NATS core/WSS in one container. No identity plane — dispatch is anonymous, which is exactly right for a private localhost bench, exploration, and CI.
+**① Localhost, anonymous — the fastest working kernel** (`ociger-pg18-pgrdf-pgck-nats-micro`): PostgreSQL 18 + both extensions + NATS core/WSS in one container. No identity plane — right for a private localhost bench, exploration, and CI. Anonymous dispatch **reads** freely (surface checks, queries, events); **writes refuse** unless an identity is declared — over the wire that means door ②, and on the operator/SQL path it means naming one explicitly (`set_config('ckp.requester', 'svc:my-bench', true)`) before sealing. A fact belonging to nobody never lands, even on a toy bench.
 
 ```sh
 docker run -d -p 5432:5432 -p 4222:4222 -p 9222:9222 \
