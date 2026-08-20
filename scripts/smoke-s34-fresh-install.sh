@@ -118,6 +118,30 @@ R="$(PART "SELECT ckp.dispatch('instance.create','{\"type\":\"https://conceptker
 [ "$R" = "true" ] || fail "(ask 2c) dispatch as ck_participant returned ok=$R"
 echo "s34: governed dispatch as ck_participant ok:true (v3.11 type, gated) ✓"
 
+# (3) 0.4.77 — THE PIN LEDGER GATE: adopt BOTH shipped modules by digest.
+# Measured 2026-08-20 on ociger-pg18-pgrdf-pgck-nats-micro:v0.2.4 (fresh 0.4.76):
+# ckp.adoption_pins existed only in bootstrap_kernel()/the 0.4.60--61 migration,
+# so the SECOND Adoption seal died mid-recomposition on every fresh install and
+# fleet.adoptions hard-errored — and THIS gate passed throughout, because it
+# never sealed two Adoptions. A check that cannot fail is not a check: two
+# governed Adoptions are now the floor, and fleet.adoptions must answer.
+[ "$(SU "SELECT (to_regclass('ckp.adoption_pins') IS NOT NULL)::text")" = "true" ] \
+  || fail "(ask 3) ckp.adoption_pins missing after CREATE EXTENSION — the pin ledger is still migration/bootstrap-only"
+WAVE_D="$(SU "SELECT encode(digest(convert_to(pg_read_file('/ontology/v3.11/modules/wave.ttl'),'UTF8'),'sha256'),'hex')")"
+LEX_D="$(SU "SELECT encode(digest(convert_to(pg_read_file('/ontology/v3.11/modules/lexicon.ttl'),'UTF8'),'sha256'),'hex')")"
+SU "SELECT pgrdf.load_turtle('/ontology/v3.11/modules/wave.ttl', pgrdf.add_graph('urn:ckp:module:wave'), NULL, false);" >/dev/null
+SU "SELECT pgrdf.load_turtle('/ontology/v3.11/modules/lexicon.ttl', pgrdf.add_graph('urn:ckp:module:lexicon'), NULL, false);" >/dev/null
+A1="$(PART "SELECT ckp.dispatch('instance.create', jsonb_build_object('type','https://conceptkernel.org/ontology/v3.11/core#Adoption','adopts','urn:ckp:module:wave','intoProject','urn:ckp:project:demo','intoEpoch',0,'sourceDigest','$WAVE_D'))->>'ok' FROM (SELECT set_config('ckp.requester','s34-participant',true)) _id")" \
+  || fail "(ask 3) FIRST Adoption ERRORED"
+[ "$A1" = "true" ] || fail "(ask 3) first Adoption refused (ok=$A1)"
+A2="$(PART "SELECT ckp.dispatch('instance.create', jsonb_build_object('type','https://conceptkernel.org/ontology/v3.11/core#Adoption','adopts','urn:ckp:module:lexicon','intoProject','urn:ckp:project:demo','intoEpoch',0,'sourceDigest','$LEX_D'))->>'ok' FROM (SELECT set_config('ckp.requester','s34-participant',true)) _id")" \
+  || fail "(ask 3) SECOND Adoption ERRORED — the 0.4.76 adoption_pins defect shape (relation missing mid-recomposition)"
+[ "$A2" = "true" ] || fail "(ask 3) second Adoption refused (ok=$A2)"
+FLT="$(PART "SELECT ckp.dispatch('fleet.adoptions','{}'::jsonb)->>'ok'")" \
+  || fail "(ask 3) fleet.adoptions ERRORED on a fresh install"
+[ "$FLT" = "true" ] || fail "(ask 3) fleet.adoptions returned ok=$FLT"
+echo "s34: two governed Adoptions sealed + fleet.adoptions answers — pin ledger at install ✓"
+
 # (4) 0.4.42 — the board is DOMAIN vocabulary now, so a fresh install that has
 # booted but loaded NO KERNEL cannot create board tasks: urn:ckp:board/Task is
 # declared by examples/example.kernel.ttl, which ckp.load_kernel puts into

@@ -43,6 +43,26 @@ CREATE TABLE IF NOT EXISTS ckp.outbox (
   enqueued_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ckp_outbox_seq_idx ON ckp.outbox(seq);
+-- 0.4.77 — the adoption pin ledger joins the install floor. It was created by
+-- the 0.4.60--0.4.61 migration (warm path) and inside ckp.bootstrap_kernel()
+-- (manual CALL), but the baseline flatten never carried the top-level CREATE —
+-- so on a FRESH install the composer's pin read/write hit a missing relation:
+-- fleet.adoptions hard-errored, and the SECOND Adoption seal died
+-- mid-recomposition (the first succeeds; pins are only consulted once a module
+-- composes). Measured 2026-08-20 on ociger-pg18-pgrdf-pgck-nats-micro:v0.2.4;
+-- the fresh-install smoke passed throughout because it never sealed two
+-- Adoptions — its gate now must. Same defect class as the 0.4.74 authority
+-- mirror; the cure is the same: the completeness block is the ONE creation
+-- site fresh installs can rely on.
+CREATE TABLE IF NOT EXISTS ckp.adoption_pins (
+  graph_iri    TEXT PRIMARY KEY,
+  graph_digest TEXT NOT NULL,
+  pinned_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS structural_digest TEXT;
+ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS nodeshapes INTEGER;
+ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS properties INTEGER;
+ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS asserted INTEGER;
 DROP TRIGGER IF EXISTS ckp_ledger_after_insert ON ckp.ledger;
 CREATE TRIGGER ckp_ledger_after_insert
   AFTER INSERT ON ckp.ledger
@@ -60,10 +80,11 @@ END $$;
 
 -- Ownership lands with creation (ALTER TABLE OWNER also moves the serial sequences),
 -- so the SECURITY DEFINER subject operates its own tables — no call-time dependency.
-ALTER TABLE ckp.instances OWNER TO ck_substrate;
-ALTER TABLE ckp.ledger    OWNER TO ck_substrate;
-ALTER TABLE ckp.proof     OWNER TO ck_substrate;
-ALTER TABLE ckp.outbox    OWNER TO ck_substrate;
+ALTER TABLE ckp.instances     OWNER TO ck_substrate;
+ALTER TABLE ckp.ledger        OWNER TO ck_substrate;
+ALTER TABLE ckp.proof         OWNER TO ck_substrate;
+ALTER TABLE ckp.outbox        OWNER TO ck_substrate;
+ALTER TABLE ckp.adoption_pins OWNER TO ck_substrate;
 
 -- Extension-created tables are excluded from pg_dump unless flagged: seal data is USER
 -- data and must survive a dump/restore. Guarded (best-effort) — on a tree where the
@@ -77,6 +98,7 @@ BEGIN
   PERFORM pg_catalog.pg_extension_config_dump('ckp.proof_id_seq', '');
   PERFORM pg_catalog.pg_extension_config_dump('ckp.outbox', '');
   PERFORM pg_catalog.pg_extension_config_dump('ckp.outbox_seq_seq', '');
+  PERFORM pg_catalog.pg_extension_config_dump('ckp.adoption_pins', '');
 EXCEPTION WHEN OTHERS THEN
   RAISE NOTICE 'pgck 0.4.2: pg_extension_config_dump skipped (%, non-member tables already dumpable)', SQLERRM;
 END

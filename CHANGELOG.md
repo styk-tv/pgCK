@@ -2,6 +2,29 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.77 - 2026-08-20
+
+**The pin ledger joins the install floor.** On a fresh install, `ckp.adoption_pins` did not
+exist: it was created only by the 0.4.60→0.4.61 upgrade script (the warm path) and inside
+`ckp.bootstrap_kernel()` (a manual CALL) — the install baseline never carried the top-level
+CREATE. Measured on `ociger-pg18-pgrdf-pgck-nats-micro:v0.2.4` (fresh 0.4.76): the FIRST
+`ckp:Adoption` seals fine, the SECOND dies mid-recomposition on the missing relation, and
+`fleet.adoptions` hard-errors from its first call. Warm-upgraded benches carried the table
+all along, which is exactly why nobody saw it — the two install roads had diverged, and only
+the road nobody was driving was broken.
+
+- **`adoption_pins` is created in the install-completeness block** (the LAST include every
+  fresh install runs), with its four structural columns, `ck_substrate` ownership, and the
+  dump flag — pins are trust-on-first-sight records and survive dump/restore like the rest of
+  the seal path.
+- **The warm path mirrors it** (`pgck--0.4.76--0.4.77.sql`, fully idempotent): both roads
+  converge on one schema in one act, the same discipline as the 0.4.74 authority mirror.
+- **The fresh-install gate can now fail this defect.** `smoke-s34` passed throughout the
+  defect's life because it never sealed two Adoptions — a check that cannot fail is not a
+  check. It now asserts the table exists at CREATE EXTENSION, seals TWO governed Adoptions on
+  a virgin cluster (wave + lexicon by digest, with a named requester), and requires
+  `fleet.adoptions` to answer. On unfixed 0.4.76 that step reproduces the failure exactly.
+
 ## v0.4.76 - 2026-08-17
 
 **The door can see the inferred plane.** `surface.grounding` reported `asserted` and nothing
