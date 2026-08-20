@@ -120,7 +120,7 @@ Per-version detail and the full capability boundary: [`CHANGELOG.md`](CHANGELOG.
 
 Both are attested [oci-germination](https://github.com/sporaxis-com/oci-germination) bundles that carry pgCK + pgRDF + NATS pre-composed. One `docker run`, no build.
 
-**① Localhost, anonymous — the fastest working kernel** (`ociger-pg18-pgrdf-pgck-nats-micro`): PostgreSQL 18 + both extensions + NATS core/WSS in one container. No identity plane — right for a private localhost bench, exploration, and CI. Anonymous dispatch **reads** freely (surface checks, queries, events); **writes refuse** unless an identity is declared — over the wire that means door ②, and on the operator/SQL path it means naming one explicitly (`set_config('ckp.requester', 'svc:my-bench', true)`) before sealing. A fact belonging to nobody never lands, even on a toy bench.
+**① Localhost, anonymous — the fastest working kernel** (`ociger-pg18-pgrdf-pgck-nats-micro`): PostgreSQL 18 + both extensions + NATS core/WSS in one container. No identity plane — right for a private localhost bench, exploration, and CI. Anonymous dispatch **reads** freely (surface checks, queries, events) — and crucially, **`instance.validate` runs the full SHACL gate and returns the complete report without sealing**, so every shape, clause and negative control is testable with no identity at all: *anonymous tests the law; a named identity tests the ledger.* **Writes refuse** unless an identity is declared — over the wire that means door ②, and on the operator/SQL path it means naming one explicitly (`set_config('ckp.requester', 'svc:my-bench', true)`) before sealing. A fact belonging to nobody never lands, even on a toy bench.
 
 ```sh
 docker run -d -p 5432:5432 -p 4222:4222 -p 9222:9222 \
