@@ -175,4 +175,49 @@ BEGIN
     COALESCE('refused ('||left(v_why, 60)||'…)', 'resolved away to '||quote_literal(v_res));
 END $$;
 
+-- (e) 0.4.79 — THE DEFAULT-STATE CLAIM, and it is the one the two-plane family
+-- hid behind. Claims (a)-(c) all SET ckp.project before asking, so they assert
+-- "the segment resolves to itself" and cannot see a DEPLOYMENT whose planes
+-- disagree because one was never set. That gap is exactly what oci-germination
+-- had to measure by hand against the published 0.4.78: wire(pgck.kernels)=pgck,
+-- seal(ckp._project)=demo — canonical case, still two kernels. A check that
+-- presupposes the condition it tests is not a check.
+DO $$
+DECLARE
+  v_prev  text := current_setting('ckp.project', true);
+  v_seal  text;
+BEGIN
+  -- Ask the resolver what a deployment gets with NOTHING set — the state every
+  -- fresh install is in before anyone names a kernel.
+  PERFORM set_config('ckp.project', '', true);
+  v_seal := ckp._project();
+  PERFORM set_config('ckp.project', COALESCE(v_prev, ''), true);
+
+  IF v_seal IS NOT NULL THEN
+    RAISE EXCEPTION 's70 FAIL (e): with ckp.project UNSET the resolver returned % '
+      'instead of NO PROJECT. A borrowed name here is a jurisdiction nobody '
+      'germinated: every non-wire write lands there and every fact sealed claims '
+      'to be governed by it.', quote_literal(v_seal);
+  END IF;
+  RAISE NOTICE 's70 (e) PASS — unset resolves to NO PROJECT, not a borrowed name';
+END $$;
+
+-- (f) NEGATIVE CONTROL for (e): core-only must stay READABLE while sealing
+-- refuses. If the refusal also killed reads, this release would have traded an
+-- invented kernel for an unusable substrate.
+DO $$
+DECLARE
+  v_prev text := current_setting('ckp.project', true);
+  v_g    int;
+BEGIN
+  PERFORM set_config('ckp.project', '', true);
+  v_g := ckp._composed_shapes(ckp._project());
+  IF v_g IS DISTINCT FROM pgrdf.graph_id('urn:ckp:core') THEN
+    RAISE EXCEPTION 's70 FAIL (f): with no kernel the surface should BE core (graph %), got %',
+      pgrdf.graph_id('urn:ckp:core'), v_g;
+  END IF;
+  PERFORM set_config('ckp.project', COALESCE(v_prev, ''), true);
+  RAISE NOTICE 's70 (f) PASS — core-only composes to core itself; the law stays readable';
+END $$;
+
 SELECT 's70_kernel_planes_agree: PASS';

@@ -726,11 +726,26 @@ DECLARE
   -- site for writes that belong to nobody. It lives HERE now, in one place, so
   -- it can be made fail-closed in a single edit instead of twelve.
   CANON   text := '^[a-z0-9]+(-[a-z0-9]+)*$';
-  v_raw   text := COALESCE(NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  v_raw   text := NULLIF(current_setting('ckp.project', true), '');
   v_kid   text;
   v_hits  text[];
   v_ask   text;
 BEGIN
+  -- 0.4.79 — CLAUSE 0: NO KERNEL NAMED. This slot held 'demo' from the repo's
+  -- first day (816e9e3, 2026-05-16) and propagated to 14 load-bearing sites: an
+  -- EXAMPLE became infrastructure because no gate could refuse a default. It
+  -- invented a jurisdiction, so facts sealed declaring themselves governed by
+  -- urn:ckp:demo/kernel/ck -- a graph with ZERO quads, measured on a fresh boot
+  -- of the current release. Now: absent means ABSENT. The law is still readable
+  -- (surface.declared, surface.typecheck, instance.validate all work core-only);
+  -- what refuses is SEALING, because M2 (producedBy) is not optional -- a fact
+  -- must name whose law governs it. Not having germinated is a complete and
+  -- correct state, not a fault.
+  IF v_raw IS NULL THEN
+    RETURN jsonb_build_object('project', NULL, 'clause',
+      'clause 0 - no kernel named (ckp.project unset). The law is in force and readable; sealing refuses until a kernel is named, because a fact must say whose law governs it.',
+      'hits', '[]'::jsonb);
+  END IF;
   v_kid := 'urn:ckp:'||v_raw||'/kernel';
   -- 1. a CANONICAL spelling with its own sealed kernel wins outright. This is the
   --    common path and costs one indexless scan of a small table. The canonical
@@ -1009,6 +1024,14 @@ DECLARE
   v_cnt  int;
 BEGIN
   v_core   := pgrdf.add_graph('urn:ckp:core');
+  -- 0.4.79 -- CORE-ONLY IS A REAL STATE. Composition is the act of unioning a
+  -- kernel's own graph and its sealed Adoptions INTO core. With no kernel there
+  -- is nothing to union, so the surface simply IS core -- returned directly
+  -- rather than copied into an invented urn:ckp:<somebody>/shapes/composed.
+  -- Reads and validation work here; sealing refuses in _derived_stamps.
+  IF p_project IS NULL OR btrim(p_project) = '' THEN
+    RETURN v_core;
+  END IF;
   v_kernel := pgrdf.add_graph(format('urn:ckp:%s/kernel/ck', p_project));
   v_comp   := pgrdf.add_graph(format('urn:ckp:%s/shapes/composed', p_project));
   PERFORM pgrdf.clear_graph(v_comp);
@@ -2429,6 +2452,14 @@ DECLARE
 BEGIN
   IF p_subj IS NULL OR p_type IS NULL THEN RETURN '{}'::jsonb; END IF;
 
+  -- 0.4.79 -- M2 IS NOT OPTIONAL. producedBy names the kernel whose law governs
+  -- this fact. With no kernel named this built 'urn:ckp:'||NULL||'/kernel/ck',
+  -- and before clause 0 it built urn:ckp:demo/kernel/ck -- a jurisdiction that
+  -- was never germinated. A fact governed by nobody is worse than a refused one.
+  IF p_project IS NULL OR btrim(p_project) = '' THEN
+    RAISE EXCEPTION 'ckp.seal: no kernel named, so this fact cannot carry M2 (producedBy) -- and a fact must say whose law governs it. The law IS loaded and readable: surface.declared, surface.typecheck and instance.validate all answer core-only. To seal, name your kernel: SELECT set_config(''ckp.project'', ''<your-kernel>'', true), or germinate one. (Until 0.4.79 this silently landed in the project ''demo'', whose kernel graph is empty.)';
+  END IF;
+
   -- producedBy — the kernel that processed this instance. Server-derived.
   v_out := v_out || jsonb_build_object(N||'producedBy', 'urn:ckp:'||p_project||'/kernel/ck');
 
@@ -3384,7 +3415,7 @@ CREATE OR REPLACE FUNCTION ckp.surface_check(p_project text DEFAULT NULL)
 AS $function$
 DECLARE
   N        text := 'https://conceptkernel.org/ontology/v3.11/core#';
-  v_proj   text := COALESCE(p_project, NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  v_proj   text := COALESCE(p_project, ckp._project());
   v_kiri   text;
   v_epoch  int;
   v_ep_iri text;
@@ -3489,7 +3520,7 @@ CREATE OR REPLACE FUNCTION ckp.integrity_check(p_project text DEFAULT NULL)
 AS $function$
 DECLARE
   N      text := 'https://conceptkernel.org/ontology/v3.11/core#';
-  v_proj text := COALESCE(p_project, NULLIF(current_setting('ckp.project', true), ''), 'demo');
+  v_proj text := COALESCE(p_project, ckp._project());
   v_comp int;
   v_giri text;
   v_find jsonb := '[]'::jsonb;

@@ -2,6 +2,42 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.79 - 2026-08-21
+
+**The substrate stops inventing a kernel, and starts telling the truth about not having one.**
+
+`demo` entered on this repository's **first day** (`816e9e3`, 2026-05-16) and reached **14
+load-bearing sites** — three independent `COALESCE` fallbacks, seven `DEFAULT` parameters, two
+bundle literals and a Go constant. Nobody ever chose it. It propagated by default-value copying,
+because a default is not a declaration and no gate can refuse one. Measured consequence on a
+fresh boot of the previous release: **24 sealed instances** declaring (M2, `producedBy`) that
+they are governed by `urn:ckp:demo/kernel/ck` — **a graph with zero quads**. Facts citing a
+jurisdiction that was never germinated, sealed correctly by a substrate doing exactly what it
+was told.
+
+- **Clause 0 — absent means absent.** With no kernel named, the resolver returns **no project**
+  rather than borrowing one. This also **consolidates for real**: `surface.check` and
+  `integrity_check` each carried their own copy of the fallback, so the two verbs a caller uses
+  to ask *"am I healthy"* resolved the project independently of the resolver everything else
+  used. The comment above the first fallback claimed that consolidation was already done — *"in
+  one place… a single edit instead of twelve."* It was not. Now it is.
+- **Core-only is a complete state, not a fault.** Composition is the act of unioning a kernel's
+  own graph and its Adoptions *into* core; with no kernel there is nothing to union, so the
+  surface **is** core. `surface.declared`, `surface.typecheck` and the full `instance.validate`
+  report all answer — you can read the law without a kernel.
+- **Sealing refuses, naming M2.** A fact must say whose law governs it. The refusal states the
+  remedy and notes that reads still work.
+- **The gate gained the claim it was missing.** `s70` claims (a)–(c) all *set* `ckp.project`
+  before asking, so they assert "the segment resolves to itself" and could never see a
+  deployment whose planes disagree because one was never set — the exact gap oci-germination had
+  to measure by hand against 0.4.78. Claim **(e)** asks the resolver what an unconfigured
+  deployment gets; claim **(f)** is its control, proving reads survive the refusal.
+
+**Contract change, stated plainly:** sealing now **names its kernel**. Deployments that pin
+`ckp.project` (all shipped bundles do, in `pgck.conf`) are unaffected. A bare install must name
+one — `set_config('ckp.project', '<kernel>', true)` — or germinate. The fresh-install gate and
+the compose rig were both updated to declare their kernel rather than inherit an invention.
+
 ## v0.4.78 - 2026-08-20
 
 **The wire served a kernel name the substrate refuses.** `pgck.kernels` — the GUC the

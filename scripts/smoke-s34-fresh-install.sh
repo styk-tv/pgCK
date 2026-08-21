@@ -99,6 +99,15 @@ case "$IMP_OUT" in
 esac
 echo "s34: retired board module refuses WITH A REASON ✓"
 
+# 0.4.79 — THE CONTRACT GAINED ONE STEP, AND IT IS THE RIGHT ONE. Sealing now
+# NAMES ITS KERNEL. Before, an unset ckp.project silently resolved to the project
+# 'demo' — an example that entered on the repo's first day and became the
+# jurisdiction of every unattributed write (finding-1787292096161920000). This
+# gate passed on that invention. It now sets ckp.project explicitly, which is
+# what every real deployment already does (the bundles pin it in pgck.conf), and
+# it exercises clause 5: a CANONICAL name with nothing sealed behind it yet keeps
+# the germination path open, so a fresh install can still seal from zero.
+#
 # (2c) THE KEYSTONE — governed 2-arg dispatch as a REAL ck_participant login,
 # now against an ARMED gate.
 # 0.4.40: the keystone seals a type the v3.11 ROOT declares, not the retired
@@ -113,7 +122,7 @@ echo "s34: retired board module refuses WITH A REASON ✓"
 # has no ingress, so it DECLARES its identity the sanctioned way. (At SQL level
 # the GUC is declared-not-verified by design — the cryptographic floor is the
 # door; SQL access was always full trust.)
-R="$(PART "SELECT ckp.dispatch('instance.create','{\"type\":\"https://conceptkernel.org/ontology/v3.11/core#Supersession\",\"supersedes\":\"urn:ckp:s34/probe\"}'::jsonb)->>'ok' FROM (SELECT set_config('ckp.requester','s34-participant',true)) _id")" \
+R="$(PART "SELECT ckp.dispatch('instance.create','{\"type\":\"https://conceptkernel.org/ontology/v3.11/core#Supersession\",\"supersedes\":\"urn:ckp:s34/probe\"}'::jsonb)->>'ok' FROM (SELECT set_config('ckp.requester','s34-participant',true), set_config('ckp.project','s34',true)) _id")" \
   || fail "(ask 2c) dispatch as ck_participant ERRORED on a fresh cluster"
 [ "$R" = "true" ] || fail "(ask 2c) dispatch as ck_participant returned ok=$R"
 echo "s34: governed dispatch as ck_participant ok:true (v3.11 type, gated) ✓"
@@ -131,10 +140,10 @@ WAVE_D="$(SU "SELECT encode(digest(convert_to(pg_read_file('/ontology/v3.11/modu
 LEX_D="$(SU "SELECT encode(digest(convert_to(pg_read_file('/ontology/v3.11/modules/lexicon.ttl'),'UTF8'),'sha256'),'hex')")"
 SU "SELECT pgrdf.load_turtle('/ontology/v3.11/modules/wave.ttl', pgrdf.add_graph('urn:ckp:module:wave'), NULL, false);" >/dev/null
 SU "SELECT pgrdf.load_turtle('/ontology/v3.11/modules/lexicon.ttl', pgrdf.add_graph('urn:ckp:module:lexicon'), NULL, false);" >/dev/null
-A1="$(PART "SELECT ckp.dispatch('instance.create', jsonb_build_object('type','https://conceptkernel.org/ontology/v3.11/core#Adoption','adopts','urn:ckp:module:wave','intoProject','urn:ckp:project:demo','intoEpoch',0,'sourceDigest','$WAVE_D'))->>'ok' FROM (SELECT set_config('ckp.requester','s34-participant',true)) _id")" \
+A1="$(PART "SELECT ckp.dispatch('instance.create', jsonb_build_object('type','https://conceptkernel.org/ontology/v3.11/core#Adoption','adopts','urn:ckp:module:wave','intoProject','urn:ckp:project:demo','intoEpoch',0,'sourceDigest','$WAVE_D'))->>'ok' FROM (SELECT set_config('ckp.requester','s34-participant',true), set_config('ckp.project','s34',true)) _id")" \
   || fail "(ask 3) FIRST Adoption ERRORED"
 [ "$A1" = "true" ] || fail "(ask 3) first Adoption refused (ok=$A1)"
-A2="$(PART "SELECT ckp.dispatch('instance.create', jsonb_build_object('type','https://conceptkernel.org/ontology/v3.11/core#Adoption','adopts','urn:ckp:module:lexicon','intoProject','urn:ckp:project:demo','intoEpoch',0,'sourceDigest','$LEX_D'))->>'ok' FROM (SELECT set_config('ckp.requester','s34-participant',true)) _id")" \
+A2="$(PART "SELECT ckp.dispatch('instance.create', jsonb_build_object('type','https://conceptkernel.org/ontology/v3.11/core#Adoption','adopts','urn:ckp:module:lexicon','intoProject','urn:ckp:project:demo','intoEpoch',0,'sourceDigest','$LEX_D'))->>'ok' FROM (SELECT set_config('ckp.requester','s34-participant',true), set_config('ckp.project','s34',true)) _id")" \
   || fail "(ask 3) SECOND Adoption ERRORED — the 0.4.76 adoption_pins defect shape (relation missing mid-recomposition)"
 [ "$A2" = "true" ] || fail "(ask 3) second Adoption refused (ok=$A2)"
 FLT="$(PART "SELECT ckp.dispatch('fleet.adoptions','{}'::jsonb)->>'ok'")" \
