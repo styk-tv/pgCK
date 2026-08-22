@@ -1,0 +1,498 @@
+@prefix wave: <https://conceptkernel.org/ontology/v3.11/wave#> .
+@prefix ckp:  <https://conceptkernel.org/ontology/v3.11/core#> .
+@prefix iao:  <http://purl.obolibrary.org/obo/IAO_> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+#######################################################################
+# CKP v3.11 — WAVE MODULE
+#
+# A coordination wave, expressed in the protocol it is coordinating.
+#
+# The wave already runs CKP: a pass proposes, a component delivers, a
+# second component measures, the pass seals. That loop has been carried
+# in markdown, which makes the state of the wave a document to be read
+# rather than a graph to be queried — a second enforcement surface, and
+# the exact defect the core exists to end.
+#
+# This module declares the vocabulary so the loop seals. What a pass
+# file states in prose, an Index states as a sealed instance, and the
+# question "who is blocked, on what, since when" becomes one query.
+#
+# MODULE, NOT ROOT. Admitted by a sealed ckp:Adoption naming its digest.
+# It reuses ckp: terms wherever the core already has them and declares
+# only what the core does not: ckp:sourceDigest, ckp:reason,
+# ckp:requiresQuorum, ckp:about and ckp:validation appear here unchanged.
+#
+# THE THREE AUTHORING RULES OF THE ROOT BIND HERE UNCHANGED:
+#   1. measured-enforcing components only
+#   2. no class IRI as the subject of a domained predicate
+#   3. body locality — a constraint reads only the candidate body plus
+#      the parent closure stamped onto the candidate itself
+#######################################################################
+
+<https://conceptkernel.org/ontology/v3.11/wave> a owl:Ontology ;
+  rdfs:label "CKP Wave Module v3.11" ;
+  rdfs:comment "The vocabulary of a coordination wave: passes, components, indexes, tickets, findings and rulings. A module over the v3.11 core, admitted by adoption." .
+
+
+#######################################################################
+# 1. THE WAVE AND ITS PASSES
+#
+# A pass IS an epoch. It names a surface — the published root plus the
+# standing rules in force — and it advances only on a sealed proof.
+# wave:Pass therefore subclasses ckp:Epoch and inherits its shape: an
+# ordinal and a surface digest, both required.
+#######################################################################
+
+wave:Wave a rdfs:Class ;
+  rdfs:label "Wave" ;
+  rdfs:comment "A bounded coordination campaign across several components, converging on one published artifact." .
+
+wave:Pass a rdfs:Class ;
+  rdfs:subClassOf ckp:Epoch ;
+  rdfs:label "Pass" ;
+  rdfs:comment "One turn of the wave. An epoch: it names the surface in force — the root digest plus the standing rules — and advances only when a proof seals. A pass that produces no proof is a pass with no record." .
+
+wave:ofWave a owl:ObjectProperty ;
+  rdfs:domain wave:Pass ; rdfs:range wave:Wave ;
+  rdfs:comment "The wave this pass belongs to." .
+
+wave:director a owl:ObjectProperty ;
+  rdfs:domain wave:Pass ; rdfs:range wave:Component ;
+  rdfs:comment "The component that issued this pass. Issuing asserts that every other component's statement was read, that the director's own ticket is delivered, and that the vision is current." .
+
+
+#######################################################################
+# 2. COMPONENTS
+#
+# A component is a process participant: it bears a verified identity,
+# holds a ticket and seals writes. Not a kernel — a kernel is what a
+# component builds, not what it is.
+#######################################################################
+
+wave:Component a rdfs:Class ;
+  rdfs:subClassOf ckp:Participant ;
+  rdfs:label "Component" ;
+  rdfs:comment "One participant in a wave: a repository and the agent working it. Bears exactly one ticket per pass, files exactly one index, and confirms other components' work." .
+
+wave:repository a owl:DatatypeProperty ;
+  rdfs:domain wave:Component ;
+  rdfs:comment "The repository this component owns, as owner/name. The unit of authority: a component rules only on its own repository." .
+
+wave:statement a owl:ObjectProperty ;
+  rdfs:domain wave:Component ; rdfs:range wave:Statement ;
+  rdfs:comment "The component's standing vision-requirements statement." .
+
+
+#######################################################################
+# 3. THE STATEMENT — what a component STORES
+#
+# Distinct from the Index, which is what a component CLAIMS this pass.
+# The two drift: an index is rewritten every pass, a statement accretes.
+# Separating them makes the drift queryable instead of discovered.
+#######################################################################
+
+wave:Statement a rdfs:Class ;
+  rdfs:subClassOf iao:0000030 ;
+  rdfs:label "Component Statement" ;
+  rdfs:comment "A component's standing document: its vision, its requirements and its accumulated record. Re-based every pass — a declarative binding it carries is either current or it is a claim with a date on it." .
+
+wave:rebasedAtPass a owl:DatatypeProperty ;
+  rdfs:domain wave:Statement ; rdfs:range xsd:integer ;
+  rdfs:comment "The pass at which this statement's declarative front matter was last re-based. Lagging the current pass is the measurable form of stale binding." .
+
+wave:bindsRoot a owl:DatatypeProperty ;
+  rdfs:domain wave:Statement ;
+  rdfs:comment "The root digest this statement declares itself bound to. Comparing it to the pass's surface digest is the whole of the conformance check." .
+
+
+#######################################################################
+# 4. THE INDEX — what a component CLAIMS, once per pass
+#######################################################################
+
+wave:Index a rdfs:Class ;
+  rdfs:subClassOf ckp:Instance ;
+  rdfs:label "Index" ;
+  rdfs:comment "One component's filing for one pass: role, capacity, what it measured, what it confirms, what blocks it. Sealed, so the state of the wave is a query rather than nine documents." .
+
+wave:forPass a owl:ObjectProperty ;
+  rdfs:domain wave:Index ; rdfs:range wave:Pass .
+
+wave:filedBy a owl:ObjectProperty ;
+  rdfs:domain wave:Index ; rdfs:range wave:Component .
+
+wave:role a owl:DatatypeProperty ;
+  rdfs:domain wave:Index ;
+  rdfs:comment "act — holds a ticket this pass. wait — trigger has not fired; receives nothing and files nothing. done — ticket discharged." .
+
+wave:capacity a owl:DatatypeProperty ;
+  rdfs:domain wave:Index ;
+  rdfs:comment "ok · stretched · at-limit. A component at at-limit is not assigned a ticket. Reported before the work, not after it." .
+
+wave:needHelp a owl:DatatypeProperty ;
+  rdfs:domain wave:Index ;
+  rdfs:comment "What the component cannot carry alone, stated as a request rather than discovered as a slip." .
+
+wave:measuredAgainst a owl:DatatypeProperty ;
+  rdfs:domain wave:Index ;
+  rdfs:comment "file — the published artifact. seal — the running substrate. neither — something else, which the index names." .
+
+wave:measuredOn a owl:DatatypeProperty ;
+  rdfs:domain wave:Index ;
+  rdfs:comment "repo@branch commit [+N uncommitted]. The bench mounts a working tree, so main@a1b2c3d and future@a1b2c3d +3 uncommitted are different claims about the world." .
+
+wave:benchClass a owl:DatatypeProperty ;
+  rdfs:comment "b0 read · b1 named scratch · b2 replace and boot · b3 seals · b4 destructive. Declared by an index and by a ticket; no rdfs:domain, because both bear it." .
+
+wave:blockedOn a owl:ObjectProperty ;
+  rdfs:domain wave:Index ;
+  rdfs:comment "The ticket this component waits on. A cycle here is a deadlock and is detectable before anyone works a pass." .
+
+
+#######################################################################
+# 5. TICKETS, CONFIRMATIONS, FINDINGS, RULINGS
+#
+# The circle and the register, as two classes rather than two lists.
+# A Ticket is owned and bounded; a Finding is neither. Promotion is an
+# explicit act, which is what stops a register becoming a backlog.
+#######################################################################
+
+wave:Ticket a rdfs:Class ;
+  rdfs:subClassOf ckp:Instance ;
+  rdfs:label "Ticket" ;
+  rdfs:comment "One unit of assigned work, owned by exactly one component for exactly one pass. Closes on confirmation, never on completion." .
+
+wave:owner a owl:ObjectProperty ;
+  rdfs:domain wave:Ticket ; rdfs:range wave:Component .
+
+wave:openedAtPass a owl:DatatypeProperty ;
+  rdfs:domain wave:Ticket ; rdfs:range xsd:integer .
+
+wave:ticketState a owl:DatatypeProperty ;
+  rdfs:domain wave:Ticket ;
+  rdfs:comment "proposed · delivered · delivered-pending-verification · confirmed · closed · refused · not-delivered. refused is a delivery: it carries the measurement that declines the work." .
+
+wave:Confirmation a rdfs:Class ;
+  rdfs:subClassOf ckp:Instance ;
+  rdfs:label "Confirmation" ;
+  rdfs:comment "A second component measuring a ticket it does not own. The only thing that closes a ticket, and the reason self-report cannot." .
+
+wave:confirmsTicket a owl:ObjectProperty ;
+  rdfs:domain wave:Confirmation ; rdfs:range wave:Ticket .
+
+wave:evidence a owl:DatatypeProperty ;
+  rdfs:domain wave:Confirmation ;
+  rdfs:comment "The exact command anyone can re-run, and its output. A confirmation that cannot be re-run is an opinion." .
+
+wave:Finding a rdfs:Class ;
+  rdfs:subClassOf ckp:Instance ;
+  rdfs:label "Finding" ;
+  rdfs:comment "Something measured that is not work. Unowned and unscheduled by default. It becomes a ticket only by explicit promotion, and since a component holds one ticket, promoting displaces." .
+
+wave:findingState a owl:DatatypeProperty ;
+  rdfs:domain wave:Finding ;
+  rdfs:comment "open · closed-by-ruling · promoted. closed-by-ruling is the cheapest close available: out of scope, permanently, for one sentence." .
+
+wave:promotedTo a owl:ObjectProperty ;
+  rdfs:domain wave:Finding ; rdfs:range wave:Ticket ;
+  rdfs:comment "The ticket this finding became. Present only where findingState is promoted." .
+
+wave:Ruling a rdfs:Class ;
+  rdfs:subClassOf ckp:Instance ;
+  rdfs:label "Ruling" ;
+  rdfs:comment "A decision taken by the director, carrying the measurement that forced it. A ruling is refused by measurement, never by preference — and a ruling conflicting with a sealed fact is refused, not reconciled." .
+
+# v3.12 RC2: DatatypeProperty -> ObjectProperty. Filed by sporaxis
+# (finding-1787394626084933000) and paired by superaiharness3000 with
+# ckp:runOf, whose framing settled it: one required reference is typed so it
+# CANNOT name the record that exists; the other is typed correctly and
+# necessarily names a record that does not. Same chain, specified in prose and
+# typed twice from opposite ends.
+#
+# Measured, three refusals in a row on 2026-08-22 while sealing the fleet
+# reconciliation:
+#   no ruledAtPass                  -> REFUSED  MinCount(1)
+#   ruledAtPass "ckp://Pass#pass-…" -> REFUSED  Expected Datatype: xsd:integer
+#   ruledAtPass 1                   -> SEALED
+# So a Ruling cited its Pass by ORDINAL, on the one type whose entire job is
+# recording a decision — and pass numbers restart per kernel, so "pass 1" named
+# three different Passes on one bench. The link from that Ruling to
+# pass-1787394556282226000 survived only as prose inside ckp:reason, which no
+# query can follow. A counter is not an identifier: §2.4b established that no
+# counter identifies a SURFACE, and this is the same defect one plane over.
+wave:ruledAtPass a owl:ObjectProperty ;
+  rdfs:domain wave:Ruling ; rdfs:range wave:Pass ;
+  rdfs:comment "The Pass this Ruling was ruled at, cited by @id. An ordinal MAY accompany a citation but MUST NEVER substitute for it — pass numbers restart per kernel and so do not identify anything fleet-wide. LOCALITY-LIMITED, stated for the same reason as ckp:runOf: the gate checks nodeKind and cardinality, never that the Pass exists." .
+
+wave:ruledAtPassOrdinal a owl:DatatypeProperty ;
+  rdfs:domain wave:Ruling ; rdfs:range xsd:integer ;
+  rdfs:comment "The human-facing pass number, retained so existing Rulings sealed under the v3.11 module remain readable and re-citable rather than being orphaned by the retype. Convenience only: it identifies nothing across kernels, and wave:ruledAtPass is the reference that does." .
+
+wave:refutedAtPass a owl:DatatypeProperty ;
+  rdfs:domain wave:Ruling ; rdfs:range xsd:integer ;
+  rdfs:comment "The pass at which a measurement falsified this ruling. Its presence is what makes a wave's correction rate a number rather than an impression." .
+
+
+#######################################################################
+# 6. SHAPES
+#######################################################################
+
+wave:WaveShape a sh:NodeShape ;
+  sh:targetClass wave:Wave ;
+  sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] .
+
+# wave:Pass also receives ckp:EpochShape by parent closure: an ordinal
+# and a surface digest are required and are not restated here.
+# v3.12 RC2: the citation plane. Disclosed by sporaxis against their OWN Pass
+# (finding-1787395326893387000): PassShape checks FORM only, so it cannot tell a
+# PINNED surface digest from an ACTUAL one, and declared no field to say which
+# was cited. Their Pass cites `actual` because pinned was null — never having
+# bumped an epoch — and the Ruling hanging off it inherits that ambiguity.
+# superaiharness3000's two Passes cite pinned. Both are legitimate; a reader
+# cannot currently tell them apart, which makes every Pass digest citation
+# ambiguous by construction.
+#
+# NOT minCount 1: Passes are already sealed under the v3.11 module without it,
+# and ckp.seal does not yet emit it. Requiring it would refuse the filing act
+# the whole wave discipline runs on — emission and shape move in ONE act (§6),
+# so minCount lands with the release that supplies it.
+wave:citesSurfaceAs a owl:DatatypeProperty ;
+  rdfs:domain wave:Pass ; rdfs:range xsd:string ;
+  rdfs:comment "Which digest plane this Pass's surface citation came from. 'pinned' = the digest an Epoch sealed, so a third party can re-derive it from the ledger. 'actual' = the surface composed at filing time, which is honest but re-derivable only by someone standing where the filer stood — and is what a kernel that has never bumped an epoch has available, because pinned is null. UNEVALUATED IS NOT A PASS: absence of this field means the plane is unstated, never that it was pinned." .
+
+wave:PassShape a sh:NodeShape ;
+  sh:targetClass wave:Pass ;
+  sh:property [ sh:path wave:ofWave   ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
+  sh:property [ sh:path wave:director ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
+  sh:property [ sh:path wave:citesSurfaceAs ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                sh:in ( "pinned" "actual" ) ] .
+
+wave:ComponentShape a sh:NodeShape ;
+  sh:targetClass wave:Component ;
+  sh:property [ sh:path rdfs:label      ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path wave:repository ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                sh:pattern "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$" ] ;
+  sh:property [ sh:path wave:statement  ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
+
+wave:StatementShape a sh:NodeShape ;
+  sh:targetClass wave:Statement ;
+  sh:property [ sh:path wave:rebasedAtPass ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ] ;
+  sh:property [ sh:path wave:bindsRoot     ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                sh:pattern "^[0-9a-f]{64}$" ] .
+
+wave:IndexShape a sh:NodeShape ;
+  sh:targetClass wave:Index ;
+  sh:property [ sh:path wave:forPass          ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
+  sh:property [ sh:path wave:filedBy          ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
+  sh:property [ sh:path wave:role             ; sh:minCount 1 ; sh:maxCount 1 ;
+                sh:in ( "act" "wait" "done" ) ] ;
+  sh:property [ sh:path wave:capacity         ; sh:minCount 1 ; sh:maxCount 1 ;
+                sh:in ( "ok" "stretched" "at-limit" ) ] ;
+  sh:property [ sh:path wave:measuredAgainst  ; sh:minCount 1 ; sh:maxCount 1 ;
+                sh:in ( "file" "seal" "neither" ) ] ;
+  sh:property [ sh:path wave:measuredOn       ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                sh:minLength 1 ] ;
+  sh:property [ sh:path ckp:sourceDigest      ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                sh:pattern "^[0-9a-f]{64}$" ] ;
+  sh:property [ sh:path wave:benchClass       ; sh:minCount 1 ;
+                sh:in ( "b0" "b1" "b2" "b3" "b4" ) ] ;
+  sh:property [ sh:path wave:needHelp         ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path wave:blockedOn        ; sh:nodeKind sh:IRI ] .
+
+wave:TicketShape a sh:NodeShape ;
+  sh:targetClass wave:Ticket ;
+  sh:property [ sh:path rdfs:label         ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path wave:owner         ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
+  sh:property [ sh:path wave:openedAtPass  ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ] ;
+  sh:property [ sh:path wave:benchClass    ; sh:minCount 1 ; sh:maxCount 1 ;
+                sh:in ( "b0" "b1" "b2" "b3" "b4" ) ] ;
+  sh:property [ sh:path wave:ticketState   ; sh:minCount 1 ; sh:maxCount 1 ;
+                sh:in ( "proposed" "delivered" "delivered-pending-verification"
+                        "confirmed" "closed" "refused" "not-delivered" ) ] .
+
+wave:ConfirmationShape a sh:NodeShape ;
+  sh:targetClass wave:Confirmation ;
+  sh:property [ sh:path wave:confirmsTicket ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
+  sh:property [ sh:path wave:evidence       ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 8 ] .
+
+wave:FindingShape a sh:NodeShape ;
+  sh:targetClass wave:Finding ;
+  sh:property [ sh:path rdfs:label        ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path ckp:reason        ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
+  sh:property [ sh:path wave:findingState ; sh:minCount 1 ; sh:maxCount 1 ;
+                sh:in ( "open" "closed-by-ruling" "promoted" ) ] ;
+  sh:property [ sh:path wave:promotedTo   ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
+
+wave:RulingShape a sh:NodeShape ;
+  sh:targetClass wave:Ruling ;
+  sh:property [ sh:path rdfs:label         ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path ckp:reason         ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
+  sh:property [ sh:path wave:ruledAtPass        ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
+  sh:property [ sh:path wave:ruledAtPassOrdinal ; sh:maxCount 1 ; sh:datatype xsd:integer ] ;
+  # refutedAtPass carried the IDENTICAL defect and neither filer caught it —
+  # found by reading the block rather than the finding. Retyped together,
+  # because fixing one end of a broken chain and leaving the other is how the
+  # chain got typed inconsistently in the first place.
+  sh:property [ sh:path wave:refutedAtPass        ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
+  sh:property [ sh:path wave:refutedAtPassOrdinal ; sh:maxCount 1 ; sh:datatype xsd:integer ] .
+
+
+#######################################################################
+# 7. THE STATE OF THE WAVE, AS QUERIES
+#
+# Every number a pass file reports by hand is one of these. They are
+# recorded here because the queries are the acceptance test: if a stat
+# cannot be expressed, the vocabulary is missing a term and we find out
+# now rather than after the harness is built.
+#
+# who is blocked, on what, and since when
+#   SELECT ?c ?t ?p WHERE { ?i wave:filedBy ?c ; wave:blockedOn ?t ;
+#                              wave:forPass ?p }
+#
+# tickets open longer than one pass
+#   SELECT ?t ?opened WHERE { ?t a wave:Ticket ; wave:openedAtPass ?opened ;
+#                                wave:ticketState ?s
+#                             FILTER(?s != "closed") }
+#
+# statements whose declared binding is not the pass surface
+#   SELECT ?c ?bound ?surface WHERE { ?c wave:statement ?st .
+#     ?st wave:bindsRoot ?bound . ?p a wave:Pass ; ckp:surfaceDigest ?surface
+#     FILTER(?bound != ?surface) }
+#
+# capacity across the wave, this pass
+#   SELECT ?cap (COUNT(?i) AS ?n) WHERE { ?i a wave:Index ; wave:capacity ?cap }
+#   GROUP BY ?cap
+#
+# the correction rate — rulings the wave later falsified
+#   SELECT (COUNT(?r) AS ?refuted) WHERE { ?r a wave:Ruling ; wave:refutedAtPass ?x }
+#
+# unconfirmed deliveries — the real backlog
+#   SELECT ?t WHERE { ?t a wave:Ticket ; wave:ticketState "delivered" }
+#   MINUS { ?cf wave:confirmsTicket ?t }
+#######################################################################
+
+
+#######################################################################
+# 8. OPERATIONS — what a pass DOES to the wave's knowledge
+#
+# Every pass performs acts on artifacts: publishing, superseding,
+# validating, withdrawing, closing. Carried in prose, they are legible
+# once and countable never. Named, the wave can answer how much of a
+# pass was progress and how much was repair — which is the question the
+# ticket count only gestures at.
+#
+# An Operation is an Instance, so it carries an actor and an epoch by
+# the core's own shape and cannot be recorded anonymously.
+#######################################################################
+
+wave:Operation a rdfs:Class ;
+  rdfs:subClassOf ckp:Instance ;
+  rdfs:label "Operation" ;
+  rdfs:comment "One deliberate act performed on the wave's knowledge during a pass. Distinct from a Ticket, which is work assigned: an operation is what the work did." .
+
+wave:opKind a owl:DatatypeProperty ;
+  rdfs:domain wave:Operation ;
+  rdfs:comment "publish · supersede · adopt · validate · confirm · refute · withdraw · correct · delete · refuse · promote · close-by-ruling · declare-gap · escalate. A closed set: an act outside it is an act the process has not yet learned to see." .
+
+wave:opTarget a owl:ObjectProperty ;
+  rdfs:domain wave:Operation ;
+  rdfs:comment "What the operation acted on — an artifact, a ticket, a ruling, a finding or an earlier operation. Withdrawal targets an operation, which is what makes a retraction traversable." .
+
+wave:opAtPass a owl:DatatypeProperty ;
+  rdfs:domain wave:Operation ; rdfs:range xsd:integer .
+
+wave:opEvidence a owl:DatatypeProperty ;
+  rdfs:domain wave:Operation ;
+  rdfs:comment "The command anyone can re-run, and its output. An operation without evidence is an assertion wearing a verb." .
+
+# supersede is the operation that made the wave's worst defect possible,
+# so the relation it creates is first-class and queryable.
+wave:supersedes a owl:ObjectProperty ;
+  rdfs:domain wave:Operation ;
+  rdfs:comment "The artifact this operation replaced. Publishing a replacement without recording this is what leaves a superseded digest standing in other components' documents, citable and wrong." .
+
+
+#######################################################################
+# 9. DEFECTS — what a pass FINDS in the wave's knowledge
+#
+# Not defects in code. Defects in what the wave believes: things
+# missing, things claimed twice, things replaced without retraction,
+# things present and never evaluated. Each is a distinct kind with a
+# distinct remedy, and lumping them together is why they recur.
+#######################################################################
+
+wave:Defect a rdfs:Class ;
+  rdfs:subClassOf ckp:Instance ;
+  rdfs:label "Knowledge Defect" ;
+  rdfs:comment "A condition discovered in what the wave believes, rather than in what it built. Carries a reason, a kind and the pass that found it." .
+
+wave:defectKind a owl:DatatypeProperty ;
+  rdfs:domain wave:Defect ;
+  rdfs:comment "hole — known missing, declared with a reason, inherited knowingly. gap — missing and nobody knew. collision — two or more claims on one referent with no adjudication. omission — left out of a deliverable that claimed completeness. stale-overwrite — an artifact replaced while its digest stands cited elsewhere. vacuity — present, well-formed, never evaluated. misattribution — named for where it was found rather than where it must be fixed." .
+
+wave:defectState a owl:DatatypeProperty ;
+  rdfs:domain wave:Defect ;
+  rdfs:comment "open · declared · resolved · withdrawn. declared is a hole that has been named and accepted; withdrawn is a defect the wave decided was not one, which is a real and cheap outcome." .
+
+wave:discoveredAtPass a owl:DatatypeProperty ;
+  rdfs:domain wave:Defect ; rdfs:range xsd:integer .
+
+wave:resolvedAtPass a owl:DatatypeProperty ;
+  rdfs:domain wave:Defect ; rdfs:range xsd:integer ;
+  rdfs:comment "Absent while open. Its distance from discoveredAtPass is how long the wave carried a belief it knew was wrong." .
+
+wave:OperationShape a sh:NodeShape ;
+  sh:targetClass wave:Operation ;
+  sh:property [ sh:path wave:opKind     ; sh:minCount 1 ; sh:maxCount 1 ;
+                sh:in ( "publish" "supersede" "adopt" "validate" "confirm" "refute" "withdraw"
+                        "correct" "delete" "refuse" "promote" "close-by-ruling"
+                        "declare-gap" "escalate" ) ] ;
+  sh:property [ sh:path wave:opTarget   ; sh:minCount 1 ; sh:nodeKind sh:IRI ] ;
+  sh:property [ sh:path wave:opAtPass   ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ] ;
+  sh:property [ sh:path wave:opEvidence ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 8 ] ;
+  sh:property [ sh:path wave:supersedes ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
+
+wave:DefectShape a sh:NodeShape ;
+  sh:targetClass wave:Defect ;
+  sh:property [ sh:path rdfs:label            ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path ckp:reason            ; sh:minCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] ;
+  sh:property [ sh:path wave:defectKind       ; sh:minCount 1 ; sh:maxCount 1 ;
+                sh:in ( "hole" "gap" "collision" "omission" "stale-overwrite"
+                        "vacuity" "misattribution" ) ] ;
+  sh:property [ sh:path wave:defectState      ; sh:minCount 1 ; sh:maxCount 1 ;
+                sh:in ( "open" "declared" "resolved" "withdrawn" ) ] ;
+  sh:property [ sh:path wave:discoveredAtPass ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ] ;
+  sh:property [ sh:path wave:resolvedAtPass   ; sh:maxCount 1 ; sh:datatype xsd:integer ] .
+
+
+#######################################################################
+# 10. THE QUERIES THESE EXIST FOR
+#
+# a stale-overwrite, BEFORE anyone cites the dead digest
+#   SELECT ?old WHERE { ?op wave:opKind "supersede" ; wave:supersedes ?old .
+#                       ?st wave:bindsRoot ?old }
+#   -- this is 22a79c5b. It was discoverable the moment the root was
+#      republished, and instead it propagated through three components.
+#
+# how much of a pass was progress, and how much was repair
+#   SELECT ?k (COUNT(?o) AS ?n) WHERE { ?o a wave:Operation ; wave:opKind ?k ;
+#                                          wave:opAtPass 12 } GROUP BY ?k
+#
+# beliefs the wave is knowingly carrying
+#   SELECT ?d WHERE { ?d a wave:Defect ; wave:defectState "declared" }
+#
+# how long a wrong belief survived
+#   SELECT ?d ((?r - ?f) AS ?passes) WHERE { ?d wave:discoveredAtPass ?f ;
+#                                               wave:resolvedAtPass ?r }
+#
+# operations with no evidence — assertions wearing a verb
+#   SELECT ?o WHERE { ?o a wave:Operation } MINUS { ?o wave:opEvidence ?e }
+#
+# the director's own correction rate
+#   SELECT (COUNT(?o) AS ?n) WHERE { ?o wave:opKind ?k ; ckp:createdBy ?d
+#     FILTER(?k IN ("withdraw","correct","refute")) }
+#######################################################################

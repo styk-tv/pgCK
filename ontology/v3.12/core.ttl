@@ -213,8 +213,8 @@ ckp:derivedBy a owl:ObjectProperty ;
   rdfs:comment "The materialization that produced this affordance. Required, so an affordance naming no materialization cannot seal and a hand-registered action cannot hide." .
 
 ckp:retiredAtEpoch a owl:DatatypeProperty ;
-  rdfs:domain ckp:Affordance ; rdfs:range xsd:integer ;
-  rdfs:comment "The epoch at which this affordance was withdrawn. A retired affordance does not dispatch at or after it." .
+  rdfs:domain ckp:Instance ; rdfs:range xsd:integer ;
+  rdfs:comment "The epoch at which this instance was withdrawn. A retired affordance does not dispatch at or after it; a retired instance of any other type is still SEALED and still true-as-of-its-epoch, but is no longer offered. WIDENED FROM ckp:Affordance IN v3.12 RC2, and the reason is measured: superaiharness3000 sealed ck_retire on agent-1787389563630883000 with a full reason, and the agent kept appearing in that kernel's discovery affordance, ranked most prominently, with nothing in the result saying it was withdrawn. Retirement was a ROW STATE in ckp.instances (3 rows) with essentially no trace on the read plane (1 predicate fleet-wide), because core declared a retirement marker for Affordances ONLY. So no correct 'which executors do I offer' query could be written at all: a consumer was offered a model its provider had explicitly retracted. A retraction that the read plane cannot see is not a retraction — it is a note the writer made to themselves. The marker must be EMITTED into <kernel>/instances, not merely settable, or this widening is decorative." .
 
 
 #######################################################################
@@ -284,7 +284,8 @@ ckp:realizes a owl:ObjectProperty ;
   rdfs:comment "The TOOL organ whose disposition this run realizes." .
 
 ckp:runOf a owl:ObjectProperty ;
-  rdfs:domain ckp:Run ; rdfs:range ckp:Affordance .
+  rdfs:domain ckp:Run ; rdfs:range ckp:Affordance ;
+  rdfs:comment "The affordance this run realizes. LOCALITY-LIMITED REFERENCE, and stating that is the point of this comment: the instance gate checks nodeKind and cardinality only — that a well-formed IRI is present, NEVER that anything answers to it. Do not read RunShape's minCount 1 as a guarantee the affordance exists. Measured 2026-08-22 (superaiharness3000, finding-1787389837394731000): a successful apply seals ZERO ckp:Affordance fleet-wide — 37 registered routes, 2 Materializations, 0 Affordances, ckp.register_derived_affordance with no call sites — so on this substrate TODAY every conforming runOf necessarily names a referent that does not exist, and the only way to satisfy the constraint is to cite a phantom. superaiharness3000 refused to do so rather than fake the link, which is the correct reading. This is the exact mirror of wave:ruledAtPass, which is typed xsd:integer and so CANNOT name the Pass instance it was ruled at: one required reference points at nothing, the other cannot point at something real. Same chain, specified in prose and typed twice from opposite ends. An existence check belongs with the release that makes apply seal the Affordance (#56); until then this reference is a claim by its author, not a fact the gate established." .
 
 ckp:startedAt a owl:DatatypeProperty ;
   rdfs:domain ckp:Run ; rdfs:range xsd:dateTime .
@@ -653,7 +654,53 @@ ckp:KernelShape a sh:NodeShape ;
   sh:property [ sh:path ckp:declaresType       ; sh:nodeKind sh:IRI ] ;
   sh:property [ sh:path ckp:declaresPredicate  ; sh:nodeKind sh:IRI ] ;
   sh:property [ sh:path ckp:declaresShape      ; sh:nodeKind sh:IRI ] ;
-  sh:property [ sh:path ckp:declaresAffordance ; sh:nodeKind sh:IRI ] .
+  sh:property [ sh:path ckp:declaresAffordance ; sh:nodeKind sh:IRI ] ;
+
+  # ── THE SEVEN CONSTANTS (v3.12 RC1) ───────────────────────────────────────
+  # Filed against RC1 by sporaxis: declared, and reached by NO sh:path — so
+  # each was minted onto whatever sent it, with no datatype, range or
+  # cardinality. The fourth declaration-with-no-reader of the 2026-08-22 pass,
+  # after projectKind, ckp:plane and derivedBy — and the largest, because the
+  # other three govern STRUCTURE while these govern OUTCOMES.
+  #
+  # §1.1 rules that thresholds are LAW, governed rather than chosen by an
+  # executor. A threshold no shape constrains IS chosen by an executor and
+  # cannot be refused when wrong. And ALGORITHM §7 makes the first pass's
+  # deliverable THE WEIGHTS: if a weight cannot be refused, the experiment
+  # cannot fail, and guessing constants then enshrining them is `demo` at the
+  # arithmetic layer.
+  #
+  # NOT minCount 1, deliberately. Each carries a substrate default and is an
+  # OVERRIDE, sealed only through propose→vote→apply. Requiring one would
+  # refuse every Kernel already sealed and would force an operator to invent a
+  # number to satisfy a gate — manufacturing exactly the unexamined constants
+  # this block exists to prevent. Absence means "the substrate default governs",
+  # which is a real answer; a wrong VALUE is what must be refusable.
+  sh:property [ sh:path ckp:weightAssent   ; sh:maxCount 1 ; sh:datatype xsd:decimal ;
+                sh:minInclusive 0 ] ;
+  # dissent is declared NEGATIVE (substrate default -0.8). A positive value
+  # would make disagreement raise a score — the one sign error that inverts the
+  # meaning of every Score without changing its shape.
+  sh:property [ sh:path ckp:weightDissent  ; sh:maxCount 1 ; sh:datatype xsd:decimal ;
+                sh:maxInclusive 0 ] ;
+  # a CEILING scaled by dwell: w = weightImplicit · (1 − e^(−dwell/τ₀)).
+  # Above 1 an implicit signal could outweigh an explicit vote.
+  sh:property [ sh:path ckp:weightImplicit ; sh:maxCount 1 ; sh:datatype xsd:decimal ;
+                sh:minInclusive 0 ; sh:maxInclusive 1 ] ;
+  # a NEGATIVE λ is exponential growth: old signals would gain weight forever.
+  sh:property [ sh:path ckp:decayLambda    ; sh:maxCount 1 ; sh:datatype xsd:decimal ;
+                sh:minInclusive 0 ] ;
+  # δ is compared against |score|, so a negative δ empties the deferred band —
+  # and §2's contradiction detector lives in that band, so it would vanish
+  # silently rather than fail.
+  sh:property [ sh:path ckp:thresholdDefer ; sh:maxCount 1 ; sh:datatype xsd:decimal ;
+                sh:minInclusive 0 ] ;
+  sh:property [ sh:path ckp:thresholdPromote ; sh:maxCount 1 ; sh:datatype xsd:decimal ] ;
+  # θ⁻ < θ⁺, or the bands inverted: everything discards and nothing promotes,
+  # with both values individually legal. The only cross-property invariant of
+  # the seven, and the only one no per-property constraint can catch.
+  sh:property [ sh:path ckp:thresholdDiscard ; sh:maxCount 1 ; sh:datatype xsd:decimal ;
+                sh:lessThan ckp:thresholdPromote ] .
 
 ckp:OrganShape a sh:NodeShape ;
   sh:targetClass ckp:Organ ;
@@ -795,9 +842,21 @@ ckp:TransitionShape a sh:NodeShape ;
   sh:property [ sh:path ckp:fromState ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
   sh:property [ sh:path ckp:toState   ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] .
 
+# RC2: intoProject added, filed by sporaxis — Adoption is per-project, so a
+# Supersession removing one had nothing scoping it to the sealer.
+#
+# DELIBERATELY NOT minCount 1, and this is not timidity. Supersession is the ONLY
+# door-side exit from an Adoption naming an absent module graph — the recovery
+# path measured on 2026-08-22. Its emission path does not yet supply intoProject,
+# so requiring it would refuse every Supersession and turn the one available cure
+# into a second outage, on a substrate whose composition already fails closed.
+# That is §6 exactly: emission and shape move in ONE act, or the shape is a write
+# outage wearing the costume of rigour. minCount 1 lands in the same release that
+# makes ckp.seal emit it — not before, and not in a different train.
 ckp:SupersessionShape a sh:NodeShape ;
   sh:targetClass ckp:Supersession ;
-  sh:property [ sh:path ckp:supersedes ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
+  sh:property [ sh:path ckp:supersedes  ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
+  sh:property [ sh:path ckp:intoProject ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
 
 ckp:ParticipantShape a sh:NodeShape ;
   sh:targetClass ckp:Participant ;
@@ -943,9 +1002,22 @@ ckp:ScoreShape a sh:NodeShape ;
   sh:property [ sh:path ckp:computedAtEpoch ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ] ;
   sh:property [ sh:path ckp:wasGeneratedBy  ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
 
+# RC2: targetClass -> targetSubjectsOf. Filed by sporaxis as "cannot compel an
+# executable affordance to carry a body". True, but blanket minCount was the
+# wrong cure: this shape targeted ckp:Affordance — the SAME target as
+# AffordanceShape — so requiring sparqlBody would have made EVERY affordance
+# executable-or-refused, and all 37 registered routes carry no body. That is the
+# emission-and-shape rule (§6): a shape gating a type whose emission path cannot
+# produce its required properties is a total write outage presenting as bad data.
+#
+# sh:targetSubjectsOf selects exactly the affordances that CLAIM to be executable
+# by carrying a body, and requires the rest of the trio of them alone. An
+# affordance with no body is then simply not executable — which is the correct
+# meaning, not a gap. sparqlBody needs no minCount: it is the selector, so it is
+# present by construction.
 ckp:ExecutableAffordanceShape a sh:NodeShape ;
-  sh:targetClass ckp:Affordance ;
-  sh:property [ sh:path ckp:affordanceName ; sh:maxCount 1 ; sh:datatype xsd:string ;
+  sh:targetSubjectsOf ckp:sparqlBody ;
+  sh:property [ sh:path ckp:affordanceName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
                 sh:pattern "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$" ] ;
   sh:property [ sh:path ckp:sparqlBody     ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-  sh:property [ sh:path ckp:resultShape    ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
+  sh:property [ sh:path ckp:resultShape    ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .

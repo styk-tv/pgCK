@@ -1,0 +1,96 @@
+@prefix recon: <https://conceptkernel.org/ontology/v3.11/recon#> .
+@prefix ckp:   <https://conceptkernel.org/ontology/v3.11/core#> .
+@prefix sh:    <http://www.w3.org/ns/shacl#> .
+@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:   <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+
+#######################################################################
+# CKP v3.12 — RECON MODULE
+#
+# THE SMALLEST MODULE THAT PACKAGES AN AFFORDANCE. It exists to answer
+# one question with an artifact instead of an argument: what is the
+# minimum a concept kernel must ship to be adopted, gated, and callable?
+#
+# R7 IS NORMATIVE AND ENFORCED, NOT ADVISORY. ckp.import_module scans an
+# incoming module for `ckp:X a rdfs:Class|owl:Class|owl:ObjectProperty|
+# owl:DatatypeProperty` and REFUSES the whole file if it finds one:
+#
+#   "module mints term(s) into the CORE namespace — R7 is normative,
+#    re-issue under domain naming and adopt it by digest."
+#
+# So this file REFERENCES core (ckp:Affordance, ckp:inTopic) and DECLARES
+# nothing into it. Every term it mints is under recon:. That is the whole
+# difference between a module and a fork.
+#
+# HOW A MODULE REACHES A SURFACE — measured on ck-allinone v0.7.37 /
+# pgCK 0.4.81, not repeated from a spec:
+#
+#   1. the graph is PLACED in the store as urn:ckp:module:<name>
+#      (a pgRDF act — the data plane; source_sha256 recorded per graph)
+#   2. a ckp:Adoption is SEALED naming {adopts, intoProject, intoEpoch,
+#      sourceDigest} (a pgCK act — the law plane)
+#
+# Step 2 alone is not enough and step 1 alone does nothing: proximity is
+# not adoption. Both, or the types are refused as not admitted.
+#
+# ckp.import_module IS CLOSED BY RULING — its known-module set is
+# ARRAY[]::text[] and its message is explicit: "Every module in force is
+# adopted by digest (ckp:Adoption), not imported from a mount." It is
+# retained as the R7 tripwire, not as a loader. Do not read its existence
+# as a delivery path.
+#
+# THE OPEN GAP THIS FILE MAKES CONCRETE — ckp:derivedBy is minCount 1 AND
+# maxCount 1 on AffordanceShape, and its range is a ckp:Materialization,
+# which only exists AT AN EPOCH. A statically packaged affordance
+# therefore cannot carry a true derivedBy at authoring time. That is not
+# a flaw in this file; it is the declared/unsealed gap (#56) seen from
+# the packaging side, and it is why ck_doctor reports
+# `affordances NONE declared` on a kernel whose verbs route perfectly.
+#
+# This file states the affordance's CONTRACT and leaves derivedBy to be
+# sealed by the adopting epoch. An adopter that cannot supply it should
+# REFUSE and name this clause — never mint a placeholder Materialization,
+# because a derivedBy pointing at a fabricated epoch is worse than an
+# absent one: it is unfalsifiable provenance.
+#######################################################################
+
+#######################################################################
+# §1  THE DATA — one type, its two properties, one shape that gates it.
+#######################################################################
+
+recon:Chunk a rdfs:Class ;
+  rdfs:label "Chunk" ;
+  rdfs:comment "A span of one document, carved on that document's OWN skeleton — a spec's numbered clause, an LLD's component — never a fixed-size window. Fixed windows destroy exactly the boundaries that carry meaning in these genres, so the carve is structural first and semantic only within an over-long clause." .
+
+recon:text a owl:DatatypeProperty ;
+  rdfs:domain recon:Chunk ; rdfs:range xsd:string ;
+  rdfs:comment "The span verbatim. Never a summary: prose is the least refusable artifact in this system, and a model-written summary that enters the record is fluent, unrefusable and authoritative by default." .
+
+recon:section a owl:DatatypeProperty ;
+  rdfs:domain recon:Chunk ; rdfs:range xsd:string ;
+  rdfs:comment "The span's address in its own document (e.g. \"§3.2\"). This is what makes a finding CITABLE rather than merely asserted — a claim about a chunk that cannot name where it came from is the filer's word." .
+
+recon:ChunkShape a sh:NodeShape ;
+  sh:targetClass recon:Chunk ;
+  sh:property [ sh:path recon:text    ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path recon:section ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path rdfs:label    ; sh:maxCount 1 ; sh:datatype xsd:string ] .
+
+#######################################################################
+# §2  THE AFFORDANCE — the packaged operation.
+#
+# NEGATIVE CONTROL FOR THIS MODULE, and it must ship with it: seal a
+# recon:Chunk carrying text but NO section. ChunkShape must REFUSE it on
+# MinCount(1) naming recon:section. If that write succeeds, this module
+# is decorative and the gate selected no focus node — check M4
+# (ckp:conformsToShape) on the result before believing either outcome.
+#######################################################################
+
+recon:align a ckp:Affordance ;
+  rdfs:label "recon.align" ;
+  ckp:inTopic "recon.align" ;
+  ckp:inShape recon:ChunkShape ;
+  ckp:plane   "instance" ;
+  rdfs:comment "Given two chunks, return the RELATION between them — never a merge. The three outcomes are kept apart on purpose: a COLLISION (two names, one concept) is resolvable by a governed equivalence; an EXTENSION (a name the surface does not declare) is resolvable by governed addition, or by nothing, because not every noun deserves a type; a CONFLICT (one name, two incompatible commitments) is NEVER merged — it is the finding itself, not a dedup opportunity. Conflating the third with the first is how a reconciliation quietly destroys the disagreement it was built to surface. NOTE: ckp:derivedBy is deliberately ABSENT here and is required by ckp:AffordanceShape — see the header. It is the adopting epoch's to seal, and an adopter that cannot must refuse and name the clause." .
