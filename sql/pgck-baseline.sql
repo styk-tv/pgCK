@@ -558,7 +558,7 @@ END;
 $procedure$
 ;
 
-CREATE OR REPLACE PROCEDURE ckp.import_module(IN p_module text, IN p_project text DEFAULT 'demo'::text, IN p_root text DEFAULT '/ontology'::text)
+CREATE OR REPLACE PROCEDURE ckp.import_module(IN p_module text, IN p_project text, IN p_root text DEFAULT '/ontology'::text)
  LANGUAGE plpgsql
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $procedure$
@@ -609,7 +609,7 @@ BEGIN
 END;
 $procedure$;
 
-CREATE OR REPLACE PROCEDURE ckp.load_kernel(IN p_path text, IN p_project text DEFAULT 'demo'::text)
+CREATE OR REPLACE PROCEDURE ckp.load_kernel(IN p_path text, IN p_project text)
  LANGUAGE plpgsql
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $procedure$
@@ -1012,7 +1012,7 @@ BEGIN
 END;
 $function$
 ;
-CREATE OR REPLACE FUNCTION ckp._composed_shapes(p_project text DEFAULT 'demo'::text, p_exclude text DEFAULT NULL)
+CREATE OR REPLACE FUNCTION ckp._composed_shapes(p_project text, p_exclude text DEFAULT NULL)
  RETURNS integer
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -2621,7 +2621,7 @@ END;
 $function$
 ;
 
-CREATE OR REPLACE FUNCTION ckp._recompile(p_kernel text DEFAULT 'demo'::text)
+CREATE OR REPLACE FUNCTION ckp._recompile(p_kernel text)
  RETURNS void
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -2780,7 +2780,7 @@ END;
 $function$
 ;
 
-CREATE OR REPLACE FUNCTION ckp.adopt_kernel_ttl(p_ttl text, p_project text DEFAULT 'demo'::text)
+CREATE OR REPLACE FUNCTION ckp.adopt_kernel_ttl(p_ttl text, p_project text)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -3900,7 +3900,13 @@ DECLARE
   req    jsonb := p_payload->'req';
   res    jsonb;
   v_proj text := ckp._project();
-  v_idk  text := COALESCE(current_setting('ckp.identity_key', true), 'pgck-localhost');
+  -- 0.4.80 — NO MANUFACTURED KEY. This COALESCE substituted the literal
+  -- 'pgck-localhost' whenever nothing was configured, so absence produced a
+  -- shared secret instead of a refusal. The key now comes from ckp.config,
+  -- minted per install; ckp.seal already refuses when it is missing, and that
+  -- refusal is the point.
+  v_idk  text := COALESCE(NULLIF(current_setting('ckp.identity_key', true), ''),
+                          (SELECT v FROM ckp.config WHERE k = 'identity_key'));
   v_canon  text;   -- CI-B-2: canonical instance.* name (registry lookup key)
   v_aff    jsonb;  -- CI-B-1: the sealed affordance row (the registry IS the routing authority)
   v_legacy text;   -- CI-B-2: the legacy handler name (alias window)
@@ -6035,7 +6041,7 @@ END;
 $function$
 ;
 
-CREATE OR REPLACE FUNCTION ckp.shapes_self_test(p_project text DEFAULT 'demo'::text)
+CREATE OR REPLACE FUNCTION ckp.shapes_self_test(p_project text)
  RETURNS TABLE(shape_class text, target_class text, present boolean)
  LANGUAGE plpgsql
  SECURITY DEFINER

@@ -43,6 +43,16 @@ CREATE TABLE IF NOT EXISTS ckp.outbox (
   enqueued_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ckp_outbox_seq_idx ON ckp.outbox(seq);
+-- 0.4.80 — P9: THE COMPUTE QUEUE GETS A RETRY BOUND. ckp.materialize_job is a
+-- LIVE path — materialize_drain_once() runs every bgworker tick and picks one
+-- job FOR UPDATE SKIP LOCKED — with zero rows so far, so its missing bound has
+-- never bitten. It would bite the first time an expensive materialization
+-- fails: re-selected forever, starving every concept behind it, and at any tick
+-- cadence that presents as THE LOOP WORKING. ckp.outbox has carried
+-- attempt_count since it shipped; this is the same lesson, unlearned in the
+-- table next to it.
+ALTER TABLE IF EXISTS ckp.materialize_job ADD COLUMN IF NOT EXISTS attempt_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS ckp.materialize_job ADD COLUMN IF NOT EXISTS last_error TEXT;
 -- 0.4.77 — the adoption pin ledger joins the install floor. It was created by
 -- the 0.4.60--0.4.61 migration (warm path) and inside ckp.bootstrap_kernel()
 -- (manual CALL), but the baseline flatten never carried the top-level CREATE —
@@ -89,6 +99,22 @@ ALTER TABLE ckp.adoption_pins OWNER TO ck_substrate;
 -- Extension-created tables are excluded from pg_dump unless flagged: seal data is USER
 -- data and must survive a dump/restore. Guarded (best-effort) — on a tree where the
 -- tables pre-exist as non-members, dumpability is already the default and this no-ops.
+-- 0.4.80 — THE LEDGER GETS A KEY OF ITS OWN. ckp.seal signs every ledger entry
+-- hmac(body_sha256, identity_key) and reads this exact slot; the slot was
+-- DESIGNED IN and never populated, so ckp.dispatch grew a COALESCE default of
+-- the literal 'pgck-localhost' — our dev bench's own name — to make sealing
+-- work. Measured 2026-08-21 on the latest published bundle: every deployment
+-- was signing its proof chain with that same public string, so `verified: true`
+-- meant "hashes correctly under a key everyone knows".
+--
+-- MINTING IS NOT DEFAULTING. A default hands every install the SAME answer; a
+-- mint hands each one ITS OWN, so the value is specific by construction and
+-- cannot be wrong-but-plausible. 32 bytes from pgcrypto, which is already a
+-- hard dependency (CREATE EXTENSION pgck CASCADE pulls it).
+INSERT INTO ckp.config(k, v)
+SELECT 'identity_key', encode(gen_random_bytes(32), 'hex')
+ WHERE NOT EXISTS (SELECT 1 FROM ckp.config WHERE k = 'identity_key');
+
 DO $dump_042$
 BEGIN
   PERFORM pg_catalog.pg_extension_config_dump('ckp.instances', '');
@@ -99,6 +125,11 @@ BEGIN
   PERFORM pg_catalog.pg_extension_config_dump('ckp.outbox', '');
   PERFORM pg_catalog.pg_extension_config_dump('ckp.outbox_seq_seq', '');
   PERFORM pg_catalog.pg_extension_config_dump('ckp.adoption_pins', '');
+  -- 0.4.80 — ckp.config CARRIES THE SIGNING KEY, so it must survive a
+  -- dump/restore or a restore brings back every sealed fact and loses the key
+  -- that signs them: history restored, proofs unverifiable. (Until 0.4.80 this
+  -- was masked because the key was a constant every install shared.)
+  PERFORM pg_catalog.pg_extension_config_dump('ckp.config', '');
 EXCEPTION WHEN OTHERS THEN
   RAISE NOTICE 'pgck 0.4.2: pg_extension_config_dump skipped (%, non-member tables already dumpable)', SQLERRM;
 END
@@ -114,7 +145,7 @@ $dump_042$;
 -- was never declared is valid silence: with no board ontology loaded there is nothing
 -- to self-test, and the SHACL gate engages the moment the modules ARE imported. The
 -- stale-mount assert (the test's actual purpose) is kept verbatim for present graphs.
-CREATE OR REPLACE FUNCTION ckp.shapes_self_test(p_project text DEFAULT 'demo')
+CREATE OR REPLACE FUNCTION ckp.shapes_self_test(p_project text)
 RETURNS TABLE (shape_class text, target_class text, present boolean)
 LANGUAGE plpgsql
 SECURITY DEFINER

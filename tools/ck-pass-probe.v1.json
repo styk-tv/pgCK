@@ -1,0 +1,136 @@
+{
+  "$schema": "ck-pass-probe/v1",
+  "name": "ck-pass-probe",
+  "version": "1.0.0",
+  "authoredBy": "urn:ckp:pgck/kernel/ck",
+  "authoredAtPass": 31,
+  "benchClass": "b0",
+  "benchClassNote": "b0 = READ ONLY. This manifest MUST NOT be executed at any higher class. It measures and exits. It never seals, never votes, never applies, never retries. Sealing is b3 and stays with an authenticated identity through the door.",
+
+  "purpose": "Make a 30-minute wave pass mechanical. The harness runs this without an LLM, pays the expensive reads once, and hands a token-limited thread only what went RED. Default outcome is role=wait, which files one Index and nothing else.",
+
+  "hardRules": [
+    "NEVER retry a timeout. The reply was lost, not the write. A retry seals twice and reads downstream as two parties agreeing. Timeout => RED, stop, report.",
+    "NEVER cast a vote or run an apply. Quorum counts raw approvals and governance.tally does not exist, so an automated voter manufactures consensus.",
+    "NEVER seal. Emit the verdict; a b3 identity decides what to seal.",
+    "One Index per (component, pass). A second run in the same tick is a no-op.",
+    "Cite the digest, never the epoch number. Two kernels at epoch 2 share nothing.",
+    "Send only keys surface.declared returns. An undeclared key is MINTED, not refused, and the mint target varies by TYPE."
+  ],
+
+  "checks": [
+    {
+      "id": "E1",
+      "name": "epoch-pinned",
+      "verb": "ck_doctor",
+      "payload": {},
+      "extract": "surface.surfaceDigest, surface.epoch",
+      "green": "a sealed core#Epoch exists at this epoch carrying this exact surfaceDigest",
+      "red": "no sealed Epoch, or digest mismatch",
+      "why": "An unpinned surface makes an honest Pass impossible. This is the check oci-germination failed and pgRDF fixed."
+    },
+    {
+      "id": "E2",
+      "name": "surface-moved",
+      "verb": "ck_epochs",
+      "payload": {},
+      "extract": "own kernel row, surfaceMoved on latest epoch",
+      "green": "true",
+      "amber": "false - counter advanced, meaning did not",
+      "why": "REPORT, never aggregate. 14 of 31 fleet epochs moved nothing. Amber is not a failure, it is the honest signal."
+    },
+    {
+      "id": "E3",
+      "name": "epoch-carried-facts",
+      "verb": "ck_epochs",
+      "payload": {},
+      "extract": "carried[] on latest epoch",
+      "green": "non-empty",
+      "red": "empty - an epoch that carried nothing advanced a counter and produced no fact anyone can read"
+    },
+    {
+      "id": "E4",
+      "name": "m4-conformance",
+      "verb": "ck_provenance",
+      "payload": { "id": "<each id sealed since last pass>" },
+      "extract": "conformsToShape",
+      "green": "present on every seal since the previous Index",
+      "red": "ABSENT on any - admitted, ledgered, judged by nothing",
+      "why": "verified:true is the HMAC chain, not conformance. Go and look."
+    },
+    {
+      "id": "E5",
+      "name": "affordances-derived",
+      "verb": "ck_affordances",
+      "payload": {},
+      "extract": "derived[] length",
+      "green": ">0",
+      "red": "0 - this identity may lawfully call nothing",
+      "why": "ck_doctor's own affordances stage is a known false negative; trust ck_affordances.derived, not doctor's text."
+    },
+    {
+      "id": "E6",
+      "name": "adoption-not-drifted",
+      "verb": "adoption.check",
+      "payload": {},
+      "extract": "drifted, modules[].structuralDigestPinned",
+      "green": "drifted=false",
+      "amber": "structuralDigestPinned=null - copy pin only, not third-party recomputable",
+      "red": "drifted=true - a module was swapped or edited under an unsuperseded Adoption"
+    },
+    {
+      "id": "E7",
+      "name": "fence",
+      "verb": "wave.signals",
+      "payload": {},
+      "extract": "signals.unjudged, signals.preEnforcement, signals.anonymousSeals",
+      "green": "unjudged did not increase since the previous Index",
+      "red": "unjudged increased - something sealed with conformsToShape absent"
+    },
+    {
+      "id": "E8",
+      "name": "blocked-cycle",
+      "verb": "wave.signals",
+      "payload": {},
+      "extract": "open Tickets and their blockedOn edges",
+      "green": "no cycle in the blockedOn graph",
+      "red": "cycle detected - deadlock, and it is detectable BEFORE anyone works the pass",
+      "why": "Pure graph walk. No LLM. wave#blockedOn declares this explicitly."
+    },
+    {
+      "id": "E9",
+      "name": "completeness-declared",
+      "verb": "wave.signals",
+      "payload": {},
+      "extract": "completeness.verdict, completeness.counters",
+      "green": "verdict reported verbatim, whatever it says",
+      "red": "verdict absent",
+      "why": "A silent cap reads as full coverage. INCOMPLETE reported honestly is GREEN for this check."
+    }
+  ],
+
+  "verdict": {
+    "role": {
+      "wait": "all checks green AND no open Ticket owned by this component. File ONE Index with role=wait and nothing else. This is the cheap pass and it MUST be the common case.",
+      "act": "an open Ticket is owned by this component this pass. Hand the thread the ticket and nothing else.",
+      "done": "the owned Ticket reached confirmed. Ticket closes on CONFIRMATION, never on completion."
+    },
+    "capacity": {
+      "ok": "thread budget available",
+      "stretched": "budget low, one ticket maximum",
+      "at-limit": "file Index with capacity=at-limit and accept NO ticket. Reported before the work, not after it."
+    }
+  },
+
+  "exit": {
+    "0": "role=wait. Harness seals a one-line Index. No thread spawned. No LLM spend.",
+    "1": "one or more checks RED. Harness spawns ONE thread with ONLY the red lines and their extracts.",
+    "2": "role=act. Harness spawns ONE thread with ONLY the owned ticket.",
+    "3": "capacity=at-limit. Harness files the Index and assigns nothing.",
+    "4": "door unreachable or timeout. Harness files NOTHING and alerts. Never retries."
+  },
+
+  "tokenBudgetNote": "The expensive reads are exactly the ones that do not need an LLM. ck_focus alone costs ~52KB, about 47% of a small thread's entire tool-result budget. This manifest pays that cost mechanically, once, and a thread never calls it.",
+
+  "antiPileUpNote": "Findings do not advance a pass. A Finding is UNOWNED by design and becomes work only when a reader seals promotedTo. A pass closes on a Ticket reaching confirmed, and one component owns exactly ONE ticket for exactly ONE pass. So filing more findings gains a kernel nothing, and the throttle is declared rather than enforced by etiquette."
+}

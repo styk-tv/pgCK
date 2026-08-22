@@ -1,0 +1,591 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/26.0.4 Chrome/128.0.6613.186 Electron/32.2.5 Safari/537.36" version="26.0.4" pages="9">
+  <diagram id="ov" name="0 · How to read this">
+    <mxGraphModel dx="1800" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2600" pageHeight="1300" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="T" value="CKP v3.11 — the six clusters and two adopted modules" style="text;html=1;fontSize=22;align=left;fontColor=#000000;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="60" y="30" width="2000" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="S" value="One tab per section. Everything is read from the loaded graphs, not from memory: core e5f7d1e5… · wave f4ad27ce… · lexicon ce9f20f4…" style="text;html=1;fontSize=13;align=left;fontColor=#555555;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="60" y="70" width="2200" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="ovA" value="A  IDENTITY &amp; AUTHORITY  who acted, for whom, with what permission" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="150" width="400" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="ovB" value="B  STRUCTURE  a kernel is a project with three organs" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="520" y="150" width="400" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="ovC" value="C  THE SEALED FACT  provenance as a consequence, never a claim" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="960" y="150" width="400" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="ovD" value="D  SURFACE &amp; EXECUTION  what a kernel may do, and where results go" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1400" y="150" width="400" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="ovE" value="E  GOVERNED PLANE  propose → vote → apply, and the epoch it seals" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1840" y="150" width="400" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="ovF" value="F  ADOPTION  a module joins the surface only by sealed digest" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="380" width="400" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="ovW" value="wave.ttl  coordination — passes, tickets, findings, confirmations, rulings" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="520" y="380" width="400" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="ovL" value="lexicon.ttl  the symptom vocabulary — names for how work goes wrong" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="960" y="380" width="400" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="ovp" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;fontSize=12;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1400" y="380" width="1100" height="560" as="geometry" />
+        </mxCell>
+        <mxCell id="ovpt" value="The one sentence each cluster is defending" style="text;html=1;fontSize=15;align=left;fontColor=#333333;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1420" y="396" width="1060" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="ovpb" value="A · IDENTITY — you present who you are; you never claim it. The substrate derives it from the verified connection.  B · STRUCTURE — a kernel declares its shape; the ground refuses what violates it. The 0/1/2 dependency count IS the Separation Axiom.  C · THE SEALED FACT — a fact carries who made it, under whose meaning, at which surface version, judged by which shape. All four are derived. Nothing is mutated; corrections append.  D · SURFACE — what you may do is DERIVED from what was materialized, not registered by hand. An affordance nobody derived is an affordance nobody can attribute.  E · GOVERNANCE — a change to meaning is proposed, voted and applied, and the apply must seal a Materialization in the same transaction. A bumped epoch with no Materialization cannot commit.  F · ADOPTION — proximity is not adoption. A file on disk is not in the enforcement surface; only a sealed Adoption naming its digest puts it there.  Read the tabs in order. A and B are what you ARE; C is what you SAY; D and E are what you may DO and how that changes; F is how you take on someone else&#39;s meaning." style="text;html=1;fontSize=12;align=left;fontColor=#333333;fontStyle=0;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1420" y="432" width="1060" height="490" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="a" name="A · Identity &amp; authority">
+    <mxGraphModel dx="5086" dy="1247" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2600" pageHeight="1500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="T" value="A · IDENTITY &amp; AUTHORITY" style="text;html=1;fontSize=22;align=left;fontColor=#000000;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="60" y="30" width="2000" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="S" value="Who acted, on whose behalf, and with what permission — none of it assertable by the caller" style="text;html=1;fontSize=13;align=left;fontColor=#9673a6;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="60" y="70" width="2200" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="Participant" value="Participant  a verified identity (a sub from the callout-verified connection)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=18;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="100" y="180" width="320" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="Agent" value="Agent  acts FOR a participant (an executor, a bot, a session)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=18;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="560" y="180" width="320" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="Delegation" value="Delegation  delegator → Participant delegatee → Agent both minCount 1, IRI" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=18;" parent="1" vertex="1">
+          <mxGeometry x="380" y="480" width="320" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="Membership" value="Membership  memberIs → Participant memberOf → Project holdsRole → Role" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=18;" parent="1" vertex="1">
+          <mxGeometry x="430" y="690" width="320" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="Role" value="Role  grant → Grant" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=18;" parent="1" vertex="1">
+          <mxGeometry x="790" y="390" width="280" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="Grant" value="Grant  permTarget → Organ" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=18;" parent="1" vertex="1">
+          <mxGeometry x="1030" y="746" width="280" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="OrganRef" value="Organ (cluster B)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=18;dashed=1;" parent="1" vertex="1">
+          <mxGeometry x="1030" y="926" width="280" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="ea1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#9673a6;strokeWidth=2;fontSize=18;" parent="1" source="Delegation" target="Participant" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ea1L" value="delegator" style="edgeLabel;html=1;fontSize=18;fontColor=#9673a6;labelBackgroundColor=#FFFFFF;" parent="ea1" vertex="1" connectable="0">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ea2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#9673a6;strokeWidth=2;fontSize=18;" parent="1" source="Delegation" target="Agent" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ea2L" value="delegatee" style="edgeLabel;html=1;fontSize=18;fontColor=#9673a6;labelBackgroundColor=#FFFFFF;" parent="ea2" vertex="1" connectable="0">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ea3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#9673a6;strokeWidth=2;fontSize=18;" parent="1" source="Membership" target="Participant" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ea3L" value="memberIs" style="edgeLabel;html=1;fontSize=18;fontColor=#9673a6;labelBackgroundColor=#FFFFFF;" parent="ea3" vertex="1" connectable="0">
+          <mxGeometry x="-0.3" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ea4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#9673a6;strokeWidth=2;fontSize=18;" parent="1" source="Membership" target="Role" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ea4L" value="holdsRole" style="edgeLabel;html=1;fontSize=18;fontColor=#9673a6;labelBackgroundColor=#FFFFFF;" parent="ea4" vertex="1" connectable="0">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ea5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#9673a6;strokeWidth=2;fontSize=18;" parent="1" source="Role" target="Grant" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ea5L" value="grant" style="edgeLabel;html=1;fontSize=18;fontColor=#9673a6;labelBackgroundColor=#FFFFFF;" parent="ea5" vertex="1" connectable="0">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ea6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#9673a6;strokeWidth=2;fontSize=18;" parent="1" source="Grant" target="OrganRef" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ea6L" value="permTarget" style="edgeLabel;html=1;fontSize=18;fontColor=#9673a6;labelBackgroundColor=#FFFFFF;" parent="ea6" vertex="1" connectable="0">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pa" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12;align=left;verticalAlign=top;" parent="1" vertex="1">
+          <mxGeometry x="1450" y="180" width="1050" height="760" as="geometry" />
+        </mxCell>
+        <mxCell id="pat" value="How it works" style="text;html=1;fontSize=15;align=left;fontColor=#9673a6;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="1470" y="196" width="1010" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="pab" value="IDENTITY IS PRESENTED, NEVER CLAIMED. The relay verifies the token at CONNECT, mints a NATS user-JWT scoped to that sub, and sets ckp.requester transaction-locally before ckp.dispatch runs. The seal path reads the GUC. Nothing in the payload can influence it.  WHY Agent AND Participant ARE DIFFERENT. onBehalfOf is present when an agent sealed FOR a participant, and absent when the participant acted directly. That is how an executor writing to a kernel it does not own is attributed — rather than by a caller-supplied &quot;workspace&quot; field, which is exactly the forgeable pattern this replaces.  A PERMISSION TARGETS AN ORGAN, NOT A KERNEL. Grant → permTarget → Organ is what makes the Separation Axiom enforceable by write-authority instead of by convention: DATA cannot write CK because the grant does not reach it.  MEASURED. Before 0.4.44 a single seal carried TWO identities — ownedBy from the verified connection, createdBy from the payload, which defaulted to anon:. &quot;Owned by someone, created by nobody.&quot; The verified connection now wins and a conflicting payload sub is ignored, never merged.  THE DELEGATION SEAM EXISTS AND IS UNUSED. Delegation is fully declared, ckp.affordance_registry has a delegate column, and dispatch already calls it &quot;the Tier-2 tool seam&quot;. What is missing is only the routing edge that would make SomeKernel.Info() resolve to another kernel." style="text;html=1;fontSize=27;align=left;fontColor=#333333;fontStyle=0;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="1470" y="232" width="1010" height="690" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="b" name="B · Structure">
+    <mxGraphModel dx="5086" dy="1247" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2600" pageHeight="1500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="T" value="B · STRUCTURE" style="text;html=1;fontSize=22;align=left;fontColor=#000000;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="60" y="30" width="2000" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="S" value="A kernel is a project with three organs and counted dependencies — the count IS the axiom" style="text;html=1;fontSize=13;align=left;fontColor=#6c8ebf;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="60" y="70" width="2200" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="Project" value="Project  label · projectKind ownedBy → Participant" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=19;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="65" y="250" width="340" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="Kernel" value="Kernel  label · epoch inProject → Project hasOrgan → Organ (minCount 3) declaresAffordance / Shape / Predicate" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=19;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="580" y="180" width="420" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="Organ" value="Organ  organKind · writeAuthority dependsOn → Organ" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=19;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="580" y="420" width="420" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="CK" value="CK  0 dependencies governed-only" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=19;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="250" y="990" width="270" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="TOOL" value="TOOL  1 dependency (CK) readonly-on-ontology" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=19;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="100" y="750" width="270" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="DATA" value="DATA  2 dependencies (CK, TOOL) readwrite" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=19;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="450" y="610" width="270" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="eb1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#6c8ebf;strokeWidth=2;fontSize=19;" parent="1" source="Kernel" target="Project" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eb1L" value="inProject" style="edgeLabel;html=1;fontSize=19;fontColor=#6c8ebf;labelBackgroundColor=#FFFFFF;" parent="eb1" vertex="1" connectable="0">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="eb2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#6c8ebf;strokeWidth=2;fontSize=19;" parent="1" source="Kernel" target="Organ" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eb2L" value="hasOrgan  min 3" style="edgeLabel;html=1;fontSize=19;fontColor=#6c8ebf;labelBackgroundColor=#FFFFFF;" parent="eb2" vertex="1" connectable="0">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="eb3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#82b366;strokeWidth=2;endArrow=block;endFill=0;fontSize=19;" parent="1" source="CK" target="Organ" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eb4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#82b366;strokeWidth=2;endArrow=block;endFill=0;fontSize=19;" parent="1" source="TOOL" target="Organ" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eb4L" value="rdfs:subClassOf" style="edgeLabel;html=1;fontSize=19;fontColor=#82b366;labelBackgroundColor=#FFFFFF;" parent="eb4" vertex="1" connectable="0">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="eb5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#82b366;strokeWidth=2;endArrow=block;endFill=0;fontSize=19;" parent="1" source="DATA" target="Organ" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eb6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#82b366;strokeWidth=2;dashed=1;fontSize=19;" parent="1" source="TOOL" target="CK" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eb6L" value="dependsOn" style="edgeLabel;html=1;fontSize=19;fontColor=#82b366;labelBackgroundColor=#FFFFFF;" parent="eb6" vertex="1" connectable="0">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="eb7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#82b366;strokeWidth=2;dashed=1;fontSize=19;" parent="1" source="DATA" target="TOOL" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eb7L" value="dependsOn" style="edgeLabel;html=1;fontSize=19;fontColor=#82b366;labelBackgroundColor=#FFFFFF;" parent="eb7" vertex="1" connectable="0">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pb" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12;align=left;verticalAlign=top;" parent="1" vertex="1">
+          <mxGeometry x="1450" y="180" width="1050" height="880" as="geometry" />
+        </mxCell>
+        <mxCell id="pbt" value="How it works" style="text;html=1;fontSize=15;align=left;fontColor=#6c8ebf;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="1470" y="196" width="1010" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="pbb" value="THE COUNT IS THE AXIOM. CK depends on nothing, TOOL on CK, DATA on CK and TOOL. Those counts are gated by sh:hasValue in the shape, so the Separation Axiom is ENFORCED rather than described. DATA cannot write CK; TOOL cannot rewrite shape.  WHAT EACH ORGAN IS FOR. CK — what you MEAN (0 deps, governed-only writes). TOOL — what you can DO (1 dep, read-only on the ontology). DATA — what you have DONE (2 deps, read-write). Meaning cannot be edited by the thing that merely acts.  ownedBy IS STAMPED. A client may declare its own STRUCTURE — Kernel plus three organs — and may NOT declare who owns it. Germination stamps ownedBy from the verified connection exactly as createdBy is derived. That single line is the difference between a kernel and a forgery.  MEASURED — WHY THIS WAS UNBUILDABLE. Until 0.4.43 no kernel could be germinated through the door at all, for three stacked reasons: ckp.validate aimed its scratch graph at the same id band pgrdf allocates data graphs from (59 live graphs at ordinary container pids; the core ontology at 1000000221); _body_to_ttl dropped ARRAYS in the overload seal actually calls, so hasOrgan minCount 3 could never be satisfied and ckp:Kernel was literally unsealable; and the sealed body named organs at …/kernel/organ/* while the graph declared them at …/organ/*, which the shape could not catch because it only counts and type-checks.  A NAME IS A TRANSPORT SEGMENT. A project name is one lowercase segment; NATS subjects are case-sensitive, so an uppercase or dotted name is a kernel nobody can address. germinate refuses it and names the slug to use." style="text;html=1;fontSize=20;align=left;fontColor=#333333;fontStyle=0;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="1470" y="232" width="1010" height="810" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="c" name="C · The sealed fact">
+    <mxGraphModel dx="5086" dy="1247" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2600" pageHeight="1500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="T" value="C · THE SEALED FACT" style="text;html=1;fontSize=30;align=left;fontColor=#000000;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="60" y="30" width="2000" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="S" value="Provenance is a consequence of sealing, never a claim inside it" style="text;html=1;fontSize=19;align=left;fontColor=#d79b00;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="60" y="70" width="2200" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="Instance" value="Instance — THE FOUR STAMPS  createdBy → Participant           who producedBy → Kernel                whose meaning sealedAtEpoch → integer            which surface conformsToShape → sh:NodeShape     judged by what" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=19;align=left;spacingLeft=16;" parent="1" vertex="1">
+          <mxGeometry x="100" y="180" width="830" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="fence" value="preEnforcementEpoch → integer  A CLAIM, not a derivation. &quot;This row predates enforcement.&quot;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=19;align=left;spacingLeft=16;" parent="1" vertex="1">
+          <mxGeometry x="610" y="390" width="620" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="Ledger" value="LedgerEntry  about · bodySha · sig prev → integer · ts" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=19;" parent="1" vertex="1">
+          <mxGeometry x="640" y="600" width="290" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="Proof" value="Proof  about · method digest · verifiedAt" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=19;" parent="1" vertex="1">
+          <mxGeometry x="950" y="600" width="290" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="Supersession" value="Supersession  supersedes → Instance" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=19;" parent="1" vertex="1">
+          <mxGeometry x="40" y="610" width="290" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="Run" value="Run  runOf → Affordance realizes → TOOL startedAt · endedAt" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=19;" parent="1" vertex="1">
+          <mxGeometry x="270" y="950" width="290" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="ec1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#b85450;strokeWidth=2;fontSize=19;" parent="1" source="Instance" target="Ledger" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec1L" value="every seal APPENDS" style="edgeLabel;html=1;fontSize=19;fontColor=#b85450;labelBackgroundColor=#FFFFFF;" parent="ec1" vertex="1" connectable="0">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ec2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#b85450;strokeWidth=2;fontSize=19;" parent="1" source="Supersession" target="Instance" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec2L" value="supersedes" style="edgeLabel;html=1;fontSize=19;fontColor=#b85450;labelBackgroundColor=#FFFFFF;" parent="ec2" vertex="1" connectable="0">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ec3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#999999;strokeWidth=2;fontSize=19;" parent="1" source="Instance" target="Run" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ec3L" value="wasGeneratedBy" style="edgeLabel;html=1;fontSize=19;fontColor=#999999;labelBackgroundColor=#FFFFFF;" parent="ec3" vertex="1" connectable="0">
+          <mxGeometry x="0.3" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pc" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=12;align=left;verticalAlign=top;" parent="1" vertex="1">
+          <mxGeometry x="1450" y="180" width="1050" height="830" as="geometry" />
+        </mxCell>
+        <mxCell id="pct" value="How it works" style="text;html=1;fontSize=15;align=left;fontColor=#d79b00;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="1470" y="196" width="1010" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="pcb" value="FOUR DERIVED, ONE ASSERTED — and they look alike, which is the trap. createdBy, producedBy, sealedAtEpoch and conformsToShape are computed by the substrate; a body carrying them has them STRIPPED before the gate. preEnforcementEpoch is the opposite: a claim the caller makes, which a second party can check against the epoch it names. Grouping them is what nearly made the fence unusable — it was put on a &quot;never assert&quot; list, which would have refused the only honest way to mark a legacy row.  APPEND-ONLY IS WHAT MAKES CORRECTION POSSIBLE. seal hashes the body; verify compares the stored body to the LATEST ledger entry. So a correction cannot be an UPDATE — that would change the digest and make every corrected row read as tampered. It is a re-seal, which APPENDS. Proven from a second kernel: ledger seq 108 (original) and seq 110 (fenced) both survive, verify true.  conformsToShape IS THE SAFETY PROPERTY. It is present only when a shape actually TARGETS the type. Its absence is the substrate reporting that the SHACL gate selected no focus node and passed vacuously. Measured: an instance with an undeclared property AND a declared one carrying the wrong datatype sealed ok:true, verified:true, with a proof digest and a ledger entry — three stamps, no conformsToShape. A permanent, verified row that nothing judged.  verified ≠ judged. verified:true is the HMAC chain — the bytes are intact. conformsToShape is judgement — a shape looked at it. Rendering them side by side as equals is what makes &quot;sealed&quot; look like &quot;gated&quot;, and it is how a vacuous row gets past a careful reader." style="text;html=1;fontSize=19;align=left;fontColor=#333333;fontStyle=0;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="1470" y="232" width="1010" height="760" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="d" name="D · Surface &amp; execution">
+    <mxGraphModel dx="5086" dy="1247" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2600" pageHeight="1500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="T" value="D · SURFACE &amp;amp; EXECUTION" style="text;html=1;fontSize=30;align=left;fontColor=#000000;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="60" y="30" width="2000" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="S" value="What a kernel may do is DERIVED from what was materialized — never registered by hand" style="text;html=1;fontSize=18;align=left;fontColor=#82b366;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="80" y="70" width="2200" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="Materialization" value="Materialization  producesAffordance → Affordance producesEpoch → Epoch toEpoch → integer" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=19;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="100" y="180" width="360" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="Epoch" value="Epoch  surfaceDigest" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=19;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="740" y="180" width="280" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="Affordance" value="Affordance  inTopic · outTopic · plane inShape → sh:NodeShape delegate → boolean derivedBy → Materialization retiredAtEpoch → integer" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=19;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="110" y="460" width="360" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="AffordanceUse" value="AffordanceUse  uses → Affordance consumer → Kernel provider → Kernel pinnedEpoch → integer" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=19;" parent="1" vertex="1">
+          <mxGeometry x="750" y="430" width="290" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="RunD" value="Run  runOf → Affordance realizes → TOOL" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=19;" parent="1" vertex="1">
+          <mxGeometry x="120" y="800" width="360" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="FailedMat" value="FailedMaterialization  the surface that did NOT compile" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=19;" parent="1" vertex="1">
+          <mxGeometry x="610" y="800" width="290" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="ed1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#d6b656;strokeWidth=2;fontSize=19;" parent="1" source="Materialization" target="Affordance" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ed1L" value="producesAffordance" style="edgeLabel;html=1;fontSize=19;fontColor=#d6b656;labelBackgroundColor=#FFFFFF;" parent="ed1" vertex="1" connectable="0">
+          <mxGeometry x="-0.3" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ed2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#d6b656;strokeWidth=2;fontSize=19;" parent="1" source="Materialization" target="Epoch" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ed2L" value="producesEpoch" style="edgeLabel;html=1;fontSize=19;fontColor=#d6b656;labelBackgroundColor=#FFFFFF;" parent="ed2" vertex="1" connectable="0">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ed3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#999999;strokeWidth=2;fontSize=19;" parent="1" source="AffordanceUse" target="Affordance" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ed3L" value="uses" style="edgeLabel;html=1;fontSize=19;fontColor=#999999;labelBackgroundColor=#FFFFFF;" parent="ed3" vertex="1" connectable="0">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ed4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#999999;strokeWidth=2;fontSize=19;" parent="1" source="RunD" target="Affordance" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ed4L" value="runOf" style="edgeLabel;html=1;fontSize=19;fontColor=#999999;labelBackgroundColor=#FFFFFF;" parent="ed4" vertex="1" connectable="0">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pd" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=12;align=left;verticalAlign=top;" parent="1" vertex="1">
+          <mxGeometry x="1450" y="180" width="1050" height="880" as="geometry" />
+        </mxCell>
+        <mxCell id="pdt" value="How it works" style="text;html=1;fontSize=15;align=left;fontColor=#82b366;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="1470" y="196" width="1010" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="pdb" value="AN AFFORDANCE IS DERIVED, NOT DECLARED. Materialization → producesAffordance is the only lawful origin. A hand-sealed Affordance comes back with no producedBy, no sealedAtEpoch and no conformsToShape — the substrate declining to attribute what it did not derive. Two such probes are on the bench right now; they are mine, and they should be superseded by a real materialization rather than retired.  THE PLANE DECIDES THE PATH. instance — ordinary verbs. query — SPARQL sealed as a plan, compiled into ckp.plans keyed (kernel, verb, epoch). derived — a computed value. governance — propose/vote/apply, which never execute as ordinary verbs.  RESOLUTION IS TWO-LAYERED, and both halves are load-bearing. A verb resolves against the CALLER&#39;s own registered surface first, then falls back to the surface seeded at install — which belongs to no kernel, because install runs before any kernel exists. Resolving only the caller made the seeded verbs unreachable for everyone; resolving only a fixed name made every kernel share one surface. That fixed name is exactly the defect that hid all day: dispatch asked registry_lookup(&#39;pgck&#39;, verb) for EVERY caller, so a verb a kernel registered, voted through and applied was invisible to its own owner.  outTopic DECLARES WHERE THE ANSWER GOES. It was NULL on every row, so a subscriber had to read the relay&#39;s Rust to learn the reply subject. It now states what the transport already implements: result.kernel...  AffordanceUse IS THE UNUSED HALF. pinnedEpoch plus consumer/provider is how a consumer records WHICH surface it was promised, so &quot;the provider moved on, what did I rely on?&quot; is answerable. The fleet has this and does not use it." style="text;html=1;fontSize=19;align=left;fontColor=#333333;fontStyle=0;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="1470" y="232" width="1010" height="810" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="e" name="E · Governed plane">
+    <mxGraphModel dx="3912" dy="959" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2600" pageHeight="1500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="T" value="E · GOVERNED PLANE" style="text;html=1;fontSize=22;align=left;fontColor=#000000;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="60" y="30" width="2000" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="S" value="A change to meaning is proposed, voted and applied — and the apply must seal a Materialization" style="text;html=1;fontSize=13;align=left;fontColor=#9673a6;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="60" y="70" width="2200" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="Proposal" value="Proposal  about · proposalOp proposalState requiresQuorum" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="100" y="380" width="320" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="Vote" value="Vote  about → Proposal voteValue (approve | reject)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="290" y="120" width="320" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="Apply" value="ckp.apply  bumps the epoch AND seals a Materialization — same transaction" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="1020" y="190" width="340" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="Ops" value="THE FOUR OPS WITH A PROJECTOR  add_class · add_property set_transition_map · add_affordance  An op with no projector is refused AT PROPOSE — never sealed as an inert &quot;applied&quot;." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12;align=left;spacingLeft=16;" parent="1" vertex="1">
+          <mxGeometry x="100" y="590" width="560" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="TransitionE" value="Transition  fromState · toState" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="750" y="590" width="290" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="ee1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#9673a6;strokeWidth=2;" parent="1" source="Vote" target="Proposal" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ee1L" value="about" style="edgeLabel;html=1;fontSize=11;fontColor=#9673a6;labelBackgroundColor=#FFFFFF;" parent="ee1" vertex="1" connectable="0">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ee2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#9673a6;strokeWidth=2;" parent="1" source="Proposal" target="Apply" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ee2L" value="at quorum" style="edgeLabel;html=1;fontSize=11;fontColor=#9673a6;labelBackgroundColor=#FFFFFF;" parent="ee2" vertex="1" connectable="0">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pe" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12;align=left;verticalAlign=top;" parent="1" vertex="1">
+          <mxGeometry x="1450" y="190" width="1050" height="860" as="geometry" />
+        </mxCell>
+        <mxCell id="pet" value="How it works" style="text;html=1;fontSize=15;align=left;fontColor=#9673a6;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="1470" y="206" width="1010" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="peb" value="THE EPOCH IS NOT A COUNTER. Apply bumps it, recompiles the plan surface, and seals a first-class Materialization that produces an Epoch carrying the surface digest — all in ONE transaction. If the Materialization or the Epoch fails its shape gate, the whole apply rolls back. A bumped epoch with no valid Materialization cannot commit, which is what makes &quot;show me the Materialization that produced this epoch, and re-derive the surface at that epoch&quot; answerable from the seals.  NO GOVERNED OP WITHOUT A PROJECTOR. An op that cannot project a change is refused at propose. Widening that set requires implementing a projector, not editing a list.  MEASURED — THE INERT EPOCH. The guard checked that the OP had a projector but never that the DETAIL carried anything to project. So an add_affordance with an empty detail sealed &quot;applied&quot;, bumped the epoch, registered nothing, and returned ok:true with graph_changed:false and no error on any surface. One epoch on this bench IS that inert applied — an epoch that logged nothing while reporting success. It is now refused at propose.  add_class ACCEPTED PROPERTIES AND DROPPED THEM, emitting one quad and reporting success. Because _type_admitted accepts a bare owl:Class, the result was not an unusable type — it was a type that admits instances NOTHING JUDGES. A vacuity generator, governed into existence through the sanctioned door.  ⚠ QUORUM 1 IS REHEARSAL. One proposer, one voter, one applier declares SHAPE, not consensus. Both integrity checks now running on this bench were sealed that way, and so was every governed change made today. Say so when you use it." style="text;html=1;fontSize=12;align=left;fontColor=#333333;fontStyle=0;verticalAlign=top;whiteSpace=wrap;" parent="1" vertex="1">
+          <mxGeometry x="1470" y="242" width="1010" height="790" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="f" name="F · Adoption">
+    <mxGraphModel dx="1800" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2600" pageHeight="1500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="T" value="F · ADOPTION" style="text;html=1;fontSize=22;align=left;fontColor=#000000;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="60" y="30" width="2000" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="S" value="Proximity is not adoption — a module joins the enforcement surface only by sealed digest" style="text;html=1;fontSize=13;align=left;fontColor=#d6b656;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="60" y="70" width="2200" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="Adoption" value="Adoption  adopts → Module sourceDigest  ^[0-9a-f]{64}$ intoProject → Project fromProject → Project intoEpoch · sourceEpoch" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="190" width="400" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="Module" value="Module  the adoptable unit (the module IRI IS the graph IRI)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="660" y="190" width="340" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="composed" value="&lt;project&gt;/shapes/composed  core  +  kernel graph  +  every ADOPTED module materialised once, here — not at validate time" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;align=left;spacingLeft=16;" vertex="1" parent="1">
+          <mxGeometry x="100" y="480" width="900" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="failclosed" value="FAILS CLOSED  If an adopted module graph is absent or empty, composition RAISES. A vanished module silently narrowing the gate is un-enforcement nobody would ever see." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;align=left;spacingLeft=16;" vertex="1" parent="1">
+          <mxGeometry x="100" y="680" width="900" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="ef1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#d6b656;strokeWidth=2;" edge="1" parent="1" source="Adoption" target="Module">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ef1L" value="adopts BY DIGEST" style="edgeLabel;html=1;fontSize=11;fontColor=#d6b656;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="ef1">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ef2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#d6b656;strokeWidth=2;dashed=1;" edge="1" parent="1" source="Module" target="composed">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ef2L" value="joins the surface" style="edgeLabel;html=1;fontSize=11;fontColor=#d6b656;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="ef2">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pf" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=12;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1450" y="190" width="1050" height="830" as="geometry" />
+        </mxCell>
+        <mxCell id="pft" value="How it works" style="text;html=1;fontSize=15;align=left;fontColor=#d6b656;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1470" y="206" width="1010" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="pfb" value="THE DIGEST IS THE POINT. An Adoption names sourceDigest — 64 hex — so &quot;which wave module am I enforcing?&quot; has an answer that survives the file changing under you. The shipped modules carry pass-stamped .sha256 sidecars; core, wave and lexicon all match theirs byte for byte, and the release tarball now ships the sidecars so a consumer can check what it received rather than trust the tarball.  A FILE ON DISK IS NOT AN ENFORCEMENT SURFACE. Loading a graph into the store is not adoption either. Only a sealed Adoption puts a module into the composed shapes — which is why a kernel can hold the wave vocabulary in its store and still be unable to seal a wave:Ticket.  COMPOSITION IS MATERIALISED ONCE. core + the kernel graph + every adopted module are copied into &lt;project&gt;/shapes/composed and the OWL closure is computed THERE — because pgrdf.validate does not entail, and entailment is per-graph. Skipping it makes a malformed body conform VACUOUSLY, which is the failure this whole design is arranged against.  MEASURED — THE SURFACE IS REAL AND MEASURABLE. A composed surface on this bench: 1258 triples, 27 sh:targetClass. The kernel graph alone: 30 triples, ZERO targets. Validating against the wrong one of those two is not a small error — it is the difference between a gate and a decoration, and ckp.validate_instance was doing exactly that until 0.4.45.  ADOPTION IS PER-PROJECT AND PER-EPOCH. intoProject and intoEpoch mean a kernel can adopt wave at epoch 3 and another kernel never adopt it at all, and both statements stay true and queryable." style="text;html=1;fontSize=12;align=left;fontColor=#333333;fontStyle=0;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1470" y="242" width="1010" height="760" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="w" name="wave.ttl — coordination">
+    <mxGraphModel dx="1800" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2600" pageHeight="1500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="T" value="MODULE · wave.ttl" style="text;html=1;fontSize=22;align=left;fontColor=#000000;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="60" y="30" width="2000" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="S" value="urn:ckp:module/wave/v3.11 — adopted by digest f4ad27ce… — passes, tickets, findings, confirmations, rulings" style="text;html=1;fontSize=13;align=left;fontColor=#82b366;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="60" y="70" width="2200" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="wWave" value="Wave  a bounded coordination campaign across several components" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="190" width="330" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="wPass" value="Pass  ofWave · director AN EPOCH — it names the surface in force. No proof, no record." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="560" y="190" width="360" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="wComp" value="Component  repository · statement holds exactly ONE ticket per pass" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="390" width="330" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="wFind" value="Finding  label · reason · findingState  MEASURED, NOT WORK unowned · unscheduled" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="600" width="330" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="wTick" value="Ticket  label · owner · ticketState benchClass · openedAtPass  ASSIGNED WORK — scarce" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="560" y="600" width="360" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="wConf" value="Confirmation  confirmsTicket · evidence  A SECOND component measuring a ticket it does NOT own" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="600" width="340" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="wRest" value="Defect  defectKind · defectState · discoveredAtPass · resolvedAtPass Ruling  ruledAtPass · refutedAtPass Operation  opKind · opTarget · opEvidence · supersedes Index  role · capacity · measuredOn · measuredAgainst · blockedOn · needHelp Statement  bindsRoot · rebasedAtPass" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=12;align=left;spacingLeft=16;" vertex="1" parent="1">
+          <mxGeometry x="100" y="830" width="1280" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="ew1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="wFind" target="wTick">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew1L" value="promotedTo — EXPLICIT" style="edgeLabel;html=1;fontSize=11;fontColor=#d79b00;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="ew1">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ew2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="wConf" target="wTick">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew2L" value="confirmsTicket" style="edgeLabel;html=1;fontSize=11;fontColor=#82b366;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="ew2">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ew3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="wComp" target="wTick">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew3L" value="owner" style="edgeLabel;html=1;fontSize=11;fontColor=#6c8ebf;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="ew3">
+          <mxGeometry x="-0.3" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ew4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="wPass" target="wWave">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ew4L" value="ofWave" style="edgeLabel;html=1;fontSize=11;fontColor=#82b366;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="ew4">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pw" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=12;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1450" y="190" width="1050" height="900" as="geometry" />
+        </mxCell>
+        <mxCell id="pwt" value="How it works" style="text;html=1;fontSize=15;align=left;fontColor=#82b366;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1470" y="206" width="1010" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="pwb" value="A TICKET IS ASSIGNED WORK — &quot;one unit of assigned work, owned by exactly one component for exactly one pass. Closes on confirmation, never on completion.&quot;  A FINDING IS NOT WORK — &quot;something measured that is not work. Unowned and unscheduled by default. It becomes a ticket only by explicit promotion.&quot; And since a component holds ONE ticket, promoting DISPLACES whatever it was doing.  THAT DISTINCTION DECIDES WHAT A NOTIFICATION IS. A notify that created a Ticket would conscript the recipient and silently evict their current work. A notify that creates a FINDING says: I measured something, it is not yours to do, and it becomes work only if you promote it. Promotion is the recipient&#39;s act.  CONFIRMATION IS NOT A VOTE. &quot;A second component measuring a ticket it does not own — the only thing that closes a ticket, and the reason self-report cannot.&quot; And evidence is &quot;the exact command anyone can re-run, and its output. A confirmation that cannot be re-run is an opinion.&quot; That is recheck, not quorum: it does not matter who says it, it matters that anyone can run it again.  THE CLOSED SETS ARE THE VALUE. defectKind — hole · gap · collision · omission · stale-overwrite · vacuity · misattribution. opKind — fourteen acts, and &quot;an act outside it is an act the process has not yet learned to see&quot;. findingState — closed-by-ruling is &quot;the cheapest close available: out of scope, permanently, for one sentence&quot;.  NOT IN v3.11 AT ALL: Notify · Message · Signal · Ask · Goal · Task. The shipped notify verb seals urn:ckp:board/Message, which NO shape targets — so it seals vacuously, with a caller-supplied &#39;from&#39;." style="text;html=1;fontSize=12;align=left;fontColor=#333333;fontStyle=0;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1470" y="242" width="1010" height="830" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="l" name="lexicon.ttl — symptoms">
+    <mxGraphModel dx="1800" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2600" pageHeight="1500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="T" value="MODULE · lexicon.ttl" style="text;html=1;fontSize=22;align=left;fontColor=#000000;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="60" y="30" width="2000" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="S" value="urn:ckp:module/lexicon/v3.11 — adopted by digest ce9f20f4… — names for how work goes wrong" style="text;html=1;fontSize=13;align=left;fontColor=#b85450;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="60" y="70" width="2200" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="lS" value="Symptom" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="190" width="250" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="lP" value="Pattern" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="390" y="190" width="250" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="lR" value="Rule" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="680" y="190" width="250" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="lO" value="Outcome" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="970" y="190" width="250" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="lKinds" value="THE SYMPTOM CLASSES  VacuousGate — present, well-formed, never evaluated FalseGate — refuses the wrong thing UnreadGate — a rule nobody consulted Misattribution — named for where it was found,             not where it must be fixed StaleCitation — a rationale outliving its reason UncountedClaim · UnmeasuredConsequence BrokenSequence · HeldAct · RefutedAct · BenchOnly" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=12;align=left;spacingLeft=16;" vertex="1" parent="1">
+          <mxGeometry x="100" y="320" width="560" height="290" as="geometry" />
+        </mxCell>
+        <mxCell id="lE" value="THE EDGES  causedBy — this symptom produced that one blocks / blockedBy — what cannot proceed symptom — the observable of a pattern recurrenceOf — THIS ONE AGAIN fromPattern · outcome · passDirector defectIn · defectOwner confirmedBy · confirmedTicketOwner  ruleState · enforcedBy · proposedAtPass refutedAtPass · instancesAtProposal" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=12;align=left;spacingLeft=16;" vertex="1" parent="1">
+          <mxGeometry x="760" y="320" width="560" height="290" as="geometry" />
+        </mxCell>
+        <mxCell id="lToday" value="TODAY, IN ITS OWN VOCABULARY  VacuousGate      a row sealed verified, judged by nothing StaleCitation    &quot;SPARQL cannot express it&quot; — true until it was not Misattribution   createdBy:anon beside a verified ownedBy collision        two hardcoded names agreeing by accident stale-overwrite  a cached term id outliving its rolled-back row recurrenceOf     four overload-parity defects, one pattern, nothing counting" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=12;align=left;spacingLeft=16;" vertex="1" parent="1">
+          <mxGeometry x="100" y="660" width="1220" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="pl" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=12;align=left;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1450" y="190" width="1050" height="880" as="geometry" />
+        </mxCell>
+        <mxCell id="plt" value="How it works" style="text;html=1;fontSize=15;align=left;fontColor=#b85450;fontStyle=1;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1470" y="206" width="1010" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="plb" value="THIS MODULE NAMES FAILURE MODES, NOT FAILURES. A Symptom is what you observe; a Pattern is the shape behind it; a Rule is what the wave decided to do about it; an Outcome is what happened. Together they turn &quot;this keeps going wrong&quot; from an impression into a query.  recurrenceOf IS THE ONE THAT PAYS FOR ITSELF. Any single defect looks like bad luck. The fourth instance of the same pattern is a design problem — but only if something counted. Four overload-parity defects landed in one day here, each a CREATE OR REPLACE matching the wrong signature, and nothing in the record connected them.  THE NAMES ARE NOT GENERIC, WHICH IS WHY THEY ARE USEFUL. VacuousGate is not &quot;a bug&quot; — it is precisely a gate that ran, passed, and selected nothing. Once you have the word, the fix is obvious: assert that the check SELECTED something, not merely that it did not fail. Three separate defects here had exactly that signature.  StaleCitation IS THE ONE TO WATCH IN A FLEET. A rationale recorded when a limitation was real, cited long after the limitation was lifted. A neighbouring kernel raised exactly this against a claim made here — &quot;the moment the engine ships negation, the rationale becomes a StaleCitation nobody revisits&quot; — and it was right.  HOW IT PAIRS WITH wave. A Finding carries what was measured; lexicon:symptom says WHAT KIND of wrong it is; lexicon:defectIn says where; lexicon:blocks says what it stops. That is a notification with a diagnosis attached, and none of it needs a new ontology." style="text;html=1;fontSize=12;align=left;fontColor=#333333;fontStyle=0;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="1470" y="242" width="1010" height="810" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

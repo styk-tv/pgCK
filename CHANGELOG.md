@@ -2,6 +2,47 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.80 - 2026-08-22
+
+**A ledger key of one's own.** `ckp.seal` signs every entry `hmac(body_sha256, identity_key)`
+and reads that key from a `ckp.config` slot that was **designed in and never populated** — so
+`ckp.dispatch` grew a `COALESCE` default of the literal `'pgck-localhost'`, this project's own
+dev-bench name, hardcoded 2026-06-04 and shipped in every release since. Measured on the latest
+published bundle: `identity_key in force = 'pgck-localhost'`, `config row: <none>`. Every
+deployment signed its proof chain with the same public string, so `verified: true` meant *hashes
+correctly under a key everyone knows*. Not remotely exploitable — the role floor guards the seal
+path — but weaker than "verified at time, **by this store**" implies, because no key belonged to
+any store.
+
+- **The install mints 32 bytes** into that slot. **Minting is not defaulting**: a default hands
+  every install the same answer; a mint hands each one its own, so the value is specific by
+  construction and cannot be wrong-but-plausible.
+- **`ckp.config` is now dump-flagged.** It was not, while `ckp.ledger` was — so a per-install key
+  would have meant a restore returns every sealed fact and loses the key that signs them. Masked
+  until now only because the key was a constant every install shared.
+- **The literal is deleted**, and with it a second defect: the old `COALESCE` only caught `NULL`,
+  so an empty-string GUC bypassed the default and produced an empty key. The new read uses
+  `NULLIF(…,'')`.
+- **The upgrade path substitutes nothing — not even the old value.** A first draft of the
+  migration inserted `'pgck-localhost'` when the row was absent, to keep old proofs verifying:
+  substitution-on-absence with a baked-in constant, re-added by its own author inside the release
+  that deletes it. **Withdrawn.** Upgrading stores have no row, so `seal`'s refusal becomes
+  reachable and sealing stops until an operator names a key. Facts sealed earlier no longer
+  verify under a new key — which does not destroy evidence so much as reveal what that evidence
+  was always worth. Restoring the old behaviour is an operator's deliberate act, not ours.
+- **Six `DEFAULT 'demo'` parameters removed** from internals whose callers always know their
+  project — continuing 0.4.79's count.
+- **`ckp.materialize_job` gains `attempt_count` + `last_error`** (P9). It is a *live* drain path
+  with zero rows, so the missing bound has never bitten; it would bite the first time an
+  expensive job failed, re-selected forever, presenting as *the loop working*.
+
+**Gate: `s71`**, five claims including the one that matters — **delete the key and sealing must
+refuse.** If it does not, the release is decorative.
+
+**Withdrawn from the 0.4.79 finding:** `shapes_self_test` "defined twice, later silently wins"
+is **not** a defect. The completeness block redefines it deliberately, because that file is
+included last precisely so its virgin-DB-safe version wins.
+
 ## v0.4.79 - 2026-08-21
 
 **The substrate stops inventing a kernel, and starts telling the truth about not having one.**

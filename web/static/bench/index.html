@@ -1,0 +1,2311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="cache-control" content="no-store">
+<meta http-equiv="cache-control" content="no-store">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f4f2ec">
+<title>Concept Kernel Bench</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   CONCEPT KERNEL BENCH — mobile.
+
+   Same door, same library, same identity as the desk surface. What changed is
+   the SHAPE OF THE SURFACE, not the protocol:
+
+     · the CONCEPT KERNEL is the primary switch. The wave is a footnote on the
+       capsule, and is switched from the wave's own page — like for like.
+     · the capsule opens a FULL-SCREEN LAUNCHER: one tile per organ, each with a
+       live count, each opening its own page. Nothing important lives in a
+       half-height drawer.
+     · every organ page opens under a YOU ARE HERE card, so a list of facts can
+       never be read as belonging to a kernel you are not standing in.
+     · the DOOR is buried in settings, where a thing you touch twice a month
+       belongs. It is not a peer of the work.
+     · what you DO sits at the bottom in thumb reach, and pages the queue.
+
+   Everything with a number in it is MEASURED. Colour is the SECOND channel,
+   never the first (SPEC.ICONS.v3.11) — the base glyph carries the meaning.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+:root{
+  --ring-l:52%; --ring-c:.13;
+  --bg:#f4f2ec; --card:#fbfaf6; --card-2:#f0eee7;
+  --line:#e0dcd1; --line-2:#ebe7dd;
+  --tx:#17171a; --dim:#5f6066; --mut:#9a9992;
+  --ok:#1f7a4d; --ok-bg:#e8f3ec; --ok-line:#bcdcc9;
+  --blue:#3552c8; --amber:#a8621f; --violet:#6b4bc4;
+  --glyph:#2b2b2e;
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --safe-t:env(safe-area-inset-top,0px);
+}
+:root[data-theme="dark"]{
+  --ring-l:78%; --ring-c:.15;
+  --bg:#0d0d0e; --card:#141416; --card-2:#1a1a1d;
+  --line:#26262a; --line-2:#1f1f23;
+  --tx:#e9e9e6; --dim:#96968f; --mut:#5f5f5a;
+  --ok:#4ade80; --ok-bg:#12241a; --ok-line:#1d4030;
+  --blue:#7d92f5; --amber:#d4a05a; --violet:#a78bfa;
+  --glyph:#e9e9e6;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ring-l:78%; --ring-c:.15;
+    --bg:#0d0d0e; --card:#141416; --card-2:#1a1a1d;
+    --line:#26262a; --line-2:#1f1f23;
+    --tx:#e9e9e6; --dim:#96968f; --mut:#5f5f5a;
+    --ok:#4ade80; --ok-bg:#12241a; --ok-line:#1d4030;
+    --blue:#7d92f5; --amber:#d4a05a; --violet:#a78bfa;
+    --glyph:#e9e9e6;
+  }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);
+  font:400 16px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased}
+.m{font-family:ui-monospace,SFMono-Regular,"JetBrains Mono",Menlo,monospace}
+.u{text-transform:uppercase;letter-spacing:.11em}
+#shell{max-width:640px;margin:0 auto;padding:calc(8px + var(--safe-t)) 0 calc(150px + var(--safe-b))}
+
+/* ── motion: three mechanics only, and a switch that stops all of them ──── */
+@keyframes beat{0%{transform:scale(1);box-shadow:0 0 0 0 var(--ok)}30%{transform:scale(1.9)}
+  100%{transform:scale(1);box-shadow:0 0 0 9px transparent}}
+@keyframes landed{0%,70%{background:var(--ok-bg);box-shadow:inset 2px 0 0 var(--ok)}
+  100%{background:transparent;box-shadow:inset 2px 0 0 transparent}}
+@keyframes pop{0%{transform:scale(.9);opacity:0}60%{transform:scale(1.02);opacity:1}100%{transform:scale(1)}}
+@keyframes sheet{from{transform:translateY(26px);opacity:0}to{transform:none;opacity:1}}
+@keyframes unjudged{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
+.row.fresh{animation:landed 5s ease-out forwards}
+:root[data-motion="off"] *{animation:none !important}
+@media (prefers-reduced-motion:reduce){*{animation:none !important}}
+
+.flow{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--mut);
+  flex:none;vertical-align:middle}
+.flow.on{background:var(--ok)}
+.flow.beat{animation:beat 1.1s ease-out}
+.t-ok{color:var(--ok)} .t-no{color:var(--amber)} .t-vi{color:var(--violet)} .t-dim{color:var(--mut)}
+
+/* ── the mark, and the judgement overlay that never alters it ───────────── */
+.markwrap{position:relative;display:inline-block;line-height:0;color:var(--glyph)}
+.markwrap > svg{display:block}
+.ov{position:absolute;right:-1px;bottom:-1px;width:11px;height:11px;border-radius:50%;
+  box-shadow:0 0 0 2.5px var(--bg)}
+.ov.judged{background:var(--mut)}
+.ov.unjudged{background:var(--bg);border:2.2px solid var(--amber);
+  animation:unjudged 2.6s ease-in-out infinite}
+.ov.anon{right:auto;left:-2px;background:var(--bg);border:2px dashed var(--mut);width:10px;height:10px}
+.row:hover .ov{box-shadow:0 0 0 2.5px var(--card-2)}
+
+/* ── the capsule: kernel primary, wave a footnote, and the way in ──────── */
+.bar1{display:flex;align-items:center;gap:9px;padding:6px 14px 10px}
+.kcap{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:7px 12px 7px 8px;
+  border:1px solid var(--line);border-radius:16px;background:var(--card);cursor:pointer;
+  color:var(--tx);font:inherit;text-align:left}
+.kcap:hover,.kcap[aria-expanded="true"]{border-color:var(--ok)}
+.kcap .kr{flex:none;line-height:0}
+.kcap .kr svg{width:24px;height:24px}
+.kcap .kt{min-width:0}
+.kcap .k1{display:flex;align-items:baseline;gap:6px}
+.kcap .kn{font-size:14px;font-weight:600;letter-spacing:-.01em;white-space:nowrap}
+.kcap .ke{font-size:10.5px;color:var(--mut);flex:none}
+.kcap .kw{font-size:10.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chev{color:var(--mut);font-size:11px;flex:none}
+.avs{display:flex;padding-left:6px;flex:none;background:none;border:0;cursor:pointer}
+.av{position:relative;width:26px;height:26px;margin-left:-6px;border-radius:50%;display:grid;
+  place-items:center;background:var(--card);border:1.5px solid var(--bg);
+  font:600 9.5px/1 ui-sans-serif,system-ui,sans-serif}
+.av.me{outline:1.5px solid var(--blue);outline-offset:-1.5px}
+.dlive{position:absolute;right:-1px;top:-1px;width:6px;height:6px;border-radius:50%;
+  background:var(--ok);border:1.5px solid var(--bg);animation:beat 1.9s ease-in-out infinite}
+.orb{position:relative;width:30px;height:30px;flex:none;border-radius:50%;border:1px solid var(--line);
+  background:var(--card);color:var(--tx);cursor:pointer;display:grid;place-items:center;
+  font:600 10.5px/1 ui-sans-serif,system-ui,sans-serif}
+.orb .ind{position:absolute;right:-1px;bottom:-1px;width:8px;height:8px;border-radius:50%;
+  background:var(--mut);border:1.5px solid var(--bg)}
+.orb .ind.on{background:var(--ok)}
+
+/* ── the quiet nav line: the organ's own glyph, not a shouting Back ────── */
+.nav{display:flex;align-items:center;gap:9px;padding:0 16px 12px;border-bottom:1px solid var(--line);
+  margin-bottom:14px}
+.nback{width:26px;height:26px;flex:none;border:0;background:none;color:var(--mut);cursor:pointer;
+  font-size:17px;line-height:1;margin-left:-6px}
+.nav .ng{width:20px;height:20px;flex:none;color:var(--glyph)}
+.nav .nt{font-size:14.5px;font-weight:600;letter-spacing:-.01em}
+.nav .nc{margin-left:auto;font-size:10.5px;color:var(--mut)}
+
+/* ── you are here ──────────────────────────────────────────────────────── */
+.here{display:flex;align-items:center;gap:12px;margin:0 16px 14px;padding:12px 14px;
+  border:1px solid var(--ok-line);border-radius:14px;background:var(--ok-bg)}
+.here .hr{flex:none;line-height:0}
+.here .hr svg{width:30px;height:30px}
+.here .ht{flex:1;min-width:0}
+.here .h1{font-size:13.5px;font-weight:600}
+.here .h2{font-size:10.5px;color:var(--dim);margin-top:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.here .hx{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.here .hl{font-size:9px;color:var(--ok);letter-spacing:.1em;text-transform:uppercase}
+.here .hi{display:flex;padding-left:6px}
+.here .hi .av{width:19px;height:19px;font-size:8px;border-color:var(--ok-bg)}
+
+/* ── the launcher: organs of this kernel, one tile each ────────────────── */
+.lsh{animation:sheet .26s cubic-bezier(.2,.8,.2,1)}
+.status{margin:0 16px 14px;padding:14px 15px;border:1px solid var(--line);border-radius:14px;
+  background:var(--card);display:flex;flex-direction:column;gap:11px}
+.srow{display:flex;align-items:center;gap:11px;font-size:12.5px;line-height:1.4}
+.srow .sd{width:8px;height:8px;border-radius:50%;flex:none;margin:0 5px}
+.srow .sd.on{background:var(--ok);animation:beat 2.4s ease-in-out infinite}
+.srow .sd.no{background:var(--amber)}
+.srow .sd.q{border:1.5px solid var(--violet)}
+.srow .sd.i{border:1.5px dashed var(--mut)}
+.srow.no{color:var(--amber)}
+.srow.dim{color:var(--mut)}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;padding:0 16px}
+.tile{position:relative;display:flex;flex-direction:column;align-items:center;gap:9px;
+  padding:19px 6px 14px;border:1px solid var(--line);border-radius:19px;background:var(--card);
+  color:var(--tx);font:inherit;cursor:pointer;animation:pop .3s cubic-bezier(.2,.8,.2,1) both}
+.tile:hover{border-color:var(--ok)}
+.tile .tg{width:28px;height:28px;color:var(--glyph)}
+.tile .tl{font-size:11.5px;font-weight:560}
+.tile .tc{position:absolute;top:8px;right:11px;font-size:10px;color:var(--mut)}
+.tile .tc.hot{color:var(--amber)}
+.lfoot{padding:16px 20px 0;text-align:center;color:var(--mut);font-size:11px;line-height:1.6}
+
+/* ── lists, groups, rows ───────────────────────────────────────────────── */
+.gsec{padding:16px 18px 8px;display:flex;align-items:baseline;gap:9px}
+.gsec .gt{font-size:9.5px;color:var(--mut);letter-spacing:.11em;text-transform:uppercase}
+.gsec .gl{flex:1;height:1px;background:var(--line)}
+.gsec .gn{font-size:10.5px;color:var(--mut)}
+.sec{border-top:1px solid var(--line)}
+.sec > .hd{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  padding:18px 20px 10px;font-size:11px;color:var(--mut)}
+.sec > .hd .act{color:var(--ok);cursor:pointer;background:none;border:0;font:inherit;letter-spacing:.11em}
+.sec.inbox{border-top:0;border-bottom:1px solid var(--line);
+  background:color-mix(in oklch, var(--ok) 5%, transparent)}
+.sec.inbox > .hd{color:var(--ok)}
+.rows{display:flex;flex-direction:column}
+.row{display:grid;grid-template-columns:52px minmax(0,1fr);gap:13px;align-items:start;
+  padding:15px 20px;border:0;border-top:1px solid var(--line-2);background:none;
+  text-align:left;font:inherit;color:inherit;cursor:pointer;width:100%}
+.rows .row:first-child{border-top:0}
+.row:hover{background:var(--card-2)}
+.row .g{width:40px;height:40px;color:var(--glyph)}
+.row .meta{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:11.5px;
+  color:var(--mut);margin-bottom:6px}
+.row .meta .grow{flex:1}
+.row .ttl{font-size:16.5px;line-height:1.34;font-weight:560;letter-spacing:-.006em}
+.badge{padding:2px 7px;border:1px solid var(--line);border-radius:5px;color:var(--dim);
+  font-size:10.5px;letter-spacing:.03em}
+.state{color:var(--ok);letter-spacing:.09em;font-size:10.5px}
+.state.wait{color:var(--amber)} .state.reh,.state.seq{color:var(--mut)}
+.waits{margin-top:5px;font-size:11px;color:var(--mut)}
+.settled{color:var(--mut)}
+.actor{display:inline-flex;align-items:center;gap:6px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--mut);flex:none}
+.dot.on{background:var(--ok)} .dot.me{background:var(--blue)} .dot.k{background:var(--amber)}
+.empty{padding:38px 20px;text-align:center;color:var(--mut);font-size:13px}
+.note{color:var(--mut);font-size:11.5px;padding:0 20px 18px;line-height:1.6}
+.inwarn{padding:0 20px 10px;color:var(--amber);font-size:11px;line-height:1.5}
+
+/* ── switch rows: kernels on the kernel page, waves on the wave page ───── */
+.swrow{display:flex;align-items:center;gap:13px;width:100%;padding:12px;margin:0 16px 7px;
+  width:calc(100% - 32px);border:1px solid transparent;border-radius:13px;background:var(--card);
+  color:var(--tx);text-align:left;font:inherit;cursor:pointer}
+.swrow:hover{border-color:var(--line)}
+.swrow.cur{background:var(--card-2);border-color:var(--ok-line)}
+.swmark{flex:none;display:grid;place-items:center;width:44px;height:44px;border-radius:50%;
+  background:color-mix(in oklch, currentColor 9%, transparent)}
+.swmark svg{width:32px;height:32px}
+.swt{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.swn{font-size:15.5px;font-weight:560;letter-spacing:-.005em}
+.swm{font-size:10.5px;color:var(--mut)}
+.swb{font-size:12px;color:var(--dim);line-height:1.4;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.swgo{flex:none;color:var(--mut);font-size:18px}
+.cd{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none}
+
+/* ── the bridge readout ────────────────────────────────────────────────── */
+.bridge{margin:0 16px 16px;border:1px solid var(--line);border-radius:13px;overflow:hidden;
+  background:var(--card)}
+.brow{display:flex;gap:11px;align-items:baseline;width:100%;text-align:left;padding:11px 13px;
+  border:0;border-top:1px solid var(--line-2);background:none;color:var(--tx);font:inherit;
+  font-size:13px;line-height:1.45}
+.brow:first-child{border-top:0}
+button.brow{cursor:pointer} button.brow:hover{background:var(--card-2)}
+.bk{flex:none;min-width:80px;font-size:9.5px;color:var(--mut);letter-spacing:.11em;text-transform:uppercase}
+.bv{min-width:0} .bw{color:var(--mut);font-size:11.5px}
+.brow.hi .bk{color:var(--amber)} .brow.act .bk{color:var(--ok)}
+
+/* ── detail ────────────────────────────────────────────────────────────── */
+.detail{padding:0 20px}
+.detail .hero{display:flex;align-items:flex-start;gap:13px;padding:0 0 10px}
+.detail .hero .g{width:34px;height:34px;color:var(--glyph)}
+.detail .hero .ov{width:9px;height:9px;border-width:2px}
+.detail h2{margin:0;font-size:21px;line-height:1.3;font-weight:650;letter-spacing:-.015em;min-width:0}
+.idline{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:11.5px;color:var(--mut);
+  padding:0 0 16px}
+.idline .sep,.wire .sep{opacity:.5}
+.card{border:1px solid var(--line);border-radius:13px;background:var(--card);padding:15px 16px;
+  margin-bottom:14px}
+.card > .cap{font-size:10.5px;color:var(--mut);margin-bottom:12px;letter-spacing:.11em;text-transform:uppercase}
+.card.reh{border-style:dashed}
+.card.gate{border-color:var(--amber)}
+.card.gate .cap{color:var(--amber)}
+.card pre.q{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12.5px;line-height:1.55;
+  margin:0 0 13px;padding:12px 13px;background:var(--bg);border-radius:9px}
+.who-row{display:flex;align-items:baseline;gap:10px;padding:6px 0;font-size:13px;flex-wrap:wrap}
+.who-row .nm{min-width:94px;display:inline-flex;align-items:center;gap:8px;flex:none;
+  color:var(--mut);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.who-row .did{flex:1;min-width:0;color:var(--mut);font-size:11.5px}
+.who-row .did .yes{color:var(--ok)}
+.adj{display:flex;align-items:center;gap:12px;width:100%;padding:11px 4px;border:0;
+  border-top:1px solid var(--line-2);background:none;color:var(--tx);text-align:left;font:inherit;cursor:pointer}
+.adj:first-of-type{border-top:0}
+.adj:hover{background:var(--card-2)}
+.adj.flat{cursor:default} .adj.flat:hover{background:none}
+.adj .ag{width:26px;height:26px;flex:none;color:var(--glyph)}
+.adj .at{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.adj .ar{font-size:9.5px;color:var(--mut);letter-spacing:.09em;text-transform:uppercase}
+.adj .al{font-size:14px;line-height:1.3}
+.adj .ah{font-size:10.5px;color:var(--mut)}
+.adj .ac{color:var(--mut);flex:none;font-size:17px}
+.mv{display:flex;gap:11px;align-items:baseline;padding:8px 0;border-top:1px solid var(--line-2)}
+.mv:first-of-type{border-top:0}
+.mvk{flex:none;min-width:46px;font-size:9.5px;color:var(--mut);letter-spacing:.09em;text-transform:uppercase}
+.mv.open .mvk{color:var(--ok)}
+.mvt{min-width:0;font-size:13.5px;line-height:1.45;display:flex;flex-direction:column;gap:3px}
+.mvh{color:var(--mut);font-size:12px} .mvi{color:var(--blue);font-size:12px}
+.dg{display:flex;flex-wrap:wrap;align-items:baseline;gap:9px;padding:2px 0 10px}
+.dgv{font-size:13px}
+.dgs{flex-basis:100%;color:var(--mut);font-size:11.5px;line-height:1.5}
+.grade{display:inline-block;padding:2px 8px;border-radius:5px;font:600 9.5px/1.6 ui-monospace,
+  SFMono-Regular,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase}
+.grade.ok{background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok-line)}
+/* Evidence never wears the colour of proof. */
+.grade.warn{background:transparent;color:var(--amber);border:1px dashed var(--amber)}
+.gs{font-weight:400;text-transform:none;letter-spacing:0;opacity:.85}
+.res{border:1px solid var(--line);border-radius:11px;overflow:hidden;margin-bottom:14px}
+.res .r{padding:11px 14px;border-top:1px solid var(--line-2);font-size:13px;
+  overflow-wrap:anywhere;word-break:break-word;line-height:1.5}
+.res .r:first-child{border-top:0}
+.bar{border:1px solid var(--ok-line);border-radius:11px;background:var(--ok-bg);color:var(--ok);
+  padding:13px;text-align:center;font-size:11.5px;letter-spacing:.11em;margin:0 16px 14px;
+  text-transform:uppercase}
+.bar.none{border-color:var(--line);background:var(--card-2);color:var(--mut)}
+.detail .bar{margin:0 0 14px}
+.out{border:1px solid var(--ok-line);border-radius:13px;background:var(--ok-bg);padding:16px;margin-bottom:14px}
+.out .cap{font-size:10.5px;color:var(--ok);letter-spacing:.11em;margin-bottom:12px;text-transform:uppercase}
+.out .body{display:flex;gap:14px;align-items:flex-start}
+.out .g{width:38px;height:38px;color:var(--ok);flex:none}
+.out p{margin:0;font-size:14px;line-height:1.5}
+.prose{font-size:14.5px;line-height:1.62}
+.prose p{margin:0 0 .9em} .prose p:last-child{margin-bottom:0}
+a.urn{color:var(--blue);text-decoration:none;border-bottom:1px dotted var(--mut);word-break:break-all;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.93em}
+a.urn:hover{border-bottom-color:transparent;text-decoration:underline}
+textarea{width:100%;min-height:190px;resize:vertical;padding:13px;border-radius:10px;
+  border:1px solid var(--line);background:var(--bg);color:var(--tx);font:400 15px/1.55 inherit}
+textarea:focus{outline:none;border-color:var(--ok)}
+textarea::placeholder{color:var(--mut);font-size:13.5px}
+.btn{display:block;width:100%;padding:15px;margin-bottom:12px;cursor:pointer;border:1px solid var(--line);
+  border-radius:11px;background:var(--card);color:var(--tx);
+  font:400 13px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.11em;text-transform:uppercase}
+.btn:hover{border-color:var(--ok)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.btn.go{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600}
+:root[data-theme="dark"] .btn.go{color:#06231a}
+
+/* ── the refusal is a page, because it is a teaching ───────────────────── */
+.teach{padding:8px 20px 0}
+.teach .tg{width:34px;height:34px;color:var(--amber)}
+.teach h2{margin:14px 0 4px;font-size:23px;font-weight:650;letter-spacing:-.018em}
+.teach p.sub{margin:0 0 18px;color:var(--dim);font-size:13.5px;line-height:1.5}
+.rf{padding:4px 0}
+.rf .rk{font-size:9.5px;color:var(--mut);letter-spacing:.11em;text-transform:uppercase}
+.rf .rv{font-size:13.5px;margin-top:3px;line-height:1.5;overflow-wrap:anywhere}
+.two{display:flex;gap:10px;margin-top:4px}
+.two .btn{margin-bottom:0}
+
+/* ── settings ──────────────────────────────────────────────────────────── */
+.set{padding:0 16px}
+.srowb{display:flex;align-items:center;gap:12px;width:100%;padding:13px 15px;margin-bottom:8px;
+  border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--tx);
+  font:inherit;text-align:left;cursor:pointer}
+.srowb.flat{cursor:default}
+.srowb .st{flex:1;min-width:0}
+.srowb .s1{font-size:14px;font-weight:560}
+.srowb .s2{font-size:10.5px;color:var(--mut);margin-top:2px;overflow-wrap:anywhere}
+.srowb.danger .s1{color:#c0392b}
+:root[data-theme="dark"] .srowb.danger .s1{color:#f0506e}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;background:var(--card-2);
+  border-radius:11px;padding:3px;margin-bottom:8px}
+.seg button{padding:10px 4px;border:0;border-radius:9px;background:transparent;cursor:pointer;
+  color:var(--dim);font:500 12.5px/1 inherit}
+.seg button[aria-pressed="true"]{background:var(--card);color:var(--tx);box-shadow:0 1px 2px rgba(0,0,0,.14)}
+.sw2{width:44px;height:26px;border-radius:13px;background:var(--line);flex:none;position:relative;
+  transition:background .18s}
+.sw2.on{background:var(--ok)}
+.sw2 i{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;
+  transition:transform .18s}
+.sw2.on i{transform:translateX(18px)}
+.wl{font-size:11.5px;line-height:1.6}
+
+/* ── the dock ──────────────────────────────────────────────────────────── */
+#gaveup{position:fixed;left:0;right:0;bottom:0;z-index:70;display:flex;align-items:center;
+  gap:12px;flex-wrap:wrap;padding:12px 16px calc(12px + var(--safe-b));
+  background:var(--card);border-top:1px solid var(--amber);color:var(--amber);font-size:12px}
+#gaveup[hidden]{display:none}
+.gubtn{margin-left:auto;padding:7px 14px;border:1px solid var(--amber);border-radius:999px;
+  background:transparent;color:var(--amber);cursor:pointer;font-size:11.5px}
+#dock{position:fixed;left:0;right:0;bottom:0;z-index:50;
+  background:color-mix(in oklch, var(--bg) 88%, transparent);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border-top:1px solid var(--line);padding:9px 14px calc(11px + var(--safe-b))}
+#dock[hidden]{display:none}
+.dpeople{display:flex;align-items:center;gap:10px;padding:0 2px 8px}
+.dline{flex:1;min-width:0;font-size:10.5px;color:var(--mut);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.dbar{display:flex;align-items:center;gap:9px}
+.dnav{width:44px;height:48px;flex:none;border:1px solid var(--line);border-radius:24px;
+  background:var(--card);color:var(--dim);font-size:19px;cursor:pointer}
+.dnav[disabled]{opacity:.32;cursor:not-allowed}
+.dact{flex:1;min-width:0;height:48px;border:0;border-radius:24px;background:var(--ok);color:#fff;
+  cursor:pointer;display:flex;flex-direction:column;justify-content:center;gap:1px;padding:0 14px}
+.dact.mute{background:var(--card-2);color:var(--dim);border:1px solid var(--line);cursor:default}
+:root[data-theme="dark"] .dact{color:#06231a}
+:root[data-theme="dark"] .dact.mute{color:var(--dim)}
+.dact .dv{font:600 13px/1 ui-sans-serif,system-ui,sans-serif;text-transform:uppercase;letter-spacing:.09em}
+.dact .dt{font-size:10.5px;opacity:.82;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dpos{padding:7px 2px 0;text-align:center;font-size:10.5px;color:var(--mut)}
+
+/* ── the gate ──────────────────────────────────────────────────────────── */
+#boot{position:fixed;inset:0;display:grid;place-items:center;z-index:90;background:var(--bg)}
+#boot[hidden]{display:none}
+.bootwrap{display:flex;flex-direction:column;align-items:center;gap:16px}
+.bootg{width:52px;height:52px;color:var(--ok);animation:beat 2s ease-in-out infinite}
+.bootstep{font-size:12px;color:var(--mut);letter-spacing:.04em}
+#gate{display:none;padding:70px 24px;text-align:center}
+#gate.on{display:block}
+#gate .g{width:70px;height:70px;color:var(--ok);margin:0 auto 26px}
+#gate h1{margin:0 0 10px;font-size:25px;font-weight:650;letter-spacing:-.015em}
+#gate p{margin:0 auto 26px;max-width:330px;color:var(--dim);font-size:14px;line-height:1.55}
+#gate .btn{max-width:330px;margin:0 auto 14px}
+#err{max-width:420px;margin:16px auto 0;color:#c0392b;font-size:12px;word-break:break-word}
+#app{display:none} #app.on{display:block}
+</style>
+</head>
+<body>
+
+<!-- ═══ GLYPHS — SPEC.ICONS.v3.11 ════════════════════════════════════════════
+     enclosure means ownership · a baseline means it was set down ·
+     a break means something is wrong. ◈ is the anchor; every mark is of that
+     family: monoline, geometric, 24px grid, no perspective.
+     ═══════════════════════════════════════════════════════════════════════ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="g-kernel" viewBox="0 0 24 24">
+    <path d="M12 2.6 21.4 12 12 21.4 2.6 12Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M12 7.6 16.4 12 12 16.4 7.6 12Z" fill="currentColor"/></symbol>
+  <symbol id="g-finding" viewBox="0 0 24 24">
+    <path d="M12 5 18 11.6 12 18.2 6 11.6Z" fill="currentColor"/>
+    <path d="M4.5 18.2h15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  <symbol id="g-finding-promoted" viewBox="0 0 24 24">
+    <path d="M12 5 18 11.6 12 18.2 6 11.6Z" fill="currentColor"/>
+    <path d="M4.5 18.2h15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M12 1.8 22.2 12 12 22.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" opacity=".38"/></symbol>
+  <symbol id="g-ticket" viewBox="0 0 24 24">
+    <rect x="3" y="3" width="18" height="18" rx="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <path d="M12 7.4 16.6 12 12 16.6 7.4 12Z" fill="currentColor"/></symbol>
+  <symbol id="g-confirm" viewBox="0 0 24 24">
+    <path d="M4 6.5 11.4 16.6M20 6.5 12.6 16.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    <circle cx="12" cy="18.4" r="1.7" fill="currentColor"/></symbol>
+  <symbol id="g-proposal" viewBox="0 0 24 24">
+    <path d="M9.5 3.4H4.4v17.2h5.1M14.5 3.4h5.1v17.2h-5.1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="g-rehearsal" viewBox="0 0 24 24">
+    <path d="M9.5 3.4H4.4v17.2h5.1M14.5 3.4h5.1v17.2h-5.1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 2.6"/></symbol>
+  <symbol id="g-applied" viewBox="0 0 24 24">
+    <path d="M4.4 3.4h15.2v17.2H4.4Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M12 8.2 15.8 12 12 15.8 8.2 12Z" fill="currentColor"/></symbol>
+  <symbol id="g-stuck" viewBox="0 0 24 24">
+    <path d="M9.5 3.4H4.4v17.2h5.1M14.5 3.4h5.1v6.2M19.6 14.4v6.2h-5.1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="19.6" cy="12" r="1.9" fill="currentColor"/></symbol>
+  <symbol id="g-vote" viewBox="0 0 24 24">
+    <path d="M10.5 3.4H4.4v17.2h6.1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M16.6 8.4 20.2 12l-3.6 3.6L13 12Z" fill="currentColor"/></symbol>
+  <symbol id="g-ruling" viewBox="0 0 24 24">
+    <path d="M3.6 12h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    <circle cx="19.6" cy="12" r="2.4" fill="currentColor"/></symbol>
+  <symbol id="g-refuted" viewBox="0 0 24 24">
+    <path d="M6.4 12h11.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    <circle cx="19.8" cy="12" r="2.4" fill="currentColor"/>
+    <circle cx="4.2" cy="12" r="2.4" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+  <symbol id="g-adoption" viewBox="0 0 24 24">
+    <circle cx="9.4" cy="12" r="6.6" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle cx="14.6" cy="12" r="6.6" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+  <symbol id="g-affordance" viewBox="0 0 24 24">
+    <path d="M2.6 12S6.6 5.6 12 5.6 21.4 12 21.4 12 17.4 18.4 12 18.4 2.6 12 2.6 12Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    <circle cx="12" cy="12" r="2.6" fill="currentColor"/></symbol>
+  <symbol id="g-mat" viewBox="0 0 24 24">
+    <circle cx="6.6" cy="12" r="3.4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <circle cx="17.4" cy="12" r="3.4" fill="currentColor"/>
+    <path d="M10.6 12h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="g-wave" viewBox="0 0 24 24">
+    <path d="M2.4 14.6c2.4-3.4 4.2-3.4 6.6 0s4.2 3.4 6.6 0 4.2-3.4 6-1.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M2.4 9.4c2.4-3.4 4.2-3.4 6.6 0s4.2 3.4 6.6 0 4.2-3.4 6-1.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity=".45"/></symbol>
+  <symbol id="g-door" viewBox="0 0 24 24">
+    <path d="M6.4 3.6h11.2v16.8H6.4Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    <circle cx="14.4" cy="12" r="1.5" fill="currentColor"/></symbol>
+  <symbol id="g-fact" viewBox="0 0 24 24">
+    <rect x="4.4" y="4.4" width="15.2" height="15.2" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+</defs></svg>
+
+<div id="boot" hidden></div>
+<div id="gate">
+  <svg class="g" viewBox="0 0 24 24"><use href="#g-kernel"/></svg>
+  <h1>Concept Kernel Bench</h1>
+  <p>Sign in to the CKDEV realm. You will be here as yourself — every seal and
+     every vote carries your identity, derived by the substrate, not claimed.</p>
+  <button class="btn go" id="signin">Sign in</button>
+  <div id="err"></div>
+</div>
+
+<div id="app">
+  <div id="shell">
+    <div class="bar1" id="bar1"></div>
+    <div id="main"></div>
+  </div>
+  <div id="gaveup" hidden></div>
+<div id="dock" hidden></div>
+</div>
+
+<script type="module">
+/* ═══════════════════════════════════════════════════════════════════════════
+   cklib is imported UNCHANGED from the door. This app owns no protocol and no
+   grammar; the token lives under the SAME sessionStorage keys as the desk
+   surface, so one origin means one session.
+   ═════════════════════════════════════════════════════════════════════════ */
+const KERNEL_DEFAULT = 'ck-dev';
+const CORE = 'https://conceptkernel.org/ontology/v3.11/core#';
+const WAVE = 'https://conceptkernel.org/ontology/v3.11/wave#';
+const RDFS = 'http://www.w3.org/2000/01/rdf-schema#';
+const OIDC = {
+  issuer:'https://id.conceptkernel.dev/realms/CKDEV',
+  clientId:'pgck-localhost',
+  redirect: location.origin + location.pathname.replace(/index\.html$/, ''),
+  scope:'openid profile email',
+};
+
+const $ = id => document.getElementById(id);
+const initials = n => {
+  const t = String(n||'?').replace(/@.*$/,'');
+  const p = t.split(/[._-]+/).filter(Boolean);
+  return ((p[0]?.[0]||'?') + (p[1]?.[0]||'')).toUpperCase();
+};
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const short = u => String(u ?? '').replace(/^urn:ckp:/,'').replace(/^ckp:\/\/\w+#/,'').replace(/\/kernel(\/ck)?$/,'');
+const URN_RE = /(ckp:\/\/[A-Za-z][A-Za-z0-9]*#[A-Za-z0-9._:-]+|urn:ckp:[A-Za-z0-9._\/:-]+|\b[a-z][a-z-]{2,24}-\d{15,20}\b)/g;
+const escLink = s => esc(s).replace(URN_RE, u => `<a class="urn" href="#/i/${encodeURIComponent(u)}">${u}</a>`);
+const nsOf = id => { const m = String(id||'').match(/-(\d{16,19})$/); return m ? Math.floor(+m[1]/1e6) : 0; };
+function ago(ms){
+  if (!ms) return '';
+  const s = Math.max(1, Math.floor((Date.now()-ms)/1000));
+  if (s < 60) return 'now';
+  if (s < 3600) return `${Math.floor(s/60)}m`;
+  if (s < 86400) return `${Math.floor(s/3600)}h`;
+  return `${Math.floor(s/86400)}d`;
+}
+function lede(t, n = 150){
+  const x = String(t ?? '').trim(); if (!x) return '';
+  const stop = x.search(/[.;](?= )/);
+  const one = stop > 20 ? x.slice(0, stop) : x;
+  return one.length > n ? one.slice(0, one.lastIndexOf(' ', n)) + '…' : one;
+}
+const term = i => String(i ?? '').split(/[#/]/).pop();
+const d8 = d => d ? `${String(d).slice(0,4)}…${String(d).slice(-4)}` : '';
+
+/* ── TOKEN ─────────────────────────────────────────────────────────────── */
+const Token = {
+  get access(){ return sessionStorage.getItem('ck.at'); },
+  get refresh(){ return sessionStorage.getItem('ck.rt'); },
+  get idToken(){ return sessionStorage.getItem('ck.id'); },
+  get expAt(){ return +(sessionStorage.getItem('ck.exp')||0); },
+  store(t){
+    sessionStorage.setItem('ck.at', t.access_token);
+    if (t.refresh_token) sessionStorage.setItem('ck.rt', t.refresh_token);
+    if (t.id_token) sessionStorage.setItem('ck.id', t.id_token);
+    sessionStorage.setItem('ck.exp', String(Date.now() + (t.expires_in ?? 300)*1000));
+  },
+  clear(){ ['ck.at','ck.rt','ck.id','ck.exp','ck.m.v','ck.m.s'].forEach(k=>sessionStorage.removeItem(k)); },
+  /* THE CLOCK IS NOT THE AUTHORITY — THE DOOR IS. valid() returns the cached
+     bearer whenever the clock says it has not expired, so once NATS answers
+     'User Authentication Expired' every reconnect presents the SAME rejected
+     token and fails identically. That is what made the retry loop infinite
+     rather than merely slow. force() ignores the clock and actually exchanges
+     the refresh token, which is the only thing that can change the outcome. */
+  async force(){
+    if (!Token.refresh) return null;
+    const r = await fetch(`${OIDC.issuer}/protocol/openid-connect/token`,{
+      method:'POST', headers:{'content-type':'application/x-www-form-urlencoded'},
+      signal: AbortSignal.timeout(9000),
+      body:new URLSearchParams({grant_type:'refresh_token', client_id:OIDC.clientId,
+        refresh_token:Token.refresh})})
+      .catch(() => ({ ok:false }));
+    if (!r.ok) return null;
+    const t = await r.json(); Token.store(t); return t.access_token;
+  },
+  async valid(){
+    if (!Token.access) return null;
+    if (Date.now() < Token.expAt - 30_000) return Token.access;
+    if (!Token.refresh) return null;
+    // Bounded: an identity provider that never answers must not hold the screen.
+    const r = await fetch(`${OIDC.issuer}/protocol/openid-connect/token`,{
+      method:'POST', headers:{'content-type':'application/x-www-form-urlencoded'},
+      signal: AbortSignal.timeout(9000),
+      body:new URLSearchParams({grant_type:'refresh_token', client_id:OIDC.clientId, refresh_token:Token.refresh})})
+      .catch(e => ({ ok:false, status:'no answer from the identity provider ('+e.name+')' }));
+    if (!r.ok) return null;
+    const t = await r.json(); Token.store(t); return t.access_token;
+  },
+};
+const b64u = b => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const rand = () => b64u(crypto.getRandomValues(new Uint8Array(32)));
+const chal = async v => b64u(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v)));
+function claims(){ try{ return JSON.parse(atob(Token.access.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); }catch{ return {}; } }
+
+async function signIn(force = false){
+  const v = rand(), s = rand();
+  sessionStorage.setItem('ck.m.v', v); sessionStorage.setItem('ck.m.s', s);
+  if (location.hash.length > 2) sessionStorage.setItem('ck.m.h', location.hash);
+  const q = new URLSearchParams({client_id:OIDC.clientId, redirect_uri:OIDC.redirect,
+    response_type:'code', scope:OIDC.scope, state:s,
+    code_challenge:await chal(v), code_challenge_method:'S256'});
+  if (force) q.set('prompt','login');
+  location.assign(`${OIDC.issuer}/protocol/openid-connect/auth?${q}`);
+}
+function signOut(){
+  const hint = Token.idToken; Token.clear();
+  const q = new URLSearchParams({post_logout_redirect_uri:OIDC.redirect, client_id:OIDC.clientId});
+  if (hint) q.set('id_token_hint', hint);
+  location.assign(`${OIDC.issuer}/protocol/openid-connect/logout?${q}`);
+}
+
+/* ── STATE ─────────────────────────────────────────────────────────────── */
+let handle = null, cklibVer = '';
+let doorOpen; const ready = new Promise(r => { doorOpen = r; });
+const S = { me:null, meName:'', kernel:null, epoch:null, digest:null,
+  T:{}, props:[], votes:[], facts:[], passes:[], waves:[], mats:[], epochs:[], ops:[],
+  entity:null, compose:null, sent:null, refusal:null, busy:false,
+  fresh:new Set(), flow:0, dock:0, sibs:[], menu:false,
+  route:{ name:'home' } };
+
+/* WHO IS WHO — derived, never invented. */
+const DIR = new Map();
+function learn(i){
+  if (!i || typeof i !== 'object') return;
+  const who = i[CORE+'createdBy'] ?? i.createdBy, k = i[CORE+'producedBy'] ?? i.producedBy;
+  if (!who) return;
+  let e = DIR.get(who);
+  if (!e) DIR.set(who, e = { kernels:new Map(), n:0, anon:/participant:anon:/.test(who) });
+  e.n++;
+  if (k){ const s = short(k); e.kernels.set(s, (e.kernels.get(s)||0)+1); }
+}
+function who(urn){
+  if (!urn) return { name:'—', how:null };
+  // NEVER the email here. On this realm preferred_username IS an address, and this page's
+  // main button copies a permalink for sending — so rendering it publishes a private address
+  // into a record, and it also UPGRADES a verified sub into a person. That claim is not the
+  // substrate's: this human holds TWO subs (c45b14bb as peter@neux.io, ff3edf7d as
+  // peter@conceptkernel.org), so naming one picks a side the gate never took. The substrate
+  // verified a participant; that is what the record shows. Own-screen chrome keeps S.meName.
+  // Caught by CK.Lib.Js on pgck epoch 16, which printed the address next to CITE.
+  if (S.me && String(urn).endsWith(S.me))
+    return { name:'you', how:`participant ${String(S.me).slice(0,8)}… — the sub this session verified, not a person` };
+  const e = DIR.get(urn);
+  const tail = String(urn).replace(/^urn:ckp:participant:(anon:)?/,'').slice(0,8);
+  if (!e) return { name: tail, how:'unseen' };
+  if (e.anon) return { name:'anonymous', how:`${e.n} seals, unverified` };
+  const top = [...e.kernels.entries()].sort((a,b)=>b[1]-a[1])[0];
+  return top ? { name: top[0], how:`observed on ${e.n} seal${e.n===1?'':'s'}` } : { name: tail, how:`${e.n} seals` };
+}
+
+/* ── ORGANS: one tile, one page, one query each ─────────────────────────── */
+const ORGANS = [
+  { t:'Finding',         iri:WAVE+'Finding',        label:'Findings',   g:'g-finding' },
+  { t:'Ticket',          iri:WAVE+'Ticket',         label:'Tickets',    g:'g-ticket' },
+  { t:'Proposal',        iri:CORE+'Proposal',       label:'Decisions',  g:'g-proposal' },
+  { t:'Confirmation',    iri:WAVE+'Confirmation',   label:'Confirms',   g:'g-confirm' },
+  { t:'Ruling',          iri:WAVE+'Ruling',         label:'Rulings',    g:'g-ruling' },
+  { t:'Operation',       iri:WAVE+'Operation',      label:'Addressed',  g:'g-ruling' },
+  { t:'Adoption',        iri:CORE+'Adoption',       label:'Adoptions',  g:'g-adoption' },
+  { t:'Vote',            iri:CORE+'Vote',           label:'Votes',      g:'g-vote' },
+  { t:'Pass',            iri:WAVE+'Pass',           label:'Passes',     g:'g-ruling' },
+  { t:'Wave',            iri:WAVE+'Wave',           label:'Waves',      g:'g-wave' },
+  { t:'Epoch',           iri:CORE+'Epoch',          label:'Epochs',     g:'g-fact' },
+  { t:'Materialization', iri:CORE+'Materialization',label:'Composed',   g:'g-mat' },
+];
+const KIND = { Proposal:'g-proposal', Vote:'g-vote', Finding:'g-finding', Confirmation:'g-confirm',
+  Defect:'g-finding', Epoch:'g-fact', Materialization:'g-mat', Kernel:'g-kernel', Adoption:'g-adoption',
+  Ticket:'g-ticket', Ruling:'g-ruling', Affordance:'g-affordance', Membership:'g-adoption',
+  Role:'g-ticket', Operation:'g-ruling', Wave:'g-wave', Pass:'g-ruling' };
+const typeOf = b => String(b?.['@type'] || b?.type || '').split(/[#/]/).pop();
+
+function symbolFor(b, t){
+  if (t === 'Finding') return (b[WAVE+'promotedTo'] ?? b.promotedTo) ? 'g-finding-promoted' : 'g-finding';
+  if (t === 'Proposal'){
+    if (b[CORE+'proposalState'] === 'applied') return 'g-applied';
+    if (rehearsal(b)) return 'g-rehearsal';
+    return isStuck(b) ? 'g-stuck' : 'g-proposal';
+  }
+  if (t === 'Ruling') return (b[WAVE+'refutedAtPass'] != null) ? 'g-refuted' : 'g-ruling';
+  return KIND[t] || 'g-fact';
+}
+const isStuck = p => pending(p) && iVoted(p['@id']);
+// quorum 1 is REHEARSAL: proposer, voter and applier as one identity is not a decision.
+const rehearsal = p => Number(p[CORE+'requiresQuorum'] ?? 1) < 2;
+
+/* THE EPOCH RING — cite the digest, never the number. Notches and hue come from
+   the same bytes, so two kernels on one surface look identical without being told. */
+const hueFor = d => {
+  const hex = String(d||'').replace(/[^0-9a-f]/gi,'');
+  return hex ? (parseInt(hex.slice(5,8),16) / 4095) * 360 : null;
+};
+const tint = d => { const h = hueFor(d); return h == null ? 'var(--mut)' : `oklch(var(--ring-l) var(--ring-c) ${h.toFixed(0)})`; };
+/* ═══ EVIDENCE GRADES, UNFLATTENED ════════════════════════════════════════
+   pgRDF's principle (3) and PGRDF.MCP.v0.1.5 §12. A digest answers "are these
+   the same BYTES" and can never by itself answer "are these the same GRAPH" —
+   because a blank node is an existential variable, not a name, and SHACL hangs
+   every property constraint off one. Measured on the founding ontologies: core
+   carries blank nodes in 531 of 948 triples, wave 322 of 495, lexicon 116 of
+   251. So two graphs can be isomorphic and serialize to different bytes
+   FOREVER, and "the digests differ" is not evidence of divergence.
+
+   Four planes, and which one a number pins decides what it may be used for:
+     copy       bytes_sha256      this copy — does NOT survive a reload
+     ground     ground_sha256     the triples carrying no blank node
+     bnode      bnode_sha256      the multiset of blank-node signatures
+     structural ground ∪ bnode    the graph's shape
+   pgck's own alignment: copy-plane pins — surfaceDigest, Epoch pins,
+   adoption_pins — are IN-STORE DRIFT DETECTORS, NEVER CROSS-BENCH IDENTITY.
+
+   And the verdicts are ASYMMETRIC, which is the whole point:
+     DIFFERENT          conclusive
+     IDENTICAL          conclusive
+     ISOMORPHIC_LIKELY  EVIDENCE, NOT PROOF — first-degree signatures only
+   A surface that renders ISOMORPHIC_LIKELY in the same green as IDENTICAL has
+   invented a proof the algorithm does not supply. This one refuses to.
+   ═════════════════════════════════════════════════════════════════════════ */
+const PLANE = {
+  copy:       { label:'copy plane',       tone:'warn',
+                says:'these exact bytes, in this store — does not survive a reload, and is not identity across benches' },
+  structural: { label:'structural plane', tone:'ok',
+                says:'the graph\'s shape, blank-node labels ignored — survives a reload' },
+  ground:     { label:'ground plane',     tone:'ok',
+                says:'only the triples carrying no blank node' },
+};
+// surfaceDigest and the adoption pins are copy-plane by pgck's own statement.
+// Nothing on this bench pins structurally yet — structuralDigest lands in 0.4.67.
+const planeOf = (field) =>
+  /^(surfaceDigest|sourceDigest|graphDigest\w*)$/.test(String(field||'')) ? 'copy' : 'copy';
+
+const VERDICT = {
+  IDENTICAL:         { tone:'ok',   strength:'conclusive' },
+  DIFFERENT:         { tone:'ok',   strength:'conclusive' },
+  ISOMORPHIC_LIKELY: { tone:'warn', strength:'evidence, not proof — first-degree signatures only' },
+};
+function verdictView(v){
+  const g = VERDICT[v]; if (!g) return '';
+  return `<span class="grade ${g.tone}">${esc(v)}<span class="gs"> · ${esc(g.strength)}</span></span>`;
+}
+function digestView(field, value){
+  if (!value) return '';
+  const pl = PLANE[planeOf(field)];
+  return `<div class="dg">
+    <span class="dgv m">${esc(String(value).slice(0,12))}…</span>
+    <span class="grade ${pl.tone}">${esc(pl.label)}</span>
+    <span class="dgs">${esc(pl.says)}</span>
+  </div>`;
+}
+
+function ringFor(digest, cls = 'g'){
+  const hex = String(digest || '').replace(/[^0-9a-f]/gi,'').toLowerCase();
+  if (!hex) return `<svg class="${cls}"><use href="#g-fact"/></svg>`;
+  const n = 12, R = 8.2, C = 2 * Math.PI * R, seg = C / n;
+  const bits = parseInt(hex.slice(0,3), 16);
+  const dash = Array.from({length:n}, (_,i) =>
+    ((bits >> i) & 1) ? `${(seg*0.72).toFixed(2)} ${(seg*0.28).toFixed(2)}`
+                      : `${(seg*0.3).toFixed(2)} ${(seg*0.7).toFixed(2)}`).join(' ');
+  const rot = (parseInt(hex.slice(3,5),16) / 255) * 360;
+  return `<svg class="${cls}" viewBox="0 0 24 24"><g transform="rotate(${rot.toFixed(1)} 12 12)">
+    <circle cx="12" cy="12" r="${R}" fill="none" stroke="currentColor" stroke-width="1.8"
+            stroke-dasharray="${dash}" stroke-linecap="butt"/></g>
+    <circle cx="12" cy="12" r="2.6" fill="currentColor"/></svg>`;
+}
+
+/* JUDGEMENT — a verified badge without a judgement mark is the most dangerous
+   thing this UI could ship. The overlay never alters the base shape, and is not filterable. */
+function overlay(b){
+  const judged = (b[CORE+'conformsToShape'] ?? b.conformsToShape) != null;
+  const anon = /participant:anon:/.test(String(b[CORE+'createdBy'] ?? b.createdBy ?? ''));
+  return `${judged ? `<span class="ov judged" title="judged — shape named on tap"></span>`
+    : `<span class="ov unjudged" title="conformsToShape ABSENT — ledgered, but judged by nothing"></span>`}${
+    anon ? `<span class="ov anon" title="sealed anonymously — a change nobody can be held to"></span>` : ''}`;
+}
+const TONE = { Epoch:'ok', Materialization:'ok', Kernel:'ok', Confirmation:'ok', Defect:'no', Adoption:'vi' };
+function mark(b, cls='g'){
+  const t = typeOf(b);
+  const inner = (t === 'Epoch') ? ringFor(b[CORE+'surfaceDigest'] ?? b.surfaceDigest, cls)
+    : `<svg class="${cls}"><use href="#${symbolFor(b, t)}"/></svg>`;
+  return `<span class="markwrap${TONE[t]?` t-${TONE[t]}`:''}">${inner}${overlay(b)}</span>`;
+}
+const glyph = (g, cls='g') => `<svg class="${cls}"><use href="#${g}"/></svg>`;
+
+/* ── DOOR ──────────────────────────────────────────────────────────────── */
+/* ═══ RECONNECT, WITHOUT THE STORM ════════════════════════════════════════
+   MEASURED IN THE FIELD, and this was mine: NATS emits 'User Authentication
+   Expired', the error handler schedules live(), live() reconnects, the NEW
+   socket fails identically, and round it goes — one WebSocket per iteration,
+   forever. The browser's network panel showed dozens of 101s from nats.ws.js
+   with nothing closing them.
+
+   The mistake was treating an AUTH failure as a transport hiccup. A token the
+   door has already rejected will be rejected again, so retrying it is not
+   optimism, it is a loop. Four rules follow:
+
+     1. SINGLE FLIGHT. One connect attempt at a time; three handlers firing at
+        once must not become three sockets.
+     2. REFRESH BEFORE RECONNECTING. The bearer is the thing that failed, so
+        renew it first; if it cannot be renewed, stop and ask for a sign-in
+        rather than hammering the door with a credential it has refused.
+     3. BACK OFF, AND CAP. Doubling from 800ms to 30s, and after six failures
+        stop entirely — an unbounded retry is a denial of service aimed at your
+        own substrate.
+     4. SAY WHY YOU STOPPED. A surface that goes quiet is indistinguishable
+        from one that is working.
+   ═════════════════════════════════════════════════════════════════════════ */
+let liveFlight = null, liveFails = 0, liveGaveUp = null, authRefused = false;
+const LIVE_CAP = 6;
+
+async function live({ force = false } = {}){
+  const t = handle?._transport;
+  if (!t) return;
+  if (t.connection === 'connected'){ liveFails = 0; liveGaveUp = null; return; }
+  if (liveGaveUp && !force) return;          // stopped on purpose; say so, do not spin
+  if (liveFlight) return liveFlight;         // rule 1
+
+  liveFlight = (async () => {
+    // Rule 2 — renew the credential that failed, before using the door again.
+    let tok = null;
+    try{
+      // If the door refused the bearer, asking valid() is pointless — it will
+      // hand back the very token that was refused. Force the exchange.
+      tok = authRefused ? await Token.force() : await Token.valid();
+      if (tok) authRefused = false;
+    }catch{}
+    if (!tok){
+      liveGaveUp = Token.refresh
+        ? 'the refresh token was refused too — sign in again'
+        : 'your session expired and there is no refresh token — sign in again';
+      return paintFlow();
+    }
+    if (liveFails >= LIVE_CAP){
+      liveGaveUp = `the door refused ${liveFails} times with a fresh token — not retrying`;
+      return paintFlow();
+    }
+    // Rule 3 — wait longer each time, never faster than the last failure.
+    if (liveFails) await new Promise(r => setTimeout(r, Math.min(30000, 800 * 2 ** liveFails)));
+    try{ await t.connect(); liveFails = 0; liveGaveUp = null; }
+    catch{ liveFails++; }
+    paintFlow();
+  })().finally(() => { liveFlight = null; });
+
+  return liveFlight;
+}
+/* NEVER pass instance.query's `filter` over this door: measured 2026-08-14, any
+   filter form returns zero rows and never refuses. Ask for the type; narrow here. */
+const qType = t => handle.do('instance.query', { type:t })
+  .then(r => (r?.rows||[]).map(x => x.body||x)).catch(()=>[]);
+
+async function activate(){
+  const c = claims();
+  S.me = c.sub;
+  S.meName = c.preferred_username || c.email || (c.sub||'').slice(0,8);
+  S.kernel = localStorage.getItem('ck.kernel') || KERNEL_DEFAULT;
+  const { CKClient } = await import('/cklib/ck-client.js');
+  const { CK } = await import('/cklib/ck.js');
+  const client = new CKClient({ kernel:S.kernel, tokenProvider: () => Token.valid() });
+  client.on('status', s => {
+    const cn = s?.connection ?? s;
+    if (cn === 'disconnected' || cn === 'closed') setTimeout(() => live(), 1200);
+    paintFlow();
+  });
+  // cklib is already subscribed to event.kernel.<K>.> — render the envelope, and
+  // ask the door only for what the envelope did not carry.
+  client.on('event', m => onSignal(m));
+  // Rule 1 again: hand every signal to the SAME guarded path. An auth failure
+  // arrives as an error, a close and a status change — three doors to one loop.
+  // An auth refusal is not a transport hiccup: it names the bearer as the
+  // problem, so the next attempt must carry a DIFFERENT one.
+  client.on('error', e => {
+    const m = String(e?.message ?? e);
+    if (/auth|expired|unauthor/i.test(m)) authRefused = true;
+    setTimeout(() => live(), 800);
+  });
+  booting(`opening the door as ${S.meName}`);
+  handle = await within(20000, 'the door', CK.activate(S.kernel, { transport: client }));
+  window.__ck = handle;
+  // cklib exports no VERSION; read what the served file declares in its own header.
+  try{
+    const src = await (await fetch('/cklib/ck.js')).text();
+    cklibVer = (src.slice(0, 400).match(/\(v([\d.]+)\)/) || [])[1] || '';
+  }catch{}
+  doorOpen();
+  bootDone();
+  $('gate').classList.remove('on'); $('app').classList.add('on');
+  await refresh();
+  await readRoute();
+  setInterval(refresh, 45_000);   // backstop only; the socket is the mechanism
+  setInterval(async () => {
+    if (Token.expAt && Date.now() > Token.expAt - 45_000){ await Token.valid(); await live(); }
+  }, 20_000);
+}
+
+/* The envelope carries more than the body: `by` is SERVER-ATTRIBUTED and `seq` is
+   the ledger position. Both kept, and kept separate from anything sealed. */
+const WIRE = new Map();
+function onSignal(m){
+  const d = m?.data ?? m;
+  const b = d?.body ?? d?.instance ?? (d && d['@id'] ? d : null);
+  S.flow = Date.now(); pulse();
+  const wire = { by: m?.by ?? m?.headers?.by ?? null,
+    seq: m?.seq ?? (m?.headers?.['Ck-Seq'] != null ? +m.headers['Ck-Seq'] : null),
+    verb: m?.verb ?? null,
+    subject: typeof m?.subject === 'string' ? m.subject : null,
+    kind: m?.kind ?? (typeof m?.subject === 'string' ? m.subject.split('.').pop() : null),
+    at: Date.now() };
+  if (b && typeof b === 'object' && b['@id']){ absorb(b, wire); return; }
+  const id = d?.id ?? d?.subject ?? d?.urn;
+  if (id) pullOne(String(id)); else refresh();
+}
+function absorb(b, wire){
+  learn(b);
+  if (wire) WIRE.set(b['@id'], { ...(WIRE.get(b['@id'])||{}), ...wire });
+  const t = typeOf(b);
+  (S.T[t] = S.T[t] || []);
+  const i = S.T[t].findIndex(x => x['@id'] === b['@id']);
+  if (i >= 0) S.T[t][i] = b; else S.T[t].unshift(b);
+  syncBuckets();
+  const j = S.facts.findIndex(x => x['@id'] === b['@id']);
+  if (j >= 0) S.facts[j] = b; else S.facts.unshift(b);
+  S.fresh.add(b['@id']);
+  setTimeout(() => { S.fresh.delete(b['@id']); render(); }, 5000);
+  render();
+}
+async function pullOne(id){
+  try{ const b = await handle.get(id); if (b && b['@id']) return absorb(b); }catch{}
+  refresh();
+}
+function pulse(){
+  const el = $('flow'); if (!el) return;
+  el.classList.remove('beat'); void el.offsetWidth; el.classList.add('beat');
+}
+function syncBuckets(){
+  S.props = S.T.Proposal || []; S.votes = S.T.Vote || [];
+  S.passes = S.T.Pass || []; S.waves = S.T.Wave || [];
+  S.mats = S.T.Materialization || []; S.ops = S.T.Operation || [];
+  S.epochs = S.T.Epoch || [];
+}
+
+async function refresh(){
+  try{
+    await live();
+    const got = await Promise.all([
+      ...ORGANS.map(o => qType(o.iri)),
+      qType(CORE+'Kernel'),
+      handle.do('instances.last', {}).then(r => r?.instances||[]).catch(()=>[]),
+    ]);
+    ORGANS.forEach((o, i) => { S.T[o.t] = got[i]; got[i].forEach(learn); });
+    S.T.Kernel = got[ORGANS.length];
+    syncBuckets();
+    const lastB = got[ORGANS.length + 1].map(r => r.body || r);
+    lastB.forEach(learn);
+    S.facts = lastB.sort((a,b)=>nsOf(b['@id'])-nsOf(a['@id']));
+    const eps = (S.epochs||[])
+      .filter(e => short(e[CORE+'producedBy']||'') === S.kernel)
+      .sort((a,b)=>(b[CORE+'epoch']||0)-(a[CORE+'epoch']||0));
+    if (eps[0]){ S.epoch = eps[0][CORE+'epoch']; S.digest = eps[0][CORE+'surfaceDigest']; }
+    else { S.epoch = null; S.digest = null; }
+  }catch(e){ /* the door's state is reported in settings, not guessed at here */ }
+  render();
+}
+
+/* ── BUCKETS ───────────────────────────────────────────────────────────── */
+const votesOn = id => S.votes.filter(v => v[CORE+'about'] === id);
+const iVoted  = id => votesOn(id).some(v => S.me && String(v[CORE+'createdBy']||'').endsWith(S.me));
+const pending = p => (p[CORE+'proposalState'] ?? p.proposalState ?? 'pending') === 'pending';
+const parties = id => new Set(votesOn(id).map(v => v[CORE+'createdBy'])).size;
+// WHOSE APPLY IT IS. Voting is cross-kernel on purpose — any kernel can be another's
+// second party, and that is the whole cure for quorum 1. APPLYING IS NOT: ck_apply mutates
+// the subject kernel's type and advances ITS epoch, so only the kernel a proposal is ABOUT
+// can apply it. MEASURED 2026-08-17: proposal-1786964039232106000 stood at 7 distinct
+// parties against quorum 2 on urn:ckp:pgRDF/kernel/ck while this bench was connected as
+// ck-dev, and the bench offered an apply control anyway — a button that cannot succeed,
+// with no reason given. Two kernels the same day read 'pending' as a vote shortage when it
+// only ever meant not-yet-applied. So: never offer a move that cannot land, and always
+// name the party who can make it.
+// = vs → . An epoch whose digest equals its predecessor's advanced a counter and moved no
+// meaning: 14 of the 31 epochs on this bench are exactly that. Printing "Epoch N sealed"
+// without this reads a tick as an achievement — CK.Lib.Js caught it on pgck epoch 16, whose
+// ab612342 is byte-identical to epoch 15. Compared PER KERNEL, because an epoch is
+// structurally private and two kernels at the same number share nothing. Returns null when
+// there is no predecessor loaded — an honest unknown, never a claim that it moved.
+function epochMoved(b){
+  const k = short(b[CORE+'producedBy'] || ''), n = Number(b[CORE+'epoch']);
+  const d = b[CORE+'surfaceDigest'] ?? b.surfaceDigest;
+  if (!k || !Number.isFinite(n) || !d) return null;
+  const prev = (S.T['Epoch'] || []).find(x => short(x[CORE+'producedBy'] || '') === k
+    && Number(x[CORE+'epoch']) === n - 1);
+  const pd = prev && (prev[CORE+'surfaceDigest'] ?? prev.surfaceDigest);
+  return pd ? pd !== d : null;
+}
+const govOf     = p => short(p[CORE+'about'] || '');
+const atQuorum  = p => pending(p) && parties(p['@id']) >= (p[CORE+'requiresQuorum'] ?? 1);
+// Compared case-insensitively because one kernel is addressed as both pgck and pgCK, and
+// that divergence must not read as a different owner.
+const applyMine = p => { const k = govOf(p);
+  return !k || !S.kernel || k.toLowerCase() === String(S.kernel).toLowerCase(); };
+function buckets(){
+  return {
+    act: S.props.filter(p => pending(p) && !iVoted(p['@id'])),
+    stuck: S.props.filter(p => pending(p) && iVoted(p['@id'])),
+    know: S.facts.slice(0, 40),
+  };
+}
+const ofKernel = b => !S.kernel || short(b[CORE+'producedBy']||'') === S.kernel;
+
+/* ── PRESENCE — not invented. CKP has no ephemeral channel, so this reports who
+   has SEALED recently: derivable, attributable, and the only honest "here". ─── */
+const ACTIVE_MS = 6*3600*1000;
+function presence(){
+  const cut = Date.now() - ACTIVE_MS, seen = new Map();
+  for (const f of [...S.facts, ...S.props, ...S.votes]){
+    const t = nsOf(f['@id']); if (!t || t < cut) continue;
+    const w = f[CORE+'createdBy']; if (!w) continue;
+    const cur = seen.get(w);
+    if (!cur || t > cur.at) seen.set(w, { at:t, kernel: short(f[CORE+'producedBy']||'') });
+  }
+  return [...seen.entries()]
+    .map(([urn, v]) => ({ urn, ...v, name: who(urn).name, me: S.me && String(urn).endsWith(S.me) }))
+    .sort((a,b) => b.at - a.at);
+}
+const avatars = (list, n=5) => `<div class="avs">${list.slice(0,n).map(h =>
+  `<span class="av${h.me?' me':''}" title="${esc(h.name)}${h.at?` · sealed ${ago(h.at)}`:''}"
+     style="color:${tint(S.digest)}">${esc(initials(h.name))}${
+     h.at && (Date.now()-h.at) < 15*60*1000 ? '<i class="dlive"></i>' : ''}</span>`).join('')}</div>`;
+
+/* ── ROUTES ────────────────────────────────────────────────────────────── */
+async function readRoute(){
+  const raw = decodeURIComponent(location.hash.replace(/^#\/?/,''));
+  const seg = raw.split('/');
+  S.refusal = null;
+  if (seg[0] === 'apps'){ S.route = { name:'apps' }; S.entity = null; S.compose = null; return render(); }
+  if (seg[0] === 'organ' && seg[1]){ S.route = { name:'organ', arg:seg[1] }; S.entity = null; S.compose = null; return render(); }
+  if (seg[0] === 'kernels'){ S.route = { name:'kernels' }; S.entity = null; S.compose = null; return render(); }
+  if (seg[0] === 'settings'){ S.route = { name:'settings' }; S.entity = null; S.compose = null; return render(); }
+  if (seg[0] === 'changed'){ S.route = { name:'changed' }; S.entity = null; S.compose = null; return render(); }
+  if (seg[0] === 'file'){ S.route = { name:'compose' }; S.entity = null;
+    S.compose = S.compose || { kind:'Finding', text:'', err:null }; return render(); }
+  if (seg[0] === 'i' && seg[1]){ S.route = { name:'entity' }; return openEntity(seg.slice(1).join('/')); }
+  S.route = { name:'home' }; S.entity = null; S.compose = null; render();
+}
+addEventListener('hashchange', readRoute);
+const go = h => { location.hash = h; };
+
+/* ── RENDER ────────────────────────────────────────────────────────────── */
+function paintFlow(){
+  const gu = $('gaveup');
+  if (gu){
+    gu.hidden = !liveGaveUp;
+    if (liveGaveUp) gu.innerHTML = `<span class="m">${esc(liveGaveUp)}</span>
+      <button class="gubtn m" id="retry">try again</button>`;
+  }
+  const cn = handle?._transport?.connection;
+  const el = $('flow');
+  if (el) el.className = 'flow' + (cn === 'connected' ? ' on' : '');
+}
+const wireLine = () => {
+  const cn = handle?._transport?.connection;
+  return `wss://${location.host}/wss · cklib ${cklibVer || '—'} · ${
+    cn === 'connected' ? 'live' : (cn || 'opening')}${S.flow ? ` · last signal ${ago(S.flow)}` : ''}`;
+};
+
+/* THE CAPSULE. The concept kernel is the subject: its ring, its name, its epoch.
+   The wave is the footnote it is standing in, and is switched on the wave's own
+   page. The capsule itself is the way into the organs. */
+function capsule(){
+  const hereWave = (S.waves||[]).find(w =>
+    S.passes.some(x => x[WAVE+'ofWave'] === w['@id'] && short(x[CORE+'producedBy']||'') === S.kernel));
+  const here = presence();
+  const open = S.route.name === 'apps';
+  return `
+    <button class="kcap" id="kcap" aria-expanded="${open}">
+      <span class="kr" style="color:${tint(S.digest)}">${ringFor(S.digest,'kr')}</span>
+      <span class="kt">
+        <span class="k1">
+          <span class="kn">${esc(S.kernel || '—')}</span>
+          <span class="ke m">epoch ${esc(S.epoch ?? '—')}</span>
+          <span id="flow" class="flow"></span>
+          <span class="chev">${open ? '⌃' : '⌄'}</span>
+        </span>
+        <span class="kw m">${hereWave ? `wave · ${esc(waveName(hereWave))}` : 'organs &amp; affordances'}</span>
+      </span>
+    </button>
+    <button class="avs" id="towave" title="who is on this wave">${
+      here.length ? avatars(here, 3).replace(/^<div class="avs">|<\/div>$/g,'') :
+      `<span class="av" style="color:var(--mut)">—</span>`}</button>
+    <button class="orb" id="orb" title="${esc(S.meName)}">${esc(initials(S.meName))}
+      <span class="ind${handle?._transport?.connection === 'connected' ? ' on' : ''}"></span></button>`;
+}
+const navBar = (g, title, count, digest) => `
+  <div class="nav">
+    <button class="nback" id="nback" aria-label="back">‹</button>
+    ${digest ? `<span class="ng" style="color:${tint(digest)}">${ringFor(digest,'ng')}</span>` : glyph(g,'ng')}
+    <span class="nt">${esc(title)}</span>
+    ${count != null ? `<span class="nc m">${esc(count)}</span>` : ''}
+  </div>`;
+
+function hereCard(extra){
+  const inv = extra || [];
+  return `<div class="here">
+    <span class="hr" style="color:${tint(S.digest)}">${ringFor(S.digest,'hr')}</span>
+    <span class="ht">
+      <span class="h1">${esc(S.kernel || '—')} <span class="m" style="font-weight:400;color:var(--dim)">epoch ${esc(S.epoch ?? '—')}</span></span>
+      <span class="h2 m">${esc(location.host)}${S.digest?` · ${esc(d8(S.digest))}`:''}</span>
+    </span>
+    <span class="hx">
+      <span class="hl">you are here</span>
+      ${inv.length ? `<span class="hi">${avatars(inv, 4).replace(/^<div class="avs">|<\/div>$/g,'')}</span>` : ''}
+    </span>
+  </div>`;
+}
+
+function render(){
+  const r = S.route;
+  $('bar1').innerHTML = capsule();
+  const main = $('main');
+
+  if (r.name === 'apps'){ main.innerHTML = viewLauncher(); paintDock(dockHome()); wire(); paintFlow(); return; }
+  if (r.name === 'organ'){ main.innerHTML = viewOrgan(r.arg); paintDock(dockHome()); wire(); paintFlow(); return; }
+  if (r.name === 'kernels'){ main.innerHTML = viewKernels(); paintDock(null); wire(); paintFlow(); return; }
+  if (r.name === 'settings'){ main.innerHTML = viewSettings(); paintDock(null); wire(); paintFlow(); return; }
+  if (r.name === 'changed'){ main.innerHTML = viewChanged(); paintDock(null); wire(); paintFlow(); return; }
+  if (r.name === 'compose'){ main.innerHTML = viewCompose(); paintDock(null); wire(); paintFlow(); return; }
+  if (S.refusal){ main.innerHTML = viewRefusal(); paintDock(null); wire(); paintFlow(); return; }
+  if (r.name === 'entity'){ main.innerHTML = viewDetail(); paintDock(dockEntity()); wire(); paintFlow(); return; }
+
+  main.innerHTML = viewHome();
+  paintDock(dockHome());
+  wire(); paintFlow();
+  setTimeout(markSeen, 1500);   // stamp after drawing, so "since you looked" is honest
+}
+
+/* ═══ HOME — the board of the wave you are standing in ════════════════════ */
+function viewHome(){
+  const b = buckets();
+  return `
+    ${bridge()}
+    ${inboxView()}
+    ${S.sent ? `<div class="bar m">sealed · ${esc(S.sent.id||'')} · watching for it on the wire</div>` : ''}
+    ${section('act','to act on', b.act.map(rowProposal), '')}
+    ${section('stuck','stuck', b.stuck.map(rowProposal), '')}
+    ${section('know','to know about', b.know.map(rowFact), '+ file a finding')}
+    <div class="note">Counts are read from the door on every event, not on a timer.
+      An empty section is an answer, not a gap.</div>`;
+}
+
+/* ═══ THE LAUNCHER — is anyone here · does anything need me · are we idle ══ */
+function statusCard(){
+  const here = presence();
+  const others = here.filter(h => !h.me);
+  const live = here.filter(h => (Date.now()-h.at) < 15*60*1000);
+  const b = buckets();
+  const an = anomalies();
+  const hi = an.filter(a => a.sev === 'hi').length;
+  const need = b.act.length + docked().filter(d => d.verb === 'apply').length;
+  const applyable = S.props.filter(p => atQuorum(p) && applyMine(p));
+  const openWork = (S.T.Ticket||[]).filter(t => !/^(done|closed|archived)$/i.test(String(t[WAVE+'ticketState']||t.ticketState||'')));
+  const idle = !live.length;
+  const lastAt = here[0]?.at;
+  const whyIdle = applyable.length
+    ? `idle — ${applyable.length} decision${applyable.length>1?'s':''} agreed and unapplied, waiting on someone to make it real`
+    : b.stuck.length
+      ? `idle — ${b.stuck.length} waiting on another distinct party, and none has turned up`
+      : lastAt ? `idle — nothing sealed since ${ago(lastAt)} ago` : 'idle — nothing has been sealed here in 6h';
+  return `<div class="status">
+    <div class="srow">
+      ${avatars(here.length ? here : [{name:'—'}], 5)}
+      <span>${here.length
+        ? `${here.length} sealed here in the last 6h · ${live.length ? `${live.length} live now` : 'none in the last 15m'}`
+        : 'nobody has sealed here in the last 6h'}</span>
+    </div>
+    ${live.filter(h=>!h.me).length ? `<div class="srow">
+      <span class="sd on"></span>
+      <span>${esc(live.filter(h=>!h.me)[0].name)} is working — sealed ${esc(ago(live.filter(h=>!h.me)[0].at))} ago</span>
+    </div>` : ''}
+    <div class="srow ${need||hi?'no':'dim'}">
+      <span class="sd ${need||hi?'no':'i'}"></span>
+      <span>${need || hi
+        ? `needs you: ${[need?`${need} to decide`:null, hi?`${hi} judged by nothing`:null].filter(Boolean).join(' · ')}`
+        : 'nothing needs you right now'}</span>
+    </div>
+    <div class="srow">
+      <span class="sd q"></span>
+      <span>${openWork.length
+        ? `not complete — ${openWork.length} of ${(S.T.Ticket||[]).length} tickets still open`
+        : (S.T.Ticket||[]).length
+          ? 'complete — every ticket closed, each by a second party'
+          : 'no ticket has been opened on this kernel'}</span>
+    </div>
+    ${idle ? `<div class="srow dim"><span class="sd i"></span><span>${esc(whyIdle)}</span></div>` : ''}
+  </div>`;
+}
+
+function organCount(t){
+  const rows = (S.T[t]||[]).filter(ofKernel);
+  const hot = rows.some(x => (x[CORE+'conformsToShape'] ?? x.conformsToShape) == null);
+  return { n: rows.length, hot };
+}
+function viewLauncher(){
+  const tiles = [
+    ...ORGANS.map(o => ({ ...o, ...organCount(o.t), href:`#/organ/${o.t}` })),
+    { t:'Kernel', label:'Kernels', g:'g-kernel', n: kernelRoster().length, hot:false, href:'#/kernels' },
+  ];
+  return `<div class="lsh">
+    ${statusCard()}
+    <div class="tiles">
+      ${tiles.map((o,i) => `<button class="tile" data-href="${o.href}" style="animation-delay:${(i*30)}ms">
+        <span class="tc m${o.hot?' hot':''}">${esc(o.n)}</span>
+        ${o.t === 'Epoch' && S.digest ? `<span class="tg" style="color:${tint(S.digest)}">${ringFor(S.digest,'tg')}</span>` : glyph(o.g,'tg')}
+        <span class="tl">${esc(o.label)}</span>
+      </button>`).join('')}
+    </div>
+    <div class="lfoot">each organ opens its own page, scoped to ${esc(S.kernel||'this kernel')}
+      on ${esc(location.host)}</div>
+  </div>`;
+}
+
+/* ═══ AN ORGAN PAGE — lists, grouped by the state that decides what to do ══ */
+function groupsFor(t, rows){
+  const g = (title, list) => ({ title, rows:list });
+  if (t === 'Proposal'){
+    const mine = rows.filter(p => pending(p) && !iVoted(p['@id']));
+    const stuck = rows.filter(p => pending(p) && iVoted(p['@id']));
+    const done = rows.filter(p => !pending(p));
+    return [g('waiting on you', mine), g('you decided — waiting on others', stuck), g('applied', done)];
+  }
+  if (t === 'Finding'){
+    const prom = rows.filter(f => f[WAVE+'promotedTo'] ?? f.promotedTo);
+    return [g('open — unowned until someone promotes it', rows.filter(f => !(f[WAVE+'promotedTo'] ?? f.promotedTo))),
+            g('promoted', prom)];
+  }
+  if (t === 'Ticket'){
+    const by = new Map();
+    rows.forEach(x => {
+      const k = String(x[WAVE+'ticketState'] || x.ticketState || 'unstated');
+      (by.get(k) || by.set(k, []).get(k)).push(x);
+    });
+    return [...by.entries()].map(([k,v]) => g(k.replace(/_/g,' '), v));
+  }
+  if (t === 'Epoch' || t === 'Pass'){
+    const by = new Map();
+    rows.forEach(x => {
+      const k = short(x[CORE+'producedBy']||'') || 'unattributed';
+      (by.get(k) || by.set(k, []).get(k)).push(x);
+    });
+    return [...by.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v]) => g(k, v));
+  }
+  if (t === 'Operation'){
+    const mine = rows.filter(o => ME_COMPONENT.includes(String(o[WAVE+'opTarget']||'')));
+    return [g('addressed to you', mine), g('addressed elsewhere', rows.filter(o => !mine.includes(o)))];
+  }
+  return [g('all', rows)];
+}
+function viewOrgan(t){
+  const o = ORGANS.find(x => x.t === t) || { t, label:t, g:'g-fact' };
+  const all = (S.T[t]||[]).filter(ofKernel).sort((a,b)=>nsOf(b['@id'])-nsOf(a['@id']));
+  S.sibs = all.map(x => x['@id']);
+  const inv = [...new Set(all.map(x => x[CORE+'createdBy']).filter(Boolean))]
+    .map(u => ({ name: who(u).name, me: S.me && String(u).endsWith(S.me) }));
+  const groups = groupsFor(t, all).filter(g => g.rows.length);
+  const rowOf = x => typeOf(x) === 'Proposal' ? rowProposal(x) : rowFact(x);
+  return `
+    ${navBar(o.g, o.label, `${all.length} on ${esc(S.kernel||'—')}`, t === 'Epoch' ? S.digest : null)}
+    ${hereCard(inv)}
+    ${groups.length ? groups.map(g => `
+      <div class="gsec"><span class="gt">${esc(g.title)}</span><span class="gl"></span>
+        <span class="gn m">${g.rows.length}</span></div>
+      <div class="rows">${g.rows.map(rowOf).join('')}</div>`).join('')
+      : `<div class="empty">nothing of this kind on ${esc(S.kernel||'this kernel')} —
+          the absence is itself a reading</div>`}
+    ${t === 'Finding' ? `<div style="padding:18px 16px 0"><button class="btn" id="file">+ file a finding</button></div>` : ''}`;
+}
+
+/* ═══ KERNELS — the primary switch, on its own page ═══════════════════════ */
+function kernelRoster(){
+  const by = new Map();
+  for (const e of S.epochs || []){
+    const k = short(e[CORE+'producedBy']||''); if (!k) continue;
+    const cur = by.get(k);
+    if (!cur || (e[CORE+'epoch']||0) > (cur[CORE+'epoch']||0)) by.set(k, e);
+  }
+  return [...by.entries()].map(([slug, e]) => ({
+    slug, epoch: e[CORE+'epoch'], digest: e[CORE+'surfaceDigest'],
+    decisions: S.props.filter(p => short(p[CORE+'about']||'') === slug
+                              || short(p[CORE+'producedBy']||'') === slug).length,
+  })).sort((a,b) => a.slug.localeCompare(b.slug));
+}
+function viewKernels(){
+  const ks = kernelRoster();
+  const names = ks.map(k => k.slug.toLowerCase());
+  const dup = names.some((n,i) => names.indexOf(n) !== i);
+  const inv = presence();
+  return `
+    ${navBar('g-kernel','Concept Kernels', `${ks.length} on the door`, null)}
+    ${hereCard(inv)}
+    ${dup ? `<div class="inwarn m">two kernels share a name — the notched ring is the
+      difference, and it is drawn from the surface digest itself</div>` : ''}
+    ${ks.length ? ks.map(k => `<button class="swrow${k.slug===S.kernel?' cur':''}" data-kernel="${esc(k.slug)}">
+      <span class="swmark" style="color:${tint(k.digest)}">${ringFor(k.digest,'g')}</span>
+      <span class="swt">
+        <span class="swn">${esc(k.slug)}</span>
+        <span class="swm m">epoch ${esc(k.epoch ?? '—')} · ${esc(k.decisions)} decision${k.decisions===1?'':'s'} · ${
+          esc(String(k.digest||'').slice(0,10) || 'no surface')}</span>
+      </span>
+      ${k.slug===S.kernel?'<span class="cd"></span>':'<span class="swgo">›</span>'}
+    </button>`).join('') : `<div class="empty">no kernel has sealed an epoch</div>`}
+    <div class="note" style="padding-top:18px">Switching re-reads from the same door.
+      Nothing is cached across a switch, because a stale surface is how a reader judges one
+      kernel by another's meaning.</div>`;
+}
+
+/* ── waves: rostered here, but SWITCHED on a wave's own page ────────────── */
+const waveName = w => {
+  const raw = String(w?.[RDFS+'label'] || '').trim();
+  const name = raw.split(/\s+[—–:]\s+/)[0] || raw;
+  return name.length > 34 ? name.slice(0, 33) + '…' : name;
+};
+function waveRoster(){
+  return (S.waves||[]).map(w => {
+    const ps = S.passes.filter(x => x[WAVE+'ofWave'] === w['@id']);
+    const kernels = [...new Set(ps.map(x => short(x[CORE+'producedBy']||'')))].filter(Boolean);
+    return { id:w['@id'], label: waveName(w) || short(w['@id']),
+      blurb: lede(String(w[RDFS+'label']||'').split(/\s+[—–:]\s+/).slice(1).join(' — '), 64),
+      passes: ps.length, kernels, here: kernels.includes(S.kernel),
+      digest: ps.map(x=>x[CORE+'surfaceDigest']).filter(Boolean)[0] };
+  }).sort((a,b) => b.passes - a.passes);
+}
+function waveSwitchCard(cur){
+  const ws = waveRoster().filter(w => w.id !== cur);
+  if (!ws.length) return '';
+  return `<div class="card">
+    <div class="cap">switch wave — same kernel</div>
+    ${ws.map(w => `<button class="adj" data-open="${esc(w.id)}">
+      <span class="ag" style="color:${tint(w.digest)}">${ringFor(w.digest,'ag')}</span>
+      <span class="at">
+        <span class="ar">${esc(w.passes)} pass${w.passes===1?'es':''}${w.here?' · you are here':''}</span>
+        <span class="al">${esc(w.label)}</span>
+        <span class="ah m">${esc(w.kernels.join(' · ') || 'nobody has filed')}</span>
+      </span><span class="ac">›</span></button>`).join('')}
+  </div>`;
+}
+
+/* ═══ SETTINGS — where the door belongs ══════════════════════════════════ */
+function viewSettings(){
+  const th = localStorage.getItem('ck.theme') || 'auto';
+  const mo = localStorage.getItem('ck.motion') !== 'off';
+  const cn = handle?._transport?.connection;
+  const seg = (v,l) => `<button data-th="${v}" aria-pressed="${th===v}">${l}</button>`;
+  return `
+    ${navBar('g-door','Settings', null, null)}
+    <div class="set">
+      <div class="gsec" style="padding-left:0"><span class="gt">connection</span><span class="gl"></span></div>
+      <div class="srowb flat">
+        <span class="dot ${cn==='connected'?'on':''}"></span>
+        <span class="st"><span class="s1">${esc(location.host)}</span>
+          <span class="s2 m wl">${esc(wireLine())}</span></span>
+      </div>
+      <div class="srowb flat">
+        <span class="st"><span class="s1">Event scope</span>
+          <span class="s2 m">event.kernel.${esc(S.kernel||'*')}.&gt; — every seal arrives with
+            <b>by</b> and <b>Ck-Seq</b>, so attribution is the substrate's, not the body's</span></span>
+      </div>
+
+      <div class="gsec" style="padding-left:0"><span class="gt">identity</span><span class="gl"></span></div>
+      <div class="srowb flat">
+        <span class="orb" style="pointer-events:none">${esc(initials(S.meName))}</span>
+        <span class="st"><span class="s1">${esc(S.meName)}</span>
+          <span class="s2 m">derived by the substrate — you cannot set createdBy</span></span>
+      </div>
+      <button class="srowb" data-act="switch"><span class="st"><span class="s1">Switch user…</span>
+        <span class="s2">sign in as somebody else on this realm</span></span><span class="swgo">›</span></button>
+      <button class="srowb danger" data-act="out"><span class="st"><span class="s1">Sign out</span>
+        <span class="s2">clears this session on this origin</span></span></button>
+
+      <div class="gsec" style="padding-left:0"><span class="gt">appearance</span><span class="gl"></span></div>
+      <div class="seg">${seg('light','Light')}${seg('dark','Dark')}${seg('auto','Auto')}</div>
+      <button class="srowb" id="motion">
+        <span class="st"><span class="s1">Liveness motion</span>
+          <span class="s2">presence pulses, landing highlights, unjudged marks</span></span>
+        <span class="sw2${mo?' on':''}"><i></i></span>
+      </button>
+      <div class="note" style="padding:14px 0 0">The door is one choice, made rarely.
+        The work is the kernel you are standing in.</div>
+    </div>`;
+}
+
+/* ═══ WHAT CHANGED — a page, grouped, with the wire under it ══════════════ */
+const SEEN_KEY = 'ck.seen';
+const lastSeen = () => +(localStorage.getItem(SEEN_KEY) || 0);
+const markSeen = () => localStorage.setItem(SEEN_KEY, String(Date.now()));
+
+function anomalies(){
+  const out = [];
+  const uniq = new Map([...S.facts, ...S.props, ...S.votes].map(x => [x['@id'], x]));
+  const rows = [...uniq.values()];
+  const unjudged = rows.filter(x => (x[CORE+'conformsToShape'] ?? x.conformsToShape) == null);
+  if (unjudged.length) out.push({ sev:'hi',
+    text:`${unjudged.length} sealed fact${unjudged.length>1?'s':''} judged by nothing`,
+    why:'ledgered and verified, but no shape selected a focus node', go:unjudged[0]['@id'] });
+  const anon = rows.filter(x => /participant:anon:/.test(String(x[CORE+'createdBy'] ?? '')));
+  if (anon.length) out.push({ sev:'mid',
+    text:`${anon.length} seal${anon.length>1?'s':''} carry no verified identity`,
+    why:'admitted anonymously — attribution cannot be enforced', go:anon[0]['@id'] });
+  const byK = new Map();
+  for (const e of rows.filter(x => typeOf(x) === 'Epoch')){
+    const k = short(e[CORE+'producedBy']||'');
+    if (!byK.has(k)) byK.set(k, []);
+    byK.get(k).push(e);
+  }
+  let flat = 0, flatEx = null;
+  for (const eps of byK.values()){
+    eps.sort((a,b)=>(a[CORE+'epoch']||0)-(b[CORE+'epoch']||0));
+    for (let i=1;i<eps.length;i++){
+      const d = eps[i][CORE+'surfaceDigest'];
+      if (d && d === eps[i-1][CORE+'surfaceDigest']){ flat++; flatEx = flatEx || eps[i]['@id']; }
+    }
+  }
+  if (flat) out.push({ sev:'mid',
+    text:`${flat} epoch${flat>1?'s':''} advanced without moving the surface digest`,
+    why:'the number changed and the meaning in force did not', go:flatEx });
+  // Split by whose apply it is. Ours is work; theirs is a message worth carrying. Merging
+  // them produced a standing 'act' nag nobody on this bench could ever discharge.
+  const idle = S.props.filter(p => atQuorum(p) && applyMine(p));
+  if (idle.length) out.push({ sev:'act',
+    text:`${idle.length} decision${idle.length>1?'s':''} reached quorum and none was applied`,
+    why:'the parties agreed; the change has not been made', go:idle[0]['@id'] });
+  const theirs = S.props.filter(p => atQuorum(p) && !applyMine(p));
+  if (theirs.length) out.push({ sev:'mid',
+    text:`${theirs.length} decision${theirs.length>1?'s':''} agreed on ${
+      [...new Set(theirs.map(govOf))].join(' · ')} and unapplied — not ours to apply`,
+    why:'quorum stands; apply advances THEIR epoch, so it waits on them and not on another vote',
+    go:theirs[0]['@id'] });
+  return out;
+}
+
+function bridge(){
+  const since = lastSeen();
+  const rows = [...S.facts, ...S.props];
+  const fresh = since ? rows.filter(x => nsOf(x['@id']) > since) : [];
+  const an = anomalies();
+  if (!since && !an.length) return '';
+  const mine = fresh.filter(x => S.me && String(x[CORE+'createdBy']||'').endsWith(S.me));
+  const tally = new Map();
+  for (const f of fresh){ const n = who(f[CORE+'createdBy']).name; tally.set(n, (tally.get(n)||0)+1); }
+  const movers = [...tally.entries()].sort((a,b)=>b[1]-a[1]).slice(0,2).map(([n,c]) => `${n} ${c}`).join(' · ');
+  return `<div class="bridge">
+    ${since ? `<button class="brow" data-href="#/changed">
+      <span class="bk">since you looked</span>
+      <span class="bv">${fresh.length
+        ? `${fresh.length} new · ${mine.length ? `${mine.length} yours` : 'none yours'}${movers ? ` · ${esc(movers)}` : ''}`
+        : 'nothing moved'}</span></button>` : ''}
+    ${an.map(a => `<button class="brow ${a.sev}" data-open="${esc(a.go||'')}">
+      <span class="bk">${a.sev==='hi'?'detected':a.sev==='act'?'waiting':'noted'}</span>
+      <span class="bv">${esc(a.text)}<span class="bw"> — ${esc(a.why)}</span></span></button>`).join('')}
+  </div>`;
+}
+
+function viewChanged(){
+  const since = lastSeen();
+  const rows = [...S.facts, ...S.props].filter(x => !since || nsOf(x['@id']) > since);
+  const byKind = new Map();
+  rows.forEach(x => { const t = typeOf(x); (byKind.get(t) || byKind.set(t,[]).get(t)).push(x); });
+  const w = [...WIRE.entries()].sort((a,b) => (b[1].at||0)-(a[1].at||0)).slice(0, 12);
+  return `
+    ${navBar('g-mat','What changed', since ? `since ${ago(since)} ago` : 'first look', null)}
+    ${[...byKind.entries()].map(([t, list]) => `
+      <div class="gsec"><span class="gt">${esc(t)}</span><span class="gl"></span>
+        <span class="gn m">${list.length}</span></div>
+      <div class="rows">${list.map(x => typeOf(x)==='Proposal'?rowProposal(x):rowFact(x)).join('')}</div>`).join('')
+      || `<div class="empty">nothing moved since you last looked</div>`}
+    <div class="gsec"><span class="gt">on the wire</span><span class="gl"></span>
+      <span class="gn m">granted scope</span></div>
+    ${w.length ? w.map(([id, e]) => `<button class="brow" data-open="${esc(id)}">
+      <span class="bk">${esc(e.seq != null ? `seq ${e.seq}` : (e.kind||'event'))}</span>
+      <span class="bv m" style="font-size:11.5px">${esc(e.subject || short(id))}
+        <span class="bw"> — ${esc(e.verb || 'sealed')}${e.by?` · by ${esc(who(e.by).name)}`:''} · ${esc(ago(e.at))}</span></span>
+    </button>`).join('') : `<div class="note">no envelope has arrived on this session yet</div>`}
+    <div class="note">Each line is an envelope the substrate sent, not a body's claim about itself.</div>`;
+}
+
+/* ═══ THE INBOX — wave:Operation carries opTarget, so addressing already exists ══ */
+const ME_COMPONENT = [WAVE+'c-ckdev', 'ckp://Component#c-ckdev'];
+const inbox = () => (S.ops||[])
+  .filter(o => ME_COMPONENT.includes(String(o[WAVE+'opTarget']||'')))
+  .sort((a,b) => {
+    const rank = k => k === 'escalate' ? 0 : k === 'publish' ? 2 : 1;
+    return rank(a[WAVE+'opKind']) - rank(b[WAVE+'opKind']) || (nsOf(b['@id'])||0) - (nsOf(a['@id'])||0);
+  });
+function inboxView(){
+  const rows = inbox(); if (!rows.length) return '';
+  const absent = !(S.T.Component||[]).some(c => ME_COMPONENT.includes(c['@id']));
+  return `<div class="sec inbox">
+    <div class="hd m u"><span>addressed to you · ${rows.length}</span></div>
+    ${absent ? `<div class="inwarn m">${esc(S.kernel||'this kernel')} answers to
+      ${esc(short(ME_COMPONENT[0]))} but has sealed no wave:Component — this address resolves by
+      string match, not by presence</div>` : ''}
+    <div class="rows">${rows.map(o => {
+      const kind = o[WAVE+'opKind'] || 'operation';
+      const by = who(o[CORE+'createdBy']);
+      const txt = o[RDFS+'label'] || o[WAVE+'label'] || lede(o[WAVE+'opEvidence']||'', 160);
+      const ev = String(o[WAVE+'opEvidence']||'');
+      const asks = /^ckp:\/\//.test(ev) ? ev : null;
+      const tgt = asks ? S.props.find(x => x['@id'] === asks) : null;
+      const settled = tgt ? (tgt[CORE+'proposalState'] === 'applied' ? 'applied without you'
+                    : iVoted(asks) ? 'you answered this' : null) : null;
+      return `<button class="row${S.fresh.has(o['@id'])?' fresh':''}" data-open="${esc(o['@id'])}">
+        ${mark(o)}
+        <div>
+          <div class="meta m">
+            <span class="badge">${esc(kind)}</span><span>${esc(ago(nsOf(o['@id'])))}</span>
+            <span class="actor"><span class="dot k"></span>${esc(by.name)}</span>
+            <span class="grow"></span>
+            ${o[WAVE+'opAtPass']!=null?`<span class="state u">pass ${esc(o[WAVE+'opAtPass'])}</span>`:''}
+          </div>
+          <div class="ttl">${esc(String(txt).slice(0,190))}</div>
+          ${asks ? `<div class="waits m">${settled
+            ? `<span class="settled">${esc(settled)}</span> · ${esc(short(asks))}`
+            : `asks you to act on ${esc(short(asks))}`}</div>` : ''}
+        </div></button>`;
+    }).join('')}</div>
+  </div>`;
+}
+
+/* ── SECTIONS AND ROWS ─────────────────────────────────────────────────── */
+function section(id, title, rows, action){
+  return `<div class="sec" id="s-${id}">
+    <div class="hd m u"><span>${esc(title)}</span>${
+      action ? `<button class="act m u" id="file">${esc(action)}</button>` : ''}</div>
+    ${rows.length ? `<div class="rows">${rows.join('')}</div>`
+      : `<div class="empty">nothing here — that is the answer, not a gap</div>`}
+  </div>`;
+}
+function couldClose(id){
+  const voted = new Set(votesOn(id).map(v => v[CORE+'createdBy']));
+  return [...DIR.entries()].filter(([w,e]) => !voted.has(w) && !e.anon && e.n >= 2)
+    .sort((a,b) => b[1].n - a[1].n).slice(0, 3).map(([w]) => who(w).name);
+}
+function titleOf(p, verb){
+  const d = p.proposalDetail || {};
+  if (d.label) return d.label;
+  if (d.verb) return `Register ${d.verb}`;
+  if (d.targetClass) return `${String(verb).replace(/_/g,' ')} for ${term(d.targetClass)}`;
+  return `${String(verb).replace(/_/g,' ')} on ${short(p[CORE+'about']||'this bench')}`;
+}
+function rowProposal(p){
+  const id = p['@id'], n = parties(id), q = p[CORE+'requiresQuorum'] ?? 1;
+  const met = n >= q, applied = (p[CORE+'proposalState']||'') === 'applied';
+  const verb = p.proposalDetail?.verb || p[CORE+'proposalOp'] || 'proposal';
+  const by = who(p[CORE+'createdBy']);
+  return `<button class="row${S.fresh.has(id)?' fresh':''}" data-open="${esc(id)}">
+    ${mark(p)}
+    <div>
+      <div class="meta m">
+        <span class="badge">${esc(short(p[CORE+'about']||'') || 'fleet')}</span>
+        <span>${esc(ago(nsOf(id)))}</span>
+        <span class="actor"><span class="dot k"></span>${esc(by.name)}</span>
+        <span class="grow"></span>
+        <span class="state ${applied?'':rehearsal(p)?'reh':met?'':'wait'} u">${
+          applied ? 'applied' : rehearsal(p) ? 'rehearsal' : met ? 'quorum met' : `waits on ${Math.max(0,q-n)}`}</span>
+      </div>
+      <div class="ttl">${esc(titleOf(p, verb))}</div>
+      ${applied ? '' : rehearsal(p)
+        ? `<div class="waits m">quorum 1 — one identity would propose, vote and apply</div>`
+        : met ? `<div class="waits m">quorum met — ${applyMine(p)
+            ? 'ours to apply'
+            : `${esc(govOf(p))} applies it; a further vote changes nothing`}</div>`
+        : `<div class="waits m">could be closed by ${esc(couldClose(id).join(' · ') || 'any verified party')}</div>`}
+    </div></button>`;
+}
+function sentence(f){
+  const t = typeOf(f);
+  const lab = f[RDFS+'label'] || f.label;
+  if (lab) return lab;
+  const reason = f[CORE+'reason'] || f[WAVE+'reason'] || f.reason
+              || f[WAVE+'evidence'] || f.evidence || f[WAVE+'opEvidence'];
+  if (t === 'Vote'){
+    const p = S.props.find(x => x['@id'] === f[CORE+'about']);
+    const val = f[CORE+'voteValue'] || 'voted';
+    return `${who(f[CORE+'createdBy']).name} ${val}d ${p ? `“${titleOf(p, p.proposalDetail?.verb || p[CORE+'proposalOp'] || '')}”` : short(f[CORE+'about']||'a proposal')}`;
+  }
+  if (t === 'Epoch'){
+    const mv = epochMoved(f);
+    return `Epoch ${f[CORE+'epoch']} ${mv === false ? 'advanced — surface UNCHANGED'
+      : mv === true ? 'sealed — surface moved' : 'sealed'} — digest ${d8(f[CORE+'surfaceDigest'])}`;
+  }
+  if (t === 'Materialization') return `Epoch ${f[CORE+'fromEpoch']} → ${f[CORE+'toEpoch']} composed`;
+  if (t === 'Adoption') return `Adopted ${term(f[CORE+'adopts'] || f[CORE+'adopted'] || '')} — pinned ${d8(f[CORE+'sourceDigest'])}`;
+  if (t === 'Proposal') return titleOf(f, f.proposalDetail?.verb || f[CORE+'proposalOp'] || '');
+  if (t === 'Membership') return `${who(f[CORE+'memberIs']).name} joined ${term(f[CORE+'memberOf'])}`;
+  if (t === 'Wave') return waveName(f) || short(f['@id']);
+  if (t === 'Pass') return `${short(f[CORE+'producedBy']||'')} filed a pass at epoch ${f[CORE+'epoch']}`;
+  if (t === 'Confirmation'){
+    const of = f[WAVE+'confirmsTicket'] || f.confirmsTicket;
+    return lede(reason) || `Confirmed ${of ? short(of) : 'a filing'} — a second party arrived`;
+  }
+  return lede(reason) || short(f['@id']);
+}
+function rowFact(f){
+  const t = typeOf(f), by = who(f[CORE+'createdBy']);
+  const ep = f[CORE+'sealedAtEpoch'];
+  const w = WIRE.get(f['@id']);
+  return `<button class="row${S.fresh.has(f['@id'])?' fresh':''}" data-open="${esc(f['@id'])}">
+    ${mark(f)}
+    <div>
+      <div class="meta m">
+        <span class="badge">${esc(short(f[CORE+'producedBy']||'') || t)}</span>
+        <span>${esc(ago(nsOf(f['@id'])))}</span>
+        <span class="actor"><span class="dot k"></span>${esc(by.name)}</span>
+        <span class="grow"></span>
+        ${w?.seq != null ? `<span class="state u seq">seq ${esc(w.seq)}</span>`
+          : ep != null ? `<span class="state u">epoch ${esc(ep)}</span>` : ''}
+      </div>
+      <div class="ttl">${esc(String(sentence(f)).slice(0,150))}</div>
+    </div></button>`;
+}
+
+/* ── ADJACENCY, MOVES: unchanged in substance from the desk surface ─────── */
+function adjacent(b){
+  const out = [], t = typeOf(b);
+  const kurn = b[CORE+'producedBy'] ?? b.producedBy;
+  const kslug = String(kurn||'').match(/^urn:ckp:([^/]+)\/kernel/)?.[1];
+  const ep = b[CORE+'sealedAtEpoch'] ?? b.sealedAtEpoch;
+  const add = (kind, g, rel, id, label, how) => id && out.push({ kind, glyph:g, rel, id, label, how });
+  if (kslug && ep != null)
+    add('Epoch','g-fact','judged against the surface at', `urn:ckp:${kslug}/epoch/${ep}`, `epoch ${ep}`, 'declared');
+  if (kslug && ep != null && t !== 'Wave' && t !== 'Pass'){
+    const mine = S.passes
+      .filter(p => short(p[CORE+'producedBy']||'') === kslug && (p[CORE+'epoch'] ?? -1) <= ep)
+      .sort((a,c) => (c[CORE+'epoch']||0) - (a[CORE+'epoch']||0));
+    const pass = mine[0];
+    if (pass){
+      const exact = (pass[CORE+'epoch'] ?? -1) === ep;
+      // "filed within" asserts a DECLARED membership. Only the exact-epoch case is even
+      // arguably that; the fallback is a nearest-neighbour guess this page made, and calling
+      // it a filing renders an inference as provenance on a page whose main button is CITE.
+      // That is the decorative-reference class the index-cites-own-pass obligation closes for
+      // wave:Index — a forPass must point at a real Pass. Same defect, different surface.
+      add('Pass','g-ruling', exact ? 'filed within the pass' : 'nearest pass — NOT a declared filing',
+          pass['@id'], `pass at epoch ${pass[CORE+'epoch']}`,
+          exact ? 'derived — same kernel and epoch'
+                : `inferred by this page — epoch ${ep} declares no pass, and nothing sealed this link`);
+      const wurn = pass[WAVE+'ofWave'];
+      const w = S.waves.find(x => x['@id'] === wurn);
+      add('Wave','g-wave','part of the wave', wurn, w ? waveName(w) : short(wurn||''), 'declared by that pass');
+    }
+  }
+  const applied = b[CORE+'appliedEpoch'];
+  if (kslug && applied != null){
+    add('Epoch','g-fact','produced the surface at', `urn:ckp:${kslug}/epoch/${applied}`, `epoch ${applied}`, 'declared');
+    const m = S.mats.find(x => x[CORE+'producesEpoch'] === `urn:ckp:${kslug}/epoch/${applied}`);
+    add('Materialization','g-mat','composed by', m?.['@id'],
+        m ? `epoch ${m[CORE+'fromEpoch']} → ${m[CORE+'toEpoch']}` : '', 'declared');
+  }
+  if (t === 'Wave'){
+    const ps = S.passes.filter(x => x[WAVE+'ofWave'] === b['@id']).sort((a,c)=>(a[CORE+'epoch']||0)-(c[CORE+'epoch']||0));
+    const kernels = [...new Set(ps.map(x => short(x[CORE+'producedBy']||'')))].filter(Boolean);
+    if (kernels.length) out.push({ kind:'Note', glyph:'g-adoption',
+      rel:`${kernels.length} kernel${kernels.length>1?'s':''} filed a pass here`,
+      id:ps[0]['@id'], label:kernels.join(' · '), how:'declared by each pass' });
+    for (const x of ps){
+      const retired = x[CORE+'retiredAtEpoch'] != null;
+      add('Pass','g-ruling', retired ? 'a pass, retired' : 'a pass', x['@id'],
+        `${short(x[CORE+'producedBy']||'')} at epoch ${x[CORE+'epoch']}`,
+        retired ? 'withdrawn by its filer, kept legible' : 'declared');
+    }
+  }
+  if (t === 'Pass'){
+    const wurn = b[WAVE+'ofWave'];
+    const w = S.waves.find(x => x['@id'] === wurn);
+    add('Wave','g-wave','one turn of the wave', wurn, w ? waveName(w) : short(wurn||''), 'declared');
+    const dir = b[WAVE+'director'];
+    if (dir) out.push({ kind:'Note', glyph:'g-ticket', rel:'directed by', id:null,
+      label:who(dir).name === '—' ? short(dir) : who(dir).name, how:'declared' });
+  }
+  if (t === 'Proposal'){
+    const op = b[CORE+'proposalOp'];
+    const kin = S.props.filter(x => x[CORE+'proposalOp'] === op && x['@id'] !== b['@id']);
+    if (kin.length) add('Proposal','g-proposal', `${kin.length} other ${esc(op)} decision${kin.length>1?'s':''}`,
+      kin[0]['@id'], lede(titleOf(kin[0], op), 52), 'same op');
+  }
+  return out;
+}
+function moves(b){
+  const t = typeOf(b), id = b['@id'], out = [];
+  const open = (verb, what, how) => out.push({ open:true, verb, what, how });
+  const shut = (verb, what, why, instead) => out.push({ open:false, verb, what, why, instead });
+  if (t === 'Proposal'){
+    const applied = b[CORE+'proposalState'] === 'applied';
+    const q = b[CORE+'requiresQuorum'] ?? 1, n = parties(id);
+    if (applied){
+      shut('vote','second this','it is applied — the decision is already real',
+        'read what it produced, and recheck its gate against the surface it claims');
+      shut('apply','apply this','already applied', null);
+    } else if (iVoted(id)){
+      shut('vote','vote again','quorum counts distinct parties, so a second vote from you changes nothing',
+        'bring another party — the ballot names who could close it');
+      if (n >= q && applyMine(b)) open('apply','apply it','agreed by enough parties; this makes it real');
+      else if (n >= q) shut('apply','apply it',
+        `agreed by ${n} parties — but this governs ${esc(govOf(b))}, and apply advances ${esc(govOf(b))}'s epoch, not ours`,
+        `it is not blocked on a vote: tell ${esc(govOf(b))} that quorum stands at ${n} against ${q} and the apply is theirs to call`);
+      else shut('apply','apply it', `waits on ${Math.max(0,q-n)} more distinct part${q-n===1?'y':'ies'}`,
+        'ask by name — an Operation with opTarget reaches a component without routing');
+    } else {
+      open('vote','approve or reject','you would be a distinct party');
+      open('withhold','withhold and file','an evidenced withhold outweighs a reflex approval');
+    }
+  }
+  if (t === 'Finding'){
+    if (b[WAVE+'promotedTo']) shut('promote','promote it','already promoted — it is someone\'s ticket now', null);
+    else shut('promote','promote to a Ticket',
+      'instance.update refuses every declared key on this bench, so promotedTo cannot be written by a filer',
+      'seal a Confirmation that cites this finding — it records the same judgement and is accepted today');
+    open('confirm','confirm it','a second party arriving at the same place is what closes work');
+    shut('transition','move findingState',
+      'the engine reads the from-state as "planned" while this instance declares "open" — measured at epoch 5',
+      'the sealed map is the authority; ask it and it returns the legal set with its refusal');
+  }
+  if (t === 'Ticket'){
+    shut('transition','move ticketState','never render a free list of states — ask the machine',
+      'the sealed transition map answers, and an illegal move names the moves that are legal');
+    open('confirm','confirm it','only a party who is not the owner can close a ticket');
+  }
+  if (t === 'Epoch' || t === 'Materialization')
+    shut('any','change it','an epoch is a record of what was in force; nothing edits it',
+      'compare it — two surfaces citing one digest are the same surface, whatever the numbers say');
+  open('cite','cite it in a filing','every id here is an address another kernel can resolve');
+  open('link','send it to someone','the URL carries provenance; a relay does not');
+  return out;
+}
+function movesView(b){
+  const rows = moves(b); if (!rows.length) return '';
+  const o = rows.filter(r=>r.open), c = rows.filter(r=>!r.open);
+  return `<div class="card">
+    <div class="cap">what you can do here · ${o.length} open · ${c.length} closed</div>
+    ${o.map(r => `<div class="mv open"><span class="mvk">open</span>
+      <span class="mvt"><b>${esc(r.what)}</b><span class="mvh"> — ${esc(r.how)}</span></span></div>`).join('')}
+    ${c.map(r => `<div class="mv"><span class="mvk">closed</span>
+      <span class="mvt"><b>${esc(r.what)}</b><span class="mvh"> — ${esc(r.why)}</span>
+      ${r.instead?`<span class="mvi">instead: ${esc(r.instead)}</span>`:''}</span></div>`).join('')}
+  </div>`;
+}
+function adjacentView(b){
+  const rows = adjacent(b); if (!rows.length) return '';
+  return `<div class="card">
+    <div class="cap">what is next to this</div>
+    ${rows.map(r => `<${r.id?'button':'div'} class="adj${r.id?'':' flat'}"${r.id?` data-open="${esc(r.id)}"`:''}>
+      ${glyph(r.glyph,'ag')}
+      <span class="at"><span class="ar">${esc(r.rel)}</span>
+        <span class="al">${esc(r.label || short(r.id))}</span>
+        <span class="ah m">${esc(r.how)}</span></span>
+      ${r.id?'<span class="ac">›</span>':''}
+    </${r.id?'button':'div'}>`).join('')}
+  </div>`;
+}
+
+/* ── the recheck gate: vote AFTER re-running, and this surface will not run
+   it for you — a check it performed on your behalf is not a check you made. ── */
+const RECHECK_RE = /(RECHECK[^.]*|RE-?RUN[^.]*|GATE:[^.]*|close test[^.]*)[.:]?\s*([^]*?)(?=\s+[A-Z]{4,}[ ,:]|$)/i;
+function recheckOf(p){
+  const d = p.proposalDetail || {};
+  const text = [d.note, d.comment, p[CORE+'reason'], p[WAVE+'reason']].filter(Boolean).join(' ');
+  const m = RECHECK_RE.exec(text);
+  if (!m) return null;
+  const body = (m[1] + ' ' + (m[2]||'')).trim();
+  return body.length > 20 ? body.slice(0, 600) : null;
+}
+const ranKey = id => 'ck.ran.' + id;
+const hasRun = id => !!sessionStorage.getItem(ranKey(id));
+
+function ballotCard(p){
+  const rc = recheckOf(p), id = p['@id'];
+  if (!rc) return `<div class="card">
+    <div class="cap">no recheck offered</div>
+    <div class="bw">This proposal carries no re-runnable check. A vote here rests on reading it,
+      which is weaker evidence — and worth saying so before you decide.</div></div>`;
+  const ran = hasRun(id);
+  return `<div class="card ${ran?'':'gate'}">
+    <div class="cap">${ran ? 'recheck — you marked this run' : 'run this first'}</div>
+    <pre class="q m">${esc(rc)}</pre>
+    ${ran ? `<div class="bw">Marked as run in this session only. Nothing was sealed and this is
+      not evidence — it records that you say you looked.</div>`
+      : `<button class="btn" data-ran="${esc(id)}">I ran this</button>
+         <div class="bw">Run it against the door yourself.</div>`}
+  </div>`;
+}
+function quorumCard(p){
+  const id = p['@id'], q = p[CORE+'requiresQuorum'] ?? 1;
+  const by = new Map();
+  for (const v of votesOn(id)){ const w = v[CORE+'createdBy']; if (!by.has(w)) by.set(w, v); }
+  const rows = [...by.entries()].map(([w,v]) => {
+    const d = who(w), me = S.me && String(w).endsWith(S.me);
+    return `<div class="who-row">
+      <span class="nm m"><span class="dot ${me?'me':'k'}"></span>${esc(d.name)}</span>
+      <span class="did m">${esc(d.how||'')} · <span class="yes">${esc(v[CORE+'voteValue']||'voted')}</span> · ${esc(ago(nsOf(v['@id'])))}</span>
+    </div>`;
+  }).join('');
+  return `<div class="card${Number(q)<2?' reh':''}">
+    <div class="cap">${Number(q) < 2 ? 'quorum 1 — rehearsal, not consensus' : `quorum ${esc(q)} — distinct verified actors`}</div>
+    ${Number(q) < 2 ? `<div class="bw" style="margin:-4px 0 10px">proposer, voter and applier can be
+      one identity — the shape of a decision without having been one</div>` : ''}
+    ${rows || `<div class="who-row"><span class="did m">no party has voted yet</span></div>`}
+  </div>`;
+}
+function producedCard(p){
+  if ((p[CORE+'proposalState']||'') !== 'applied') return '';
+  const ep = p[CORE+'sealedAtEpoch'], d = p.proposalDetail || {};
+  const what = d.targetClass ? short(d.targetClass) : (d.verb || p[CORE+'proposalOp'] || 'the surface');
+  return `<div class="out">
+    <div class="cap">second party met · quorum ${esc(p[CORE+'requiresQuorum'] ?? 1)} · applied</div>
+    <div class="body">${glyph('g-confirm','g')}
+      <p>${esc(what)} took effect on this kernel${ep!=null?` at epoch ${esc(ep)}`:''}.
+        What changed is sealed and readable by anyone.</p></div>
+  </div>`;
+}
+function detailCard(p){
+  const d = p.proposalDetail || {};
+  const rest = Object.entries(d).filter(([k]) => !['verb','query','params','plane','comment','note'].includes(k));
+  if (!rest.length && !d.note) return '';
+  return `<div class="card">
+    <div class="cap">exactly what this changes</div>
+    ${d.note ? `<div class="prose" style="margin-bottom:12px">${prose(d.note)}</div>` : ''}
+    ${rest.length ? `<div class="res">${rest.map(([k,v]) =>
+      `<div class="r m"><span style="color:var(--mut)">${esc(k)}</span> ${
+        escLink(typeof v === 'object' ? JSON.stringify(v) : String(v)).slice(0,400)}</div>`).join('')}</div>` : ''}
+  </div>`;
+}
+function judgedBar(b){
+  const j = b[CORE+'conformsToShape'] ?? b.conformsToShape;
+  const seq = S.entity?.seq ?? WIRE.get(b['@id'])?.seq;
+  const bits = [ j ? `judged by ${term(j)}` : 'JUDGED BY NOTHING',
+    seq != null ? `seq ${seq}` : null, b[CORE+'proposalState'] || null ].filter(Boolean);
+  return `<div class="bar m ${j?'':'none'}">${bits.map(esc).join(' · ')}</div>`;
+}
+function provCard(b){
+  const w = who(b[CORE+'createdBy'] ?? b.createdBy);
+  const k = b[CORE+'producedBy'] ?? b.producedBy;
+  const ep = b[CORE+'sealedAtEpoch'] ?? b.sealedAtEpoch;
+  const j = b[CORE+'conformsToShape'] ?? b.conformsToShape;
+  const slug = String(k||'').match(/^urn:ckp:([^/]+)\/kernel/);
+  const eurn = (slug && ep != null) ? `urn:ckp:${slug[1]}/epoch/${ep}` : null;
+  return `<div class="card">
+    <div class="cap">provenance — derived, not claimed</div>
+    <div class="who-row"><span class="nm m">sealed by</span>
+      <span class="did m">${esc(w.name)}${w.how?` · ${esc(w.how)}`:''}${
+        WIRE.get(b['@id'])?.by ? ' · <span class="yes">attributed by the substrate on the wire</span>' : ''}</span></div>
+    <div class="who-row"><span class="nm m">into</span><span class="did m">${esc(short(k||'—'))}</span></div>
+    <div class="who-row"><span class="nm m">at epoch</span>
+      <span class="did m">${eurn ? `<a class="urn" href="#/i/${encodeURIComponent(eurn)}">${esc(ep)}</a>` : esc(ep ?? '—')}
+        — the surface it was judged against</span></div>
+    <div class="who-row"><span class="nm m">judged by</span>
+      <span class="did m">${j ? esc(term(j))
+        : '<span style="color:var(--amber)">NOTHING — ledgered, but no shape looked at it</span>'}</span></div>
+  </div>`;
+}
+const CAPS = /(?<=[.;:] )(?=(?:[A-Z][A-Z0-9'’_-]{2,}[ ,:]){1,6}[A-Z(])/g;
+const ENUM = /(?<=[.;,:] )(?=\(\d\) )/g;
+function prose(t){
+  const src = String(t ?? '');
+  const ps = /\n\s*\n/.test(src) ? src.split(/\n\s*\n/) : src.split(CAPS).flatMap(x => x.split(ENUM));
+  return ps.map(x=>x.trim()).filter(Boolean).map(x=>`<p>${escLink(x)}</p>`).join('');
+}
+
+function viewDetail(){
+  const e = S.entity;
+  if (!e) return `<div class="empty">opening…</div>`;
+  if (e.err) return `${navBar('g-fact','Not found', null, null)}
+    <div class="empty">${esc(e.err)}<br><span class="m">${esc(e.id)}</span></div>`;
+  if (!e.body) return `${navBar('g-fact','Opening…', null, null)}<div class="empty">opening…</div>`;
+  const b = e.body, t = typeOf(b);
+  const isProp = t === 'Proposal';
+  const lab = b[RDFS+'label'] ?? b.label;
+  const reason = b[CORE+'reason'] ?? b[WAVE+'reason'] ?? b.reason;
+  const evid = b[WAVE+'evidence'] ?? b.evidence ?? b[WAVE+'opEvidence'];
+  const verb = b.proposalDetail?.verb || b[CORE+'proposalOp'] || '';
+  const longLab = lab && String(lab).length > 120;
+  const head = longLab ? lede(lab, 88) : (lab || (isProp ? titleOf(b, verb) : sentence(b)));
+  const seenBy = [...new Set([...votesOn(b['@id']).map(v=>v[CORE+'createdBy']),
+    ...(WIRE.get(b['@id'])?.by ? [WIRE.get(b['@id']).by] : [])])]
+    .map(u => ({ name: who(u).name, me: S.me && String(u).endsWith(S.me) }));
+  return `
+    ${navBar(symbolFor(b,t), t, null, t === 'Epoch' ? (b[CORE+'surfaceDigest']??b.surfaceDigest) : null)}
+    ${hereCard(seenBy)}
+    <div class="detail">
+      <div class="hero"><div class="mk">${mark(b, 'g')}</div><h2>${esc(head)}</h2></div>
+      <div class="idline m">
+        <a class="urn" href="#/i/${encodeURIComponent(b['@id'])}">${esc(short(b['@id']))}</a>
+        <span class="sep">·</span><span>${esc(who(b[CORE+'createdBy'] ?? b.createdBy).name)}</span>
+        ${nsOf(b['@id'])?`<span class="sep">·</span><span>${esc(ago(nsOf(b['@id'])))}</span>`:''}
+        ${(S.entity?.seq ?? WIRE.get(b['@id'])?.seq) != null
+          ? `<span class="sep">·</span><span>seq ${esc(S.entity?.seq ?? WIRE.get(b['@id'])?.seq)}</span>` : ''}
+      </div>
+      ${(b[CORE+'surfaceDigest'] ?? b.surfaceDigest)
+        ? `<div class="card"><div class="cap m u">what this digest pins</div>
+           ${digestView('surfaceDigest', b[CORE+'surfaceDigest'] ?? b.surfaceDigest)}
+           ${t === 'Epoch' && epochMoved(b) === false
+             ? `<div class="bw"><b>These are the previous epoch's bytes, unchanged.</b> This epoch
+                 advanced the counter and moved no meaning in force — the difference between a
+                 surface changing and a number changing. Cite the digest, never the number.</div>` : ''}
+           ${t === 'Epoch' && epochMoved(b) === null
+             ? `<div class="bw">Whether this moved the surface is UNKNOWN here — the previous epoch
+                 for this kernel is not loaded, so there is nothing to compare against. Not a
+                 claim that it moved.</div>` : ''}
+           <div class="bw">The ring above is drawn from these bytes. Two kernels showing the same
+             ring hold the same COPY in this store — which is a drift detector, not proof they
+             hold the same graph. Structural pinning lands with pgck 0.4.67.</div></div>` : ''}
+    ${isProp ? ballotCard(b) : ''}
+      ${adjacentView(b)}
+      ${t === 'Wave' ? waveSwitchCard(b['@id']) : ''}
+      ${isProp ? quorumCard(b) : ''}
+      ${isProp ? producedCard(b) : ''}
+      ${(longLab || reason || evid) ? `<div class="card"><div class="prose">${prose(longLab ? lab : (evid || reason))}</div></div>` : ''}
+      ${isProp ? detailCard(b) : ''}
+      ${movesView(b)}
+      ${judgedBar(b)}
+      ${provCard(b)}
+    </div>`;
+}
+
+/* ═══ THE REFUSAL — a page, because a refusal is a teaching ═══════════════ */
+function viewRefusal(){
+  const r = S.refusal;
+  return `${navBar('g-stuck','Refused', null, null)}
+    <div class="teach">
+      ${glyph('g-stuck','tg')}
+      <h2>Refused</h2>
+      <p class="sub">Nothing was written, so nothing needs undoing. The shape is teaching its contract.</p>
+      <div class="card">
+        <div class="rf"><div class="rk">verb</div><div class="rv m">${esc(r.verb)}</div></div>
+        <div class="rf"><div class="rk">on</div><div class="rv">${esc(r.on)}</div></div>
+        <div class="rf"><div class="rk">clause</div><div class="rv m">${esc(r.clause)}</div></div>
+        ${r.detail?`<div class="rf"><div class="rk">why</div><div class="rv">${esc(r.detail)}</div></div>`:''}
+      </div>
+      <div class="two">
+        <button class="btn" id="rclose">close</button>
+        <button class="btn go" id="rfile">file what you measured</button>
+      </div>
+      <div class="note" style="padding:14px 0 0">The rule that stopped this write is the same
+        rule that seals it when the move is legal.</div>
+    </div>`;
+}
+
+/* ═══ FILE — one box, because a person pastes what they measured ══════════ */
+function viewCompose(){
+  const c = S.compose;
+  const isConf = c.kind === 'Confirmation';
+  return `${navBar(isConf?'g-confirm':'g-finding', isConf?'Confirm':'File a finding', null, null)}
+    ${hereCard([])}
+    <div class="detail">
+      <div class="card">
+        <div class="cap">${isConf ? 'what you verified — and how' : 'what happened — measured, not guessed'}</div>
+        <textarea id="body" rows="9" placeholder="Paste it. The first line becomes the summary; the whole text is the record.
+
+what you measured · how · what it breaks, by identifier · the ask, and of whom · a close test someone else can run">${esc(c.text||'')}</textarea>
+      </div>
+      <div class="card">
+        <div class="cap">filled in for you — sealed exactly as shown</div>
+        ${isConf ? `<div class="who-row"><span class="nm m">confirms</span>
+          <span class="did m">${esc(short(c.about||''))}</span></div>` :
+        `<div class="who-row"><span class="nm m">findingState</span><span class="did m">open</span></div>`}
+        <div class="who-row"><span class="nm m">createdBy</span>
+          <span class="did m">${esc(S.meName)} — derived by the substrate, you cannot set it</span></div>
+      </div>
+      ${c.err?`<div class="bar m" style="border-color:var(--amber);color:var(--amber);background:transparent">${esc(c.err)}</div>`:''}
+      <button class="btn go" id="seal" ${S.busy?'disabled':''}>${S.busy?'sealing…':'seal it'}</button>
+      <div class="note" style="padding:0 2px">A seal is permanent and carries your name.
+        ${isConf ? 'Only a party who is not the owner closes work.' :
+          'It is unowned by design and becomes work only when a reader promotes it.'}</div>
+    </div>`;
+}
+async function seal(){
+  const t = ($('body')?.value || '').trim();
+  if (!t){ S.compose.err = 'Nothing to seal.'; return render(); }
+  const isConf = S.compose.kind === 'Confirmation';
+  S.compose.text = t; S.compose.err = null; S.busy = true; render();
+  const body = isConf
+    ? { type: WAVE+'Confirmation', label:(t.split(/\n/)[0]||t).slice(0,150), evidence:t,
+        confirmsTicket: S.compose.about }
+    : { type: WAVE+'Finding', label:(t.split(/\n/)[0]||t).slice(0,150), reason:t, findingState:'open' };
+  try{
+    await live();
+    const chk = await handle.do('instance.validate', body);
+    if (chk && chk.conforms === false){
+      S.compose.err = (chk.violations||[]).map(v=>v.message||v).join(' · ') || 'refused by the shape';
+      S.busy = false; return render();
+    }
+    const r = await handle.do('instance.create', body);
+    S.busy = false;
+    if (r?.id || r?.ok){
+      S.compose = null;
+      S.sent = { id: r.id, at: Date.now() };
+      setTimeout(()=>{ S.sent = null; render(); }, 6000);
+      go('#/');
+    } else S.compose.err = r?.error || 'refused';
+  }catch(e){ S.busy = false; S.compose.err = String(e?.message ?? e); }
+  render();
+}
+
+/* ═══ THE DOCK — what you DO, in thumb reach, paging the queue ════════════ */
+function docked(){
+  const asked = inbox().filter(o => o[WAVE+'opKind'] === 'escalate')
+    .map(o => String(o[WAVE+'opEvidence']||''))
+    .map(e => S.props.find(p => p['@id'] === e))
+    .filter(p => p && pending(p) && !iVoted(p['@id']))
+    .map(p => ({ p, verb:'approve', asked:true }));
+  const seen = new Set(asked.map(x => x.p['@id']));
+  const b = buckets();
+  return [...asked,
+    ...b.act.filter(p => !seen.has(p['@id'])).map(p => ({ p, verb:'approve' })),
+    // applyMine only: dockAct treats every verb that is not 'apply' as an approve VOTE, so
+    // a queued apply on someone else's kernel would either fail at the door or, worse,
+    // fall through to casting a second ballot. Another kernel's agreed-and-unapplied
+    // decision is news to relay, not work in this queue.
+    ...b.stuck.filter(p => atQuorum(p) && applyMine(p)).map(p => ({ p, verb:'apply' }))];
+}
+function dockHome(){
+  const q = docked(), here = presence();
+  const cur = q[Math.min(S.dock, Math.max(q.length-1,0))];
+  const line = here.length
+    ? `${here.length} sealed here in the last 6h — ${here.slice(0,3).map(h=>h.name).join(', ')}`
+    : 'nobody has sealed here in the last 6h';
+  if (!q.length) return { people:{ list:here, line }, empty:'nothing is waiting on you here' };
+  return {
+    people:{ list:here, line },
+    prev: S.dock > 0, next: S.dock < q.length-1,
+    verb: cur.verb, title: lede(titleOf(cur.p, cur.p[CORE+'proposalOp']||''), 34),
+    pos: `${S.dock+1} of ${q.length} · ${cur.verb==='apply' ? 'agreed already — this makes it real'
+      : cur.asked ? 'escalated to you by name — you would be the distinct second party'
+      : 'you would be a distinct party'}`,
+    act: () => dockAct(cur.verb),
+  };
+}
+/* On a fact: page the siblings of the list you came from, and offer the one act
+   that fact affords. Seen-by and how-long-ago sit above it. */
+function dockEntity(){
+  const b = S.entity?.body; if (!b) return null;
+  const t = typeOf(b), id = b['@id'];
+  const sibs = S.sibs.length ? S.sibs : [id];
+  const i = sibs.indexOf(id);
+  const seen = [...new Set([...votesOn(id).map(v=>v[CORE+'createdBy']),
+    ...(WIRE.get(id)?.by ? [WIRE.get(id).by] : [])])]
+    .map(u => ({ name: who(u).name, me: S.me && String(u).endsWith(S.me), at: 0 }));
+  const parts = [];
+  const vn = votesOn(id).length;
+  if (vn) parts.push(`${vn} in the debate`);
+  const w = WIRE.get(id);
+  if (w?.at) parts.push(`arrived on the wire ${ago(w.at)} ago`);
+  if (nsOf(id)) parts.push(`sealed ${ago(nsOf(id))} ago`);
+  let verb = 'cite', title = 'copy this permalink', mute = false, act = () => copyLink(id);
+  if (t === 'Proposal'){
+    const q = b[CORE+'requiresQuorum'] ?? 1, n = parties(id);
+    if (!pending(b)){ verb='applied'; title='the decision is already real'; mute=true; }
+    else if (!iVoted(id)){
+      const gated = recheckOf(b) && !hasRun(id);
+      verb='approve'; title = gated ? 'mark the recheck run first' : lede(titleOf(b, b[CORE+'proposalOp']||''), 34);
+      mute = gated; act = () => voteHere('approve');
+    } else if (n >= q && applyMine(b)){ verb='apply'; title='agreed by enough parties — this makes it real'; act = () => dockAct('apply', b); }
+    // NOT muted: mute kills the click (see dact handler), and a dead control with no reason
+    // is the exact defect this whole change removes. Copying the permalink is the real move
+    // available here — the decision is agreed, it just needs carrying to the kernel that owns it.
+    else if (n >= q){ verb='relay';
+      title=`agreed by ${n} — ${govOf(b)} applies it; copy the link and tell them`; act = () => copyLink(id); }
+    else { verb='waiting'; title=`waits on ${Math.max(0,q-n)} more distinct part${q-n===1?'y':'ies'}`; mute=true; }
+  } else if (t === 'Finding' || t === 'Ticket'){
+    verb='confirm'; title='seal a Confirmation citing this';
+    act = () => { S.compose = { kind:'Confirmation', about:id, text:
+      `CONFIRMS ${id}\n\nWHAT I VERIFIED: \n\nHOW: \n\nRECHECK SOMEONE ELSE CAN RUN: `, err:null }; go('#/file'); };
+  }
+  return {
+    // On an Epoch, "nobody else yet" reads as a gap you could close by inviting people. It is
+    // a CATEGORY fact: an epoch is structurally private — one kernel's own counter — so no one
+    // can ever be collected into it. The commensurable unit is the Pass, where kernels cite one
+    // digest. Saying "yet" about something definitional sends people looking for absent friends.
+    people:{ list:seen, line: parts.join(' · ') || (t === 'Epoch'
+      ? 'no one else can be on this — an epoch is one kernel\'s own counter, not a shared object. The unit that collects kernels is the Pass'
+      : 'nobody else has been recorded on this yet') },
+    prev: i > 0, next: i >= 0 && i < sibs.length-1,
+    prevGo: () => go(`#/i/${encodeURIComponent(sibs[i-1])}`),
+    nextGo: () => go(`#/i/${encodeURIComponent(sibs[i+1])}`),
+    verb, title, mute, act,
+    pos: i >= 0 && sibs.length > 1 ? `${i+1} of ${sibs.length} · swipe to move` : 'the only one in this list',
+  };
+}
+function paintDock(d){
+  const el = $('dock');
+  if (!d){ el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  el.innerHTML = `
+    <div class="dpeople">
+      ${avatars(d.people.list.length ? d.people.list : [{name:'—'}], 6)}
+      <span class="dline m">${esc(d.people.line)}</span>
+    </div>
+    ${d.empty ? `<div class="dpos m" style="padding-bottom:4px">${esc(d.empty)}</div>` : `
+      <div class="dbar">
+        <button class="dnav" id="dprev" ${d.prev?'':'disabled'}>‹</button>
+        <button class="dact${d.mute?' mute':''}" id="dact">
+          <span class="dv">${esc(d.verb)}</span><span class="dt">${esc(d.title)}</span></button>
+        <button class="dnav" id="dnext" ${d.next?'':'disabled'}>›</button>
+      </div>
+      <div class="dpos m">${esc(d.pos)}</div>`}`;
+  $('dprev')?.addEventListener('click', () => d.prevGo ? d.prevGo() : (S.dock = Math.max(0,S.dock-1), render()));
+  $('dnext')?.addEventListener('click', () => d.nextGo ? d.nextGo() : (S.dock = S.dock+1, render()));
+  $('dact')?.addEventListener('click', () => { if (!d.mute && d.act) d.act(); });
+  S._swipe = d;
+}
+// swipe pages the same queue the thumb does
+let _tx = null;
+addEventListener('touchstart', e => { _tx = e.touches[0].clientX; }, { passive:true });
+addEventListener('touchend', e => {
+  if (_tx == null) return;
+  const dx = e.changedTouches[0].clientX - _tx; _tx = null;
+  const d = S._swipe; if (!d || Math.abs(dx) < 60) return;
+  if (dx < 0 && d.next) (d.nextGo ? d.nextGo() : (S.dock = S.dock+1, render()));
+  if (dx > 0 && d.prev) (d.prevGo ? d.prevGo() : (S.dock = Math.max(0,S.dock-1), render()));
+}, { passive:true });
+
+async function copyLink(id){
+  const url = location.origin + location.pathname + `#/i/${encodeURIComponent(id)}`;
+  try{ await navigator.clipboard.writeText(url); }catch{}
+  const el = document.querySelector('#dact .dt');
+  if (el){ el.textContent = 'permalink copied — the @id survives the handoff'; }
+}
+async function voteHere(value){
+  const p = S.entity?.body; if (!p || S.busy) return;
+  S.busy = true; render();
+  try{
+    await live();
+    const r = await handle.do('kernel.vote', { about: p['@id'], value });
+    if (r && r.ok === false) S.refusal = { verb:'vote', on: titleOf(p, p[CORE+'proposalOp']||''),
+      clause: r.error || 'refused', detail: r.detail || null };
+    else { await refresh(); await openEntity(S.entity.id); }
+  }catch(e){
+    S.refusal = { verb:'vote', on: titleOf(p, p[CORE+'proposalOp']||''), clause:String(e?.message ?? e), detail:null };
+  }
+  S.busy = false; render();
+}
+/* A refusal is the shape teaching its contract, so it is rendered as a lesson
+   with the clause named — never a red error that vanishes. */
+async function dockAct(verb, only){
+  const cur = only ? { p:only, verb } : docked()[Math.min(S.dock, Math.max(docked().length-1,0))];
+  if (!cur || S.busy) return;
+  S.busy = true; S.refusal = null; render();
+  try{
+    await live();
+    const r = verb === 'apply'
+      ? await handle.do('kernel.apply', { about: cur.p['@id'] })
+      : await handle.do('kernel.vote',  { about: cur.p['@id'], value:'approve' });
+    if (r && r.ok === false){
+      S.refusal = { verb, on: titleOf(cur.p, cur.p[CORE+'proposalOp']||''),
+        clause: r.error || 'refused', detail: r.detail || null };
+    } else { S.dock = 0; await refresh(); }
+  }catch(e){
+    S.refusal = { verb, on: titleOf(cur.p, cur.p[CORE+'proposalOp']||''), clause:String(e?.message ?? e), detail:null };
+  }
+  S.busy = false; render();
+}
+
+/* ── THEME ─────────────────────────────────────────────────────────────── */
+function applyTheme(t){
+  document.documentElement.setAttribute('data-theme', t === 'auto' ? '' : t);
+  if (t === 'auto') document.documentElement.removeAttribute('data-theme');
+  localStorage.setItem('ck.theme', t);
+  const dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme:dark)').matches);
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#0d0d0e' : '#f4f2ec');
+}
+function applyMotion(on){
+  localStorage.setItem('ck.motion', on ? 'on' : 'off');
+  document.documentElement.setAttribute('data-motion', on ? 'on' : 'off');
+}
+applyTheme(localStorage.getItem('ck.theme') || 'auto');
+applyMotion(localStorage.getItem('ck.motion') !== 'off');
+
+/* ── WIRING ────────────────────────────────────────────────────────────── */
+function wire(){
+  $('retry')?.addEventListener('click', () => { liveFails = 0; liveGaveUp = null; live({force:true}); });
+  $('kcap')?.addEventListener('click', () => go(S.route.name === 'apps' ? '#/' : '#/apps'));
+  $('towave')?.addEventListener('click', () => {
+    const w = (S.waves||[]).find(x => S.passes.some(p => p[WAVE+'ofWave'] === x['@id']
+      && short(p[CORE+'producedBy']||'') === S.kernel)) || (S.waves||[])[0];
+    go(w ? `#/i/${encodeURIComponent(w['@id'])}` : '#/organ/Wave');
+  });
+  $('orb')?.addEventListener('click', () => go('#/settings'));
+  $('nback')?.addEventListener('click', () => { if (history.length > 1) history.back(); else go('#/'); });
+  document.querySelectorAll('[data-href]').forEach(b => b.onclick = () => go(b.dataset.href));
+  document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => {
+    if (b.dataset.open) go(`#/i/${encodeURIComponent(b.dataset.open)}`);
+  });
+  document.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { applyTheme(b.dataset.th); render(); });
+  document.querySelectorAll('[data-act]').forEach(b => b.onclick = () => {
+    if (b.dataset.act === 'switch') signIn(true);
+    if (b.dataset.act === 'out') signOut();
+  });
+  $('motion')?.addEventListener('click', () => {
+    applyMotion(localStorage.getItem('ck.motion') === 'off'); render();
+  });
+  document.querySelectorAll('[data-kernel]').forEach(b => b.onclick = async () => {
+    // Re-read from the same door rather than re-render a cache: a switch that keeps
+    // the old rows shows one kernel's facts under another kernel's name.
+    S.kernel = b.dataset.kernel; localStorage.setItem('ck.kernel', S.kernel);
+    S.T = {}; syncBuckets(); S.facts = []; WIRE.clear(); S.dock = 0;
+    go('#/'); await refresh();
+  });
+  $('file')?.addEventListener('click', () => { S.compose = { kind:'Finding', text:'', err:null }; go('#/file'); });
+  $('seal')?.addEventListener('click', seal);
+  $('body')?.addEventListener('input', e => { if (S.compose) S.compose.text = e.target.value; });
+  $('rclose')?.addEventListener('click', () => { S.refusal = null; render(); });
+  $('rfile')?.addEventListener('click', () => {
+    const r = S.refusal;
+    S.refusal = null;
+    S.compose = { kind:'Finding', err:null, text:
+      `REFUSED: ${r.verb} on ${r.on}\n\nCLAUSE: ${r.clause}\n\nWHAT I MEASURED: \n\nRECHECK SOMEONE ELSE CAN RUN: ` };
+    go('#/file');
+  });
+  document.querySelectorAll('[data-ran]').forEach(b => b.onclick = () => {
+    sessionStorage.setItem(ranKey(b.dataset.ran), String(Date.now())); render();
+  });
+}
+
+async function openEntity(id){
+  S.compose = null;
+  S.entity = { id, body:null, err:null };
+  render();
+  try{
+    await ready; await live();
+    /* Three ways a body comes back, all measured: a bare id answers COMPACTED, a
+       ckp:// URN answers EXPANDED, and a governance URN answers instance:null from
+       instance.get while instance.query lists that exact @id. */
+    const rawGet = async i => {
+      const r = await handle.do('instance.get', { id:i });
+      for (const v of [r?.result, r?.instance, r?.body, r?.rows?.[0]?.body, r])
+        if (v && typeof v === 'object' && (v['@id'] || v.id)) return v;
+      return null;
+    };
+    const gov = (String(id).match(/^urn:ckp:[^/]+\/(epoch|materialization)\/\d+$/)||[])[1];
+    let b = null;
+    if (gov){
+      const T = gov === 'epoch' ? CORE+'Epoch' : CORE+'Materialization';
+      b = (await qType(T)).find(x => x['@id'] === id) || null;
+    }
+    if (!b) b = await handle.get(id) || await rawGet(id);
+    if (!b){
+      const m = /^([a-z]+)-\d+$/.exec(id);
+      if (m){ const T = m[1][0].toUpperCase()+m[1].slice(1);
+        b = await handle.get(`ckp://${T}#${id}`) || await rawGet(`ckp://${T}#${id}`); }
+    }
+    if (!b){
+      const all = [...Object.values(S.T).flat(), ...S.facts];
+      b = all.find(x => x['@id'] === id || short(x['@id']) === id) || null;
+    }
+    S.entity.body = b;
+    if (!b) S.entity.err = 'The door returned nothing for that id.';
+    else {
+      learn(b);
+      // Only ask if the wire never said — an envelope already received is cheaper
+      // and just as true; it is the substrate's own statement.
+      if (WIRE.get(b['@id'])?.seq == null){
+        try{
+          const pv = await handle.do('instance.provenance', { id });
+          const seq = pv?.ledger?.[0]?.seq ?? pv?.seq;
+          if (seq != null) S.entity.seq = seq;
+        }catch{}
+      }
+    }
+  }catch(e){ S.entity.err = String(e?.message ?? e); }
+  render();
+}
+
+/* ── BOOT ──────────────────────────────────────────────────────────────── */
+$('signin').onclick = () => signIn().catch(e => { $('err').textContent = String(e?.message??e); });
+
+/* A SURFACE THAT SHOWS NOTHING IS INDISTINGUISHABLE FROM A BROKEN ONE.
+   Both #gate and #app stay hidden until boot decides which to show, so every
+   await before that decision paints an empty page — measured in the field as
+   "about a minute of nothing, then the sign-in screen". This states what it is
+   waiting for from the first frame, and names the step if it gives up. */
+function booting(step){
+  const el = $('boot'); if (!el) return;
+  el.hidden = false;
+  el.innerHTML = `<div class="bootwrap">
+    <svg class="bootg"><use href="#g-kernel"/></svg>
+    <div class="bootstep m">${esc(step)}</div></div>`;
+}
+const bootDone = () => { const el = $('boot'); if (el) el.hidden = true; };
+
+// A step that cannot hang forever, and says which one gave up.
+const within = (ms, step, p) => Promise.race([
+  p,
+  new Promise((_, rej) => setTimeout(() =>
+    rej(new Error(`${step} did not answer within ${Math.round(ms/1000)}s`)), ms)),
+]);
+
+(async function boot(){
+  booting('reading your session');
+  const p = new URLSearchParams(location.search);
+  if (p.get('error')){ bootDone(); $('gate').classList.add('on');
+    $('err').textContent = `${p.get('error')}: ${p.get('error_description')||''}`; return; }
+  if (p.get('code')){
+    try{
+      if (p.get('state') !== sessionStorage.getItem('ck.m.s')) throw new Error('state mismatch — refusing the code');
+      const v = sessionStorage.getItem('ck.m.v');
+      if (!v) throw new Error('no PKCE verifier in this session — start again');
+      const r = await fetch(`${OIDC.issuer}/protocol/openid-connect/token`,{
+        method:'POST', headers:{'content-type':'application/x-www-form-urlencoded'},
+        body:new URLSearchParams({grant_type:'authorization_code', client_id:OIDC.clientId,
+          code:p.get('code'), redirect_uri:OIDC.redirect, code_verifier:v})});
+      if (!r.ok) throw new Error(`token endpoint ${r.status}: ${(await r.text()).slice(0,200)}`);
+      Token.store(await r.json());
+      sessionStorage.removeItem('ck.m.v'); sessionStorage.removeItem('ck.m.s');
+      const want = sessionStorage.getItem('ck.m.h'); sessionStorage.removeItem('ck.m.h');
+      history.replaceState({}, '', location.pathname.replace(/index\.html$/,'') + (want || ''));
+    }catch(e){ bootDone(); $('gate').classList.add('on'); $('err').textContent = String(e?.message??e); return; }
+  }
+  let bootErr = null;
+  const tok = await within(12000, 'the identity provider', Token.valid())
+    .catch(e => { bootErr = String(e?.message ?? e); return null; });
+  if (tok){
+    try{ await activate(); }
+    catch(e){
+      bootDone(); $('gate').classList.add('on');
+      $('err').textContent = `${String(e?.message ?? e)} — you are signed in, so this is the door,
+        not your identity. Signing in again will not help while the door is silent.`;
+    }
+  } else {
+    bootDone(); $('gate').classList.add('on');
+    if (bootErr) $('err').textContent = `${bootErr} — your session could not be checked.`;
+  }
+})().catch(e => {
+  // A boot that dies must not leave a full-screen overlay swallowing every click.
+  bootDone(); $('gate').classList.add('on');
+  $('err').textContent = `boot failed: ${String(e?.message ?? e)}`;
+});
+</script>
+</body>
+</html>
