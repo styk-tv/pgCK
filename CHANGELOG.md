@@ -2,6 +2,47 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.81 - 2026-08-22
+
+**Germination becomes reachable, and the substrate stops guessing the payload.**
+
+`ckp.dispatch` has carried a `WHEN 'kernel.germinate'` branch since 0.4.43 — and
+`ckp.affordance_registry`, the **sole** routing authority, never held a row for it. So dispatch
+refused `unknown_affordance` before reaching the implementation, and **the one act that creates
+a kernel was unreachable through the only door end users have.** Measured through the wire on a
+freshly rebuilt bundle; SuperAiHarness3000 hit the same wall independently, which is why their
+kernel graph existed with zero quads — composition had run and germination never could. This is
+the #56 declared/routed gap from its other side: usually a verb routes with nothing declaring
+it; this one was implemented with nothing routing it.
+
+A second defect surfaced while fixing the first: registering the row as `plane='governance'`
+still refused, with `governance_plane_unavailable`. That plane routes to a hardcoded three-verb
+list (`propose_change`/`vote`/`apply`), while germinate's implementation lives in the instance
+CASE — **the `plane` column is a handler selector, not a semantic label**, a conflation the
+seed's own comment already recorded.
+
+- **Four payload substitutions deleted**, each chosen by one rule — *would a wrong value here
+  fail loudly, or succeed plausibly?* `bump_epoch`/`compile_plans` defaulted to the literal
+  `'pgck'`, **this repository's own name**, as the kernel whose epoch gets bumped on any
+  deployment. `kernel.germinate` filled `projectKind` with `'personal'` **before validation**,
+  so the gate approved content the caller never supplied and `ProjectShape`'s `sh:in` never got
+  to speak. `notify` invented `'notifies'` — the predicate of an edge, which is its *meaning*.
+- **`surface.check` separates `state` from `healthy`.** A brand-new database reported
+  `healthy: false` with a *"wipe signature"* on a machine where nothing had ever happened: the
+  check could not tell **never existed** from **was destroyed**. `state` is now
+  `core-only | named | germinated`; the wipe finding fires only when a `ckp:Kernel` **is** sealed
+  and its graph is empty, and an unpinned surface is a fault only after an epoch has advanced.
+- **A CURIE is refused, not answered.** `surface.declared`/`typecheck`/`explain` returned
+  `declared: {}` for `ckp:Project` — a confident absence about a type the gate judges daily,
+  which a caller cannot distinguish from a real one. Nothing expands prefixes here.
+
+**Gates: `s72`**, four claims, and the control is the point — **a germinated kernel with an empty
+graph must still report the wipe.** Making a fresh database healthy must not buy that by going
+blind. It also caught a real bug in this release: the core-only branch crashed on
+`sparql: parse error … IRI parsing failed`, because `surface_check` still built
+`'urn:ckp:'||NULL||'/kernel/ck'` — it broke on exactly the state it had just been taught to call
+healthy.
+
 ## v0.4.80 - 2026-08-22
 
 **A ledger key of one's own.** `ckp.seal` signs every entry `hmac(body_sha256, identity_key)`

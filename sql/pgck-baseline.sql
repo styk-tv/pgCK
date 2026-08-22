@@ -364,7 +364,23 @@ INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane) VALUES
   ('pgck','notify',               'input.kernel.pgck.action.notify',               'instance'),
   ('pgck','kernel.propose_change','input.kernel.pgck.action.kernel.propose_change','governance'),
   ('pgck','kernel.vote',          'input.kernel.pgck.action.kernel.vote',          'governance'),
-  ('pgck','kernel.apply',         'input.kernel.pgck.action.kernel.apply',         'governance')
+  ('pgck','kernel.apply',         'input.kernel.pgck.action.kernel.apply',         'governance'),
+  -- 0.4.81 — GERMINATION BECOMES REACHABLE. ckp.dispatch has carried a
+  -- `WHEN 'kernel.germinate'` branch since 0.4.43 and this table never routed it
+  -- — and the registry is the SOLE routing authority (CI-B-1), so dispatch
+  -- refused `unknown_affordance` before ever reaching the implementation.
+  -- Measured through the door on 0.4.80, on a freshly rebuilt bundle: the one
+  -- act that CREATES a kernel was unreachable by the only route end users have,
+  -- so "kernels are cheap" failed at step one. This is the declared/routed gap
+  -- (#56) seen from its other side: usually a verb routes with no declaration;
+  -- this one was implemented with no route.
+  -- plane='instance', NOT 'governance': the governance plane routes to a
+  -- hardcoded three-verb list (propose_change/vote/apply) and answers
+  -- `governance_plane_unavailable` for anything else, while germinate's
+  -- implementation lives in the instance CASE. Measured by registering it
+  -- wrong first — the routing column is not a semantic label, it selects the
+  -- handler (a #56-adjacent conflation already recorded in this table's seed).
+  ('pgck','kernel.germinate',     'input.kernel.pgck.action.kernel.germinate',     'instance')
 ON CONFLICT (kernel, verb) DO NOTHING;
 
 -- Fifth member (#48): the governed concept.match plan — the ONLY static
@@ -1573,6 +1589,17 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'error', 'type_required',
       'hint', 'surface.typecheck {"type": "<class IRI>"} — answers whether THIS kernel admits it, and by which graph');
   END IF;
+  -- 0.4.81 — REFUSE A CURIE INSTEAD OF ANSWERING VACUOUSLY. `ckp:Project` is a
+  -- prefixed name, not an IRI; the composed surface holds only absolute IRIs, so
+  -- it matched nothing and this verb replied `declared: {}` / `admitted: false`
+  -- — a confident answer that the type is unknown, about a type the gate judges
+  -- every day. A caller learns a FALSE contract and cannot tell it from a real
+  -- absence. An absolute IRI here carries :// or begins urn: ; anything else is
+  -- a prefix this substrate never expands.
+  IF v_type IS NOT NULL AND v_type NOT LIKE '%://%' AND v_type NOT LIKE 'urn:%' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'type_is_a_curie', 'type', v_type,
+      'hint', 'this looks like a prefixed name (CURIE), not an IRI. Nothing expands prefixes here — pass the absolute IRI, e.g. https://conceptkernel.org/ontology/v3.11/core#Project rather than ckp:Project.');
+  END IF;
   v_comp := ckp._composed_shapes(v_proj);
   v_ci := pgrdf.graph_iri(v_comp);
   v_bi := format('urn:ckp:%s/kernel/board', v_proj);
@@ -1676,6 +1703,17 @@ BEGIN
   IF v_type IS NULL OR btrim(v_type) = '' THEN
     RETURN jsonb_build_object('ok', false, 'error', 'type_required',
       'hint', 'surface.declared {"type": "<class IRI>"} — the property contract, so a caller can learn it WITHOUT writing');
+  END IF;
+  -- 0.4.81 — REFUSE A CURIE INSTEAD OF ANSWERING VACUOUSLY. `ckp:Project` is a
+  -- prefixed name, not an IRI; the composed surface holds only absolute IRIs, so
+  -- it matched nothing and this verb replied `declared: {}` / `admitted: false`
+  -- — a confident answer that the type is unknown, about a type the gate judges
+  -- every day. A caller learns a FALSE contract and cannot tell it from a real
+  -- absence. An absolute IRI here carries :// or begins urn: ; anything else is
+  -- a prefix this substrate never expands.
+  IF v_type IS NOT NULL AND v_type NOT LIKE '%://%' AND v_type NOT LIKE 'urn:%' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'type_is_a_curie', 'type', v_type,
+      'hint', 'this looks like a prefixed name (CURIE), not an IRI. Nothing expands prefixes here — pass the absolute IRI, e.g. https://conceptkernel.org/ontology/v3.11/core#Project rather than ckp:Project.');
   END IF;
   -- The same map create and validate resolve keys through. A caller reading this
   -- and a caller writing a body cannot disagree, because there is one map.
@@ -1995,6 +2033,17 @@ BEGIN
   IF v_type IS NULL OR btrim(v_type) = '' THEN
     RETURN jsonb_build_object('ok', false, 'error', 'type_required',
       'hint', 'surface.explain {"type": "<class IRI>"} — the declared contract WITH its teaching prose');
+  END IF;
+  -- 0.4.81 — REFUSE A CURIE INSTEAD OF ANSWERING VACUOUSLY. `ckp:Project` is a
+  -- prefixed name, not an IRI; the composed surface holds only absolute IRIs, so
+  -- it matched nothing and this verb replied `declared: {}` / `admitted: false`
+  -- — a confident answer that the type is unknown, about a type the gate judges
+  -- every day. A caller learns a FALSE contract and cannot tell it from a real
+  -- absence. An absolute IRI here carries :// or begins urn: ; anything else is
+  -- a prefix this substrate never expands.
+  IF v_type IS NOT NULL AND v_type NOT LIKE '%://%' AND v_type NOT LIKE 'urn:%' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'type_is_a_curie', 'type', v_type,
+      'hint', 'this looks like a prefixed name (CURIE), not an IRI. Nothing expands prefixes here — pass the absolute IRI, e.g. https://conceptkernel.org/ontology/v3.11/core#Project rather than ckp:Project.');
   END IF;
   v_comp := ckp._composed_shapes(v_proj);
   v_map  := ckp._propmap(v_type, v_proj);
@@ -3015,7 +3064,7 @@ END;
 $function$
 ;
 
-CREATE OR REPLACE FUNCTION ckp.bump_epoch(p_kernel text DEFAULT 'pgck'::text)
+CREATE OR REPLACE FUNCTION ckp.bump_epoch(p_kernel text)
  RETURNS integer
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -3032,7 +3081,7 @@ END;
 $function$
 ;
 
-CREATE OR REPLACE FUNCTION ckp.compile_plans(p_kernel text DEFAULT 'pgck'::text)
+CREATE OR REPLACE FUNCTION ckp.compile_plans(p_kernel text)
  RETURNS integer
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -3430,7 +3479,30 @@ DECLARE
   v_iri    text;
   v_n      int;
   v_find   jsonb := '[]'::jsonb;
+  v_state  text;
 BEGIN
+  -- 0.4.81 — CORE-ONLY SHORT-CIRCUIT. With no kernel named there is no kernel
+  -- graph to name, and building 'urn:ckp:'||NULL||'/kernel/ck' produced a NULL
+  -- IRI that reached pgrdf.sparql as a parse error — the check crashed on
+  -- exactly the state it was taught to call healthy. (Caught by s72, which is
+  -- the argument for writing the gate with the change rather than after it.)
+  IF v_proj IS NULL THEN
+    v_comp := ckp._composed_shapes(NULL);          -- the surface IS core
+    RETURN jsonb_build_object(
+      'ok', true, 'kernel', NULL, 'state', 'core-only', 'epoch', 0,
+      'epoch_resource', NULL,
+      'surface', jsonb_build_object('pinned', NULL, 'actual', ckp._surface_digest(v_comp), 'match', NULL),
+      'source',  jsonb_build_object('pinned', NULL, 'actual', NULL, 'match', NULL),
+      'kernel_graph', NULL,
+      'composed_nodeshapes', (SELECT count(*) FROM pgrdf.sparql(format(
+         'PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?s WHERE { GRAPH <%s> { ?s a sh:NodeShape } }',
+         pgrdf.graph_iri(v_comp)))),
+      'modules', '[]'::jsonb,
+      'findings', '[]'::jsonb,
+      'note', 'no kernel named: the law is loaded and readable (surface.declared, surface.typecheck, instance.validate all answer), and sealing refuses on M2. A complete state, not a fault.',
+      'healthy', true);
+  END IF;
+
   v_kiri  := 'urn:ckp:'||v_proj||'/kernel/ck';
   v_epoch := COALESCE((SELECT epoch FROM ckp.kernel_epoch WHERE kernel = v_proj), 0);
 
@@ -3471,18 +3543,44 @@ BEGIN
   END LOOP;
 
   -- Findings. Each names what was measured, never a guess at the cause.
-  IF v_kquads = 0 THEN
+  -- 0.4.81 — STATE IS NOT HEALTH, and an empty kernel graph means different
+  -- things in each state. A brand-new install reported `healthy:false` with a
+  -- "wipe signature" on a machine where nothing had ever happened: the check
+  -- could not tell NEVER EXISTED from WAS DESTROYED, and a diagnostic that is
+  -- false on every correct day-one install is the twin of one that can never
+  -- fail — nobody trusts it, so it cannot do its job.
+  --
+  --   core-only   no kernel named. The surface IS core. Complete and correct:
+  --               the law is readable, sealing refuses on M2. NOT a fault.
+  --   named       a project resolves but no ckp:Kernel is sealed. Germination
+  --               is the open next act.
+  --   germinated  a Kernel is sealed. NOW an empty graph is a real wipe.
+  IF v_proj IS NULL THEN
+    v_state := 'core-only';
+  ELSIF EXISTS (SELECT 1 FROM ckp.instances
+                 WHERE body->>'type' = 'https://conceptkernel.org/ontology/v3.11/core#Kernel'
+                   AND body->>'@id'  = 'urn:ckp:'||v_proj||'/kernel') THEN
+    v_state := 'germinated';
+  ELSE
+    v_state := 'named';
+  END IF;
+
+  IF v_kquads = 0 AND v_state = 'germinated' THEN
     v_find := v_find || jsonb_build_array(
-      'kernel graph '||v_kiri||' is EMPTY — the enforcement surface is composed WITHOUT the '||
-      'kernel''s own shapes. This is the 2026-08-10 wipe signature.');
+      'kernel graph '||v_kiri||' is EMPTY while a ckp:Kernel IS sealed for this project — '||
+      'the enforcement surface is composed WITHOUT the kernel''s own shapes. This is the '||
+      '2026-08-10 wipe signature: something that existed is gone.');
   END IF;
   IF v_shapes = 0 THEN
     v_find := v_find || jsonb_build_array(
       'composed surface carries ZERO NodeShapes — every gate is vacuous; refuse to trust any conformance result');
   END IF;
-  IF v_pin_surf IS NULL THEN
+  IF v_pin_surf IS NULL AND v_state = 'germinated' AND v_epoch > 0 THEN
+    -- Only a fault once the kernel HAS governed: an epoch advanced without
+    -- sealing what was in force. Before that, unpinned is the pre-governance
+    -- state, reported below as `state`, not as a finding.
     v_find := v_find || jsonb_build_array(
-      'no sealed ckp:Epoch for epoch '||v_epoch||' — the surface in force names no digest, so drift is undetectable (pre-governance state)');
+      'epoch '||v_epoch||' is in force but no ckp:Epoch seals its digest — an apply advanced the epoch without recording the surface, so drift is undetectable');
   ELSIF v_pin_surf IS DISTINCT FROM v_act_surf THEN
     v_find := v_find || jsonb_build_array(
       'SURFACE DRIFT: the composed surface differs from the digest epoch '||v_epoch||' sealed. '||
@@ -3498,6 +3596,7 @@ BEGIN
   RETURN jsonb_build_object(
     'ok', true,
     'kernel', v_proj,
+    'state', v_state,
     'epoch', v_epoch,
     'epoch_resource', v_ep_iri,
     'surface', jsonb_build_object('pinned', v_pin_surf, 'actual', v_act_surf,
@@ -3508,6 +3607,10 @@ BEGIN
     'composed_nodeshapes', v_shapes,
     'modules', v_mods,
     'findings', v_find,
+    'note', CASE v_state
+      WHEN 'core-only'  THEN 'no kernel named: the law is loaded and readable, sealing refuses on M2. A complete state, not a fault.'
+      WHEN 'named'      THEN 'a project resolves but no ckp:Kernel is sealed — germination is the open next act.'
+      ELSE 'a ckp:Kernel is sealed for this project.' END,
     'healthy', jsonb_array_length(v_find) = 0);
 END;
 $function$
@@ -3783,7 +3886,13 @@ COMMENT ON FUNCTION ckp._dispatch_safe(text, jsonb) IS
   'the door for every client (measured 2026-08-11, pgck-bridge exit code 1).';
 
 CREATE OR REPLACE FUNCTION ckp.germinate_kernel(p_project text, p_label text DEFAULT NULL,
-                                                p_kind text DEFAULT 'personal')
+                                                -- 0.4.81: DEFAULT NULL, not
+                                                -- 'personal'. NULL is the ABSENCE
+                                                -- itself; ProjectShape then refuses
+                                                -- on minCount/sh:in and names the
+                                                -- clause, instead of the substrate
+                                                -- choosing a kind nobody asked for.
+                                                p_kind text DEFAULT NULL)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -4117,7 +4226,7 @@ BEGIN
     res := ckp.germinate_kernel(
              COALESCE(p_payload->>'project', p_payload->>'name'),
              p_payload->>'label',
-             COALESCE(p_payload->>'projectKind', 'personal'));
+             p_payload->>'projectKind');
 
   WHEN 'kernel.create' THEN
     DECLARE nm text := p_payload->>'name'; gid text;
@@ -4279,7 +4388,7 @@ BEGIN
   -- The class is the caller's to name; the property IRIs follow its namespace.
   WHEN 'notify' THEN
     DECLARE frm text := p_payload->>'from'; tgt text := p_payload->>'to';
-            pred text := COALESCE(p_payload->>'predicate','notifies');
+            pred text := p_payload->>'predicate';
             -- F-A: server-derived identity (verified connection), never the payload (see task.create).
             bdy text := p_payload->>'body'; sub text := current_setting('ckp.requester', true); mid text; topic text; v_body jsonb;
             v_mtype text := NULLIF(btrim(COALESCE(p_payload->>'type','')), '');

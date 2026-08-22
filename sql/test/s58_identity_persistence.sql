@@ -89,8 +89,14 @@ END $$;
 DO $$
 DECLARE res jsonb; v_id text; cby text;
 BEGIN
+  -- 0.4.81: the payload NAMES its predicate. This call used to omit it and the
+  -- substrate filled 'notifies' — inventing the MEANING of the edge, before
+  -- validation, so MessageShape's minCount(1) on board/predicate never got to
+  -- speak. The shape always demanded it; the code was papering over the shape.
+  -- Omitting it now refuses, naming the clause, which is the correct answer to
+  -- "what kind of link is this?" when nobody said.
   res := ckp.dispatch('notify',
-    '{"type":"urn:ckp:board/Message","from":"a","to":"b","body":"hi","sub":"attacker"}'::jsonb);
+    '{"type":"urn:ckp:board/Message","from":"a","to":"b","body":"hi","predicate":"notifies","sub":"attacker"}'::jsonb);
   IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's58 FAIL: notify not ok: %', res; END IF;
   v_id := res->>'id';
   SELECT body->>'urn:ckp:board/created_by' INTO cby FROM ckp.instances WHERE id = v_id;
