@@ -21,13 +21,31 @@
 CALL ckp.bootstrap_kernel();
 SET ckp.project = 's65-test';
 
--- (1) the founding pin, reproduced from THIS store's independent copy.
+-- (1) the founding pin, reproduced from THIS store's independent copy — PER ROOT.
+--     0.4.82: the boot default moved to v3.12 FINAL, so the loaded core may be
+--     either line. A pin check that names one root misreports a CONTENT change
+--     as ALGORITHM drift (measured on the first v3.12-booted run: 6e38f7bb… vs
+--     the v3.11 pin, wrongly blamed on the algorithm). Detect the loaded root by
+--     its shape arithmetic (27 = v3.11 · 30 = v3.12, both predicted-then-counted
+--     founding numbers) and assert the MATCHING pin; an unknown count is its own
+--     failure. Algorithm conformance against fixed content stays covered by s73
+--     (module fixtures) and check (2)'s relabelling invariance below.
 DO $$
-DECLARE d text;
+DECLARE d text; n int;
 BEGIN
   d := ckp._structural_digest(pgrdf.add_graph('urn:ckp:core'));
-  IF d <> '9a791c6c3d6d07cbeeefb33b677e66e2b643f22d844689501458c5765272282d' THEN
-    RAISE EXCEPTION 's65 FAIL (1): core structural digest %… does not reproduce the founding pin 9a791c6c… — the algorithm drifted from the fleet''s', left(d,16);
+  SELECT count(*) INTO n FROM pgrdf.sparql(
+    'PREFIX sh:<http://www.w3.org/ns/shacl#> SELECT ?s WHERE { GRAPH <urn:ckp:core> { ?s a sh:NodeShape } }');
+  IF n = 27 THEN     -- v3.11 line
+    IF d <> '9a791c6c3d6d07cbeeefb33b677e66e2b643f22d844689501458c5765272282d' THEN
+      RAISE EXCEPTION 's65 FAIL (1): v3.11 core (27 shapes) digest %… does not reproduce the founding pin 9a791c6c… — the algorithm drifted from the fleet''s', left(d,16);
+    END IF;
+  ELSIF n = 30 THEN  -- v3.12 FINAL line
+    IF d <> '6e38f7bb631875b4fcacb086219d862bbe08cfc7209ee9c96967222e9c0225a7' THEN
+      RAISE EXCEPTION 's65 FAIL (1): v3.12 core (30 shapes) digest %… does not reproduce the v3.12 founding pin 6e38f7bb… — the algorithm drifted (or the FINAL root''s bytes moved without its pin)', left(d,16);
+    END IF;
+  ELSE
+    RAISE EXCEPTION 's65 FAIL (1): loaded core carries % NodeShapes — neither founding arithmetic (27 v3.11 / 30 v3.12); the root is not one this gate knows', n;
   END IF;
 END $$;
 
@@ -102,17 +120,20 @@ BEGIN
   END LOOP;
 END $$;
 
--- (5) counts NAME their method and reproduce the founding arithmetic (F3):
---     the v3.11 core = 27 NodeShapes · 80 declared vocabulary properties.
+-- (5) counts NAME their method and reproduce the founding arithmetic (F3),
+--     PER ROOT (0.4.82, the v3.12-FINAL boot flip):
+--       v3.11 core = 27 NodeShapes · 80 declared vocabulary properties
+--       v3.12 core = 30 NodeShapes · 94 declared vocabulary properties
+--     (94 = the same count the tests/v312-tdd audit instrument reports —
+--      asserted owl/rdf declarations; predicted here, counted by the gate.)
 DO $$
-DECLARE res jsonb; g jsonb;
+DECLARE res jsonb; g jsonb; ns int; dp int;
 BEGIN
   res := ckp.dispatch('surface.grounding', jsonb_build_object('iri','urn:ckp:core'));
   g := res->'graphs'->0;
-  IF (g->>'nodeshapes')::int <> 27 THEN
-    RAISE EXCEPTION 's65 FAIL (5): core nodeshapes % <> 27 (asserted sh:NodeShape typing)', g->>'nodeshapes'; END IF;
-  IF (g->>'declaredProperties')::int <> 80 THEN
-    RAISE EXCEPTION 's65 FAIL (5): core declaredProperties % <> 80 (asserted owl/rdf property declarations)', g->>'declaredProperties'; END IF;
+  ns := (g->>'nodeshapes')::int; dp := (g->>'declaredProperties')::int;
+  IF NOT ((ns = 27 AND dp = 80) OR (ns = 30 AND dp = 94)) THEN
+    RAISE EXCEPTION 's65 FAIL (5): core arithmetic %/% matches neither founding pair (27/80 v3.11 · 30/94 v3.12) — methods: asserted sh:NodeShape typing · asserted owl/rdf property declarations', ns, dp; END IF;
   IF NOT (g ? 'propertyShapes') THEN
     RAISE EXCEPTION 's65 FAIL (5): propertyShapes instrument missing — a count without its method is not a number'; END IF;
 END $$;

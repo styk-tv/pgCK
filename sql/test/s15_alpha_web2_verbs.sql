@@ -36,23 +36,21 @@ BEGIN
   END LOOP;
 END $$;
 
--- (b) WRITE verb as ck_participant — INVERTED at pgRDF 0.6.34, and the inversion is the
---     honest state, checked against SPEC.CKP.v3.12 rather than patched around:
---
---     This assertion used to demand task.create SEALS. It only ever could because the
---     alpha path validated against a shapes graph with no SHACL target, and the engine
---     answered a vacuous conforms:true — the exact defect class A4 names ("vacuity is a
---     finding") and P5 records as retired (task.*/goal.* emit v3.7 types no current
---     surface declares). pgRDF 0.6.34 now REFUSES the vacuous verdict outright:
---       "shapes graph … declares no SHACL target (0 triples). Nothing would be
---        selected, so a verdict would be vacuous …"
---     The engine is enforcing this repo's own doctrine, so the gate flips: the REFUSAL
---     is the pass. A task.create that seals again means the vacuous pass came back —
---     that is the regression this now catches. The floored-write-path proof moves to a
---     declared type; the alpha-path repair (validate against the composed surface, or
---     retire task.create) is tests/v312-tdd case 16 + FINAL-HANDOVER B.
+-- (b) WRITE verb as ck_participant — task.create seals AND IS JUDGED, and the
+--     journey earns the comment (three states in one release, each measured):
+--     * pre-0.6.34: the link projection validated against a never-seeded board
+--       graph — vacuous conforms:true (pgRDF#134, resolved as ours).
+--     * first fix attempt asserted the refusal as the pass — WRONG: measured,
+--       the seal itself is judged by demo's OWN declared law (example.kernel.ttl
+--       declares board/Task + board/shape/Task; the composed surface targets it;
+--       M4 = urn:ckp:board/shape/Task). "No goal, no task" rules the ROOT;
+--       a sovereign project declaring board vocabulary seals lawfully under it.
+--     * final form: assert the seal AND the judgment — M4 present and naming
+--       the project's own shape. Stronger than the 0.4.81 assertion (which
+--       checked ok+verified only), weaker than nothing: a seal with M4 absent
+--       FAILS here now.
 DO $$
-DECLARE res jsonb; failed text;
+DECLARE res jsonb; failed text; m4 text;
 BEGIN
   SET LOCAL ROLE ck_participant;
   BEGIN
@@ -60,14 +58,29 @@ BEGIN
       '{"task":{"target_kernel":"demo","title":"s15 alpha task"}}'::jsonb);
   EXCEPTION WHEN OTHERS THEN failed := SQLERRM; END;
   RESET ROLE;
-  IF failed IS NOT NULL THEN RAISE EXCEPTION 's15 FAIL: task.create errored (raised instead of refusing in-envelope): %', failed; END IF;
-  IF (res->>'ok') = 'true' THEN
-    RAISE EXCEPTION 's15 FAIL (b): task.create SEALED — the vacuous validation pass is back. Either the engine stopped refusing no-target shapes graphs (pgrdf < 0.6.34 semantics) or the alpha path found a surface that admits a v3.7 Task. Both are findings: %', res;
+  IF failed IS NOT NULL THEN RAISE EXCEPTION 's15 FAIL: task.create errored: %', failed; END IF;
+  IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's15 FAIL: task.create not ok: %', res; END IF;
+  IF (res->>'verified') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's15 FAIL: task.create not verified: %', res; END IF;
+  SELECT body->>'https://conceptkernel.org/ontology/v3.11/core#conformsToShape' INTO m4
+    FROM ckp.instances WHERE id = res->>'id';
+  IF m4 IS NULL THEN
+    RAISE EXCEPTION 's15 FAIL (b): task sealed with M4 ABSENT — admitted, ledgered, judged by NOTHING. The zero-focus pass is live on the seal path.';
   END IF;
-  IF res::text NOT ILIKE '%vacuous%' AND res::text NOT ILIKE '%no SHACL target%' THEN
-    RAISE EXCEPTION 's15 FAIL (b): task.create refused for an UNSTATED reason (expected the vacuous-verdict refusal): %', res;
+  IF m4 NOT LIKE '%board/shape/Task' THEN
+    RAISE EXCEPTION 's15 FAIL (b): task judged by an unexpected shape %', m4;
   END IF;
-  RAISE NOTICE 's15 (b) PASS — dead verb refused, vacuity named, nothing sealed';
+  RAISE NOTICE 's15 (b) PASS — sealed AND judged: M4 = %', m4;
+END $$;
+
+-- (b2) negative control: a task missing its required title is refused in-envelope.
+DO $$
+DECLARE res jsonb;
+BEGIN
+  SET LOCAL ROLE ck_participant;
+  res := ckp.dispatch('task.create', '{"task":{"target_kernel":"demo"}}'::jsonb);
+  RESET ROLE;
+  IF (res->>'ok') = 'true' THEN RAISE EXCEPTION 's15 FAIL (b2): titleless task SEALED: %', res; END IF;
+  RAISE NOTICE 's15 (b2) PASS — titleless task refused: %', res->>'error';
 END $$;
 
 -- (c) The floor still holds: ck_participant cannot reach pgrdf.* or the ckp internals directly.

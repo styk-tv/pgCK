@@ -4768,10 +4768,19 @@ BEGIN
   PERFORM pgrdf.clear_graph(v_scratch_g);
   PERFORM pgrdf.parse_turtle(v_ttl, v_scratch_g, 'urn:ckp:projection#');
 
-  -- SHACL gate: validate scratch against the board's shapes. Native mode
-  -- (pgrdf >= 0.5.1) is sufficient: minCount violations REFUSE — the earlier
-  -- permissive reading was a measured pgrdf 0.5.0 defect, fixed upstream.
-  v_validation := pgrdf.validate(v_scratch_g, v_board_g);
+  -- SHACL gate — against the COMPOSED SURFACE, the same law ckp.seal reads.
+  -- 0.4.82: this validated against the BOARD graph, which nothing seeds since
+  -- the board vocabulary retired from CORE (0.4.51) — get-or-create minted it
+  -- empty, and pgRDF 0.6.34's vacuity refusal exposed the path (pgRDF#134,
+  -- resolved as ours; the refusal was correct). The composed surface is the one
+  -- law (F10). KNOWN RESIDUE, deliberately not fixed in this release: the link
+  -- TTL above types core#Task/core#Goal — IRIs no surface declares — so this
+  -- gate selects ZERO focus nodes and passes silently; the SEAL gate remains
+  -- the real law (a board-declaring project's Task is judged there, M4 =
+  -- board/shape/Task, measured). The projection namespace mismatch is
+  -- tests/v312-tdd case 16's RED and the next train's fix; changing projection
+  -- semantics mid-release would break the oci-germination bundle agreements.
+  v_validation := pgrdf.validate(v_scratch_g, ckp._composed_shapes(p_project));
 
   IF NOT (v_validation->>'conforms')::boolean THEN
     v_results := v_validation->'results';
