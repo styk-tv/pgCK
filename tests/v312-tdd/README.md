@@ -31,7 +31,7 @@ re-run: the smoke stack drops and recreates both extensions every `smoke-s4`.
 
 ## The measured ledger — 2026-08-26, smoke stack (pgck 0.4.82-devel / pgrdf 0.6.34, v3.12-FINAL-booted)
 
-**24 cases · green 13 · red-as-predicted 11 · BROKEN 0 · ~4s wall.** Layered: core
+**26 cases · green 13 · red-as-predicted 13 · BROKEN 0 · ~5s wall.** Cases 06/07 (quorum-from-projectKind, apply-honours-about — VRS R-D / PASS-1 F-A) document their current P0-E-refused flow and activate fully as the governance probe payloads are refined. Layered: core
 planes first (01–21), modules proven on top (22–27). The mechanical audit is ONE
 instrument (`audit/ontology-audit.sh`, structured output, methods named) consumed by
 cases 18/22 and run by authors before any ontology commit.
