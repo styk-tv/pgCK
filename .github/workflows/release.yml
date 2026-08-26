@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # pg18 ONLY — all non-pg18 targets are blocked from now on. pgRDF v0.6.20
+        # pg18 ONLY — all non-pg18 targets are blocked from now on. pgRDF v0.6.34
         # is pg18-only and pgCK tracks it; the LATEST.md head is pg18. Older PG
         # majors are intentionally not built.
         pg: ["18"]
@@ -61,7 +61,7 @@ jobs:
       #     ├── lib/pgck.so
       #     ├── share/extension/pgck.control
       #     ├── share/extension/pgck--<ver>.sql
-      #     ├── ontology/v3.11/{core.ttl,modules/*.ttl}  (mount at /ontology)
+      #     ├── ontology/v3.1{1,2}/…  (mount at /ontology; v3.12 is the boot default)
       #     ├── LICENSE
       #     └── SHA256SUMS
       - name: Repack to INSTALL-spec layout
@@ -91,6 +91,15 @@ jobs:
           cp -R ontology/v3.11 "${OUT}/ontology/"
           test -f "${OUT}/ontology/v3.11/core.ttl"                  # fail loudly, not silently
           test -f "${OUT}/ontology/v3.11/modules/wave.ttl"
+          # v0.4.82: v3.12 FINAL ships and is the boot default — same
+          # structure-preserving rule, same loud failure. boot() defaults
+          # to /ontology/v3.12/core.ttl AS OF v0.4.82 (v3.12 FINAL — operator ruling
+          # 2026-08-26; digest 7de02b35…, the RC2 bytes promoted unchanged). v3.11
+          # ships beside it for benches pinned to the prior line; adoption stays a
+          # governed act.
+          cp -R ontology/v3.12 "${OUT}/ontology/"
+          test -f "${OUT}/ontology/v3.12/core.ttl"
+          test -f "${OUT}/ontology/v3.12/core.ttl.wave-3.12.sha256"      # the FINAL digest sidecar
           cp LICENSE "${OUT}/"
           ( cd "${OUT}" && find . -type f ! -name SHA256SUMS -print0 | xargs -0 sha256sum > SHA256SUMS )
           tar czf "${OUT}.tar.gz" "${OUT}"

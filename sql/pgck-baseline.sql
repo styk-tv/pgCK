@@ -434,7 +434,7 @@ END;
 $procedure$
 ;
 
-CREATE OR REPLACE PROCEDURE ckp.boot(IN p_core_ttl_path text DEFAULT '/ontology/v3.11/core.ttl'::text)
+CREATE OR REPLACE PROCEDURE ckp.boot(IN p_core_ttl_path text DEFAULT '/ontology/v3.12/core.ttl'::text)
  LANGUAGE plpgsql
 AS $procedure$
 DECLARE v_core INT; v_ttl TEXT; v_shapes INT;
@@ -2116,7 +2116,11 @@ AS $function$
 -- every other blank node flattened to _:z), so the digest depends on the shape
 -- a node sits in and never on the label it happened to receive.
 --
--- THE ALGORITHM IS THE FLEET'S, byte-for-byte (pgrdf_fingerprint):
+-- THE ALGORITHM IS THE FLEET'S, byte-for-byte — method label pgrdf-fd1-sha256,
+-- owned by the engine since pgRDF v0.6.34 as pgrdf.structural_digest(). (An
+-- earlier revision of this comment cited "pgrdf_fingerprint", a function that
+-- existed in no schema — the exact folklore-citation class pgRDF's L7 measured;
+-- corrected 2026-08-26. Delegating this body to the engine is FINAL-HANDOVER B1.)
 --   ground     = sorted lines with no blank node, joined by \n, sha256
 --   sig(b)     = sha256 of b's incident lines (self→_:a, other→_:z), sorted
 --   bnode      = sha256 of the sorted signature hexes, joined by \n

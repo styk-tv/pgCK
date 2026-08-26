@@ -1,0 +1,21 @@
+# The §2 vocabulary delta of the v3.12 root (SPEC.CKP.v3.12) — required terms.
+# Consumed by ontology-audit.sh as data, so the delta is versioned, not coded.
+Signal
+Score
+signalPolarity
+dwellMillis
+scoreValue
+computedAtEpoch
+weightAssent
+weightDissent
+weightImplicit
+decayLambda
+thresholdPromote
+thresholdDiscard
+thresholdDefer
+affordanceName
+sparqlBody
+resultShape
+SignalShape
+ScoreShape
+ExecutableAffordanceShape

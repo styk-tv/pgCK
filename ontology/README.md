@@ -23,21 +23,35 @@ force** by being present. A module is in force only because a sealed
 composition is adoption-derived; since `0.4.57` an Adoption's `intoProject`
 matches in any of its sealed spellings.
 
-## The catalog — the complete v3.11 mirror set
+## The catalog — v3.12 FINAL (the boot default) and the v3.11 line beside it
+
+**v3.12 was promoted from RC2 to FINAL on 2026-08-26 by operator ruling — the
+bytes are the RC2 bytes, unchanged, so the digest carries over.** The container
+bundles unpack ontologies from *older pgck releases* and are therefore stale
+until oci-germination cuts a bundle against pgck ≥ 0.4.82; until then **this
+directory is the only current source**. The v3.12 root binds the
+`…/v3.11/core#` namespace deliberately — the graph IRI line does not move, the
+LAW carries the version — so v3.12 is v3.11 + the scoring vocabulary
+(`ckp:Signal`, `ckp:Score`, the seven gated constants) + the executable-
+affordance properties: 30 NodeShapes = 27 + 3.
 
 | Path | Role | Digest (sha256) |
 |---|---|---|
-| `v3.11/core.ttl` | **the root** — self-contained: 948 triples · 27 classes · 27 shapes · 80 properties | `e5f7d1e54b32fa0ba2d41ba248e0909b96ee1ebb4344e2d9e9ccdf4e0b25348d` |
+| `v3.12/core.ttl` | **the root, FINAL — the `ckp.boot()` default since 0.4.82**: 30 shapes = 27+3 | `7de02b35fd1fbc2ecfd32e6e53162704be2791a2d41280102849ddb605eb9297` |
+| `v3.12/core.ttl.wave-3.12.sha256` | the FINAL digest sidecar (rc1/rc2 sidecars retained as history) | — |
+| `v3.12/modules/wave.ttl`, `v3.12/modules/recon.ttl` | module mirrors on the v3.12 shelf (namespaces track the ontology LINE — see the RC2 note on recon) | see sidecars |
+| `v3.11/core.ttl` | the prior root — ships beside v3.12 for benches pinned to it | `e5f7d1e54b32fa0ba2d41ba248e0909b96ee1ebb4344e2d9e9ccdf4e0b25348d` |
 | `v3.11/modules/wave.ttl` | the coordination-wave vocabulary module (11 shapes) | `f4ad27cec4417e2ed5b566adb7f7ee200b3c3fbfddf25adf840d267fd57e417b` |
 | `v3.11/modules/lexicon.ttl` | the closed defect-symptom lexicon module (4 shapes) | `ce9f20f4dc43b79b704a1266ca69956890b006564824c051d44eb31cc90b0329` |
 | `v3.11/index.html` | the publication page (states the digest discipline of itself) | — |
 
-This set is what `ckp.boot()` reads (`/ontology/v3.11/core.ttl`, the ε0 root)
-and what sealed Adoptions bind by the digests above. **These three digests are
-load-bearing on the live substrate**: `bindsRoot` in every sealed
-`wave:Statement` names the root digest, and the wave/lexicon Adoptions name
-the module digests — re-verify any of them against this table without asking
-anyone.
+`ckp.boot()` reads `/ontology/v3.12/core.ttl` since `0.4.82` (previously
+`/ontology/v3.11/core.ttl`, moved there at `0.4.40`). Existing v3.11-booted
+databases are untouched — boot is an install-time act, and re-grounding a live
+kernel is a governed act, never an upgrade side effect. **These digests are
+load-bearing on the live substrate**: `bindsRoot` in sealed `wave:Statement`s
+names a root digest, and the wave/lexicon Adoptions name the module digests —
+re-verify any of them against this table without asking anyone.
 
 ## What is deliberately NOT here any more
 

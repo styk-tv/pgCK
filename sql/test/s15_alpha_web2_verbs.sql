@@ -1,8 +1,8 @@
 -- s15_alpha_web2_verbs.sql — Critical Isolation Alpha: web2 verbs work UNDER the floor.
 --
--- Confirms the maintainer's question — "will web2 work fine with this release?" — at the
--- pgCK level: a connection holding ONLY ckp.dispatch (the ck_participant capability) can
--- drive web2's verb surface (reads AND a seal-backed write) through the floored dispatch,
+-- Confirms the floor at the pgCK level: reads work UNDER it, the role wall holds, and
+-- (since pgRDF 0.6.34) the legacy alpha write REFUSES instead of sealing vacuously. A
+-- connection holding ONLY ckp.dispatch (the ck_participant capability) drives the reads,
 -- while still being denied pgrdf.* and the ckp internals. (The full browser confirmation is
 -- web2's own step, with the stripped CK.Lib.Js.)
 --
@@ -36,8 +36,21 @@ BEGIN
   END LOOP;
 END $$;
 
--- (b) WRITE verb as ck_participant — task.create seals a governed Task through the floored
---     definer path (dispatch -> ckp.seal -> SHACL gate -> ledger -> proof, all as ck_substrate).
+-- (b) WRITE verb as ck_participant — INVERTED at pgRDF 0.6.34, and the inversion is the
+--     honest state, checked against SPEC.CKP.v3.12 rather than patched around:
+--
+--     This assertion used to demand task.create SEALS. It only ever could because the
+--     alpha path validated against a shapes graph with no SHACL target, and the engine
+--     answered a vacuous conforms:true — the exact defect class A4 names ("vacuity is a
+--     finding") and P5 records as retired (task.*/goal.* emit v3.7 types no current
+--     surface declares). pgRDF 0.6.34 now REFUSES the vacuous verdict outright:
+--       "shapes graph … declares no SHACL target (0 triples). Nothing would be
+--        selected, so a verdict would be vacuous …"
+--     The engine is enforcing this repo's own doctrine, so the gate flips: the REFUSAL
+--     is the pass. A task.create that seals again means the vacuous pass came back —
+--     that is the regression this now catches. The floored-write-path proof moves to a
+--     declared type; the alpha-path repair (validate against the composed surface, or
+--     retire task.create) is tests/v312-tdd case 16 + FINAL-HANDOVER B.
 DO $$
 DECLARE res jsonb; failed text;
 BEGIN
@@ -47,9 +60,14 @@ BEGIN
       '{"task":{"target_kernel":"demo","title":"s15 alpha task"}}'::jsonb);
   EXCEPTION WHEN OTHERS THEN failed := SQLERRM; END;
   RESET ROLE;
-  IF failed IS NOT NULL THEN RAISE EXCEPTION 's15 FAIL: task.create errored: %', failed; END IF;
-  IF (res->>'ok') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's15 FAIL: task.create not ok: %', res; END IF;
-  IF (res->>'verified') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 's15 FAIL: task.create not verified: %', res; END IF;
+  IF failed IS NOT NULL THEN RAISE EXCEPTION 's15 FAIL: task.create errored (raised instead of refusing in-envelope): %', failed; END IF;
+  IF (res->>'ok') = 'true' THEN
+    RAISE EXCEPTION 's15 FAIL (b): task.create SEALED — the vacuous validation pass is back. Either the engine stopped refusing no-target shapes graphs (pgrdf < 0.6.34 semantics) or the alpha path found a surface that admits a v3.7 Task. Both are findings: %', res;
+  END IF;
+  IF res::text NOT ILIKE '%vacuous%' AND res::text NOT ILIKE '%no SHACL target%' THEN
+    RAISE EXCEPTION 's15 FAIL (b): task.create refused for an UNSTATED reason (expected the vacuous-verdict refusal): %', res;
+  END IF;
+  RAISE NOTICE 's15 (b) PASS — dead verb refused, vacuity named, nothing sealed';
 END $$;
 
 -- (c) The floor still holds: ck_participant cannot reach pgrdf.* or the ckp internals directly.
