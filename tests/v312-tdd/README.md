@@ -31,7 +31,7 @@ re-run: the smoke stack drops and recreates both extensions every `smoke-s4`.
 
 ## The measured ledger — 2026-08-26, smoke stack (pgck 0.4.82-devel / pgrdf 0.6.34, v3.12-FINAL-booted)
 
-**26 cases · green 13 · red-as-predicted 13 · BROKEN 0 · ~5s wall.** Cases 06/07 (quorum-from-projectKind, apply-honours-about — VRS R-D / PASS-1 F-A) document their current P0-E-refused flow and activate fully as the governance probe payloads are refined. Layered: core
+**27 cases · green 12 · red-as-predicted 15 · BROKEN 0 · ~5s wall.** (Post-reset bench states; case 28 added on the operator's seal-then-listed question.) Cases 06/07 (quorum-from-projectKind, apply-honours-about — VRS R-D / PASS-1 F-A) document their current P0-E-refused flow and activate fully as the governance probe payloads are refined. Layered: core
 planes first (01–21), modules proven on top (22–27). The mechanical audit is ONE
 instrument (`audit/ontology-audit.sh`, structured output, methods named) consumed by
 cases 18/22 and run by authors before any ontology commit.
@@ -62,6 +62,7 @@ cases 18/22 and run by authors before any ontology commit.
 | 25 | spore | recon-roundtrip | ✅ | place → adopt → Chunk gated by module shape → negative control names the clause |
 | 26 | proofs | proof-plane | ✅ | every instance carries a proof row; methods `hmac+sha256`, `ed25519+sha256` |
 | 27 | judgement | four-stamps-readback | ✅ | M1–M4 read individually; M2 names the addressed kernel's law |
+| 28 | capability | govern-then-listed | 🔴 | the #56 LOOP: add_affordance applies ok + verb CALLABLE + absent from derived[] + 0 sealed — what was governed in does not show in its own list |
 
 **The 11 REDs are the v3.12 build queue, re-runnable anytime.** A RED→GREEN flip is a
 mechanism landing; anything→BROKEN is a regression or a stale prediction — stop and look.
