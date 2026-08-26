@@ -2,19 +2,15 @@
 
 ## Where authority lives
 
-**The authoritative home of the Concept Kernel Protocol ontology is always the
-CK-org publication surface** — repository
-[`ConceptKernel/conceptkernel.github.io`](https://github.com/ConceptKernel/conceptkernel.github.io),
-path `docs/public/ontology/<version>/`, published at
-`https://conceptkernel.org/ontology/<version>/`.
-
-Nothing in this directory is authoritative. Every file here is a
-**byte-verified mirror** of that surface. The v3.11 surface is not yet live at
-`conceptkernel.org`. **It is authoritative regardless**: authority is
-established **by digest against the published sidecar** — never by
-reachability, and never by a validator's conformance report (a validator
-reports conformance against an absent shapes graph too; the root's own header
-states this caveat).
+**THIS DIRECTORY IS THE AUTHORITATIVE SOURCE** (operator ruling 2026-08-26,
+reversing the earlier mirror arrangement). The CK-org publication surface —
+[`ConceptKernel/conceptkernel.github.io`](https://github.com/ConceptKernel/conceptkernel.github.io)
+→ `https://conceptkernel.org/ontology/<version>/` — **pulls from this folder on
+change of digest**, per the digest-marker contract below. Authority is still
+established **by digest** — never by reachability, and never by a validator's
+conformance report (a validator reports conformance against an absent shapes
+graph too; the root's own header states this caveat) — the ruling changes which
+end authors the bytes, not how anyone verifies them.
 
 A copy of an ontology in this repo — or loaded in a store — is **not in
 force** by being present. A module is in force only because a sealed
@@ -124,8 +120,9 @@ ck_focus                                               → modules present, quad
 
 ## Update discipline
 
-- **Never edit a mirror here.** Changes land at the CK-org surface first;
-  then re-copy and re-verify the digest.
+- **This folder authors; CK-org republishes.** A change lands HERE as
+  bytes + new sidecar in one commit (contract rule 4); the CK-org surface
+  follows the digest. Never edit the CK-org copy directly.
 - Sidecar files are named for the wave pass that established them; the
   highest pass number is current (`pass-10` supersedes `pass-7` for the root).
 - A new root version arrives as a new `v<version>/` directory in the same
