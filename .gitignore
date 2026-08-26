@@ -59,3 +59,15 @@ SPEC*.md
 # bench scratch mount (nx5 REQ-3) — never tracked
 .bench-scratch/
 ontology.old/
+
+# 2026-08-26 junk-scan hardening: classes that reached the public tree at
+# 0.4.80/0.4.81 (removed same day found). drawio lock/backup files dodge the
+# SPEC* glob via their .$ prefix; shell debris ('--', '-e') came from a
+# mis-quoted command; archive drops of already-tracked trees are never source.
+.$*
+*.bkp
+*.drawio.bkp
+ConceptKernel*-ontologies.zip
+__MACOSX/
+--
+-e

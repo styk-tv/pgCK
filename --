@@ -1,2 +1,0 @@
-Added stdio MCP server pgck with command: PGCK_URL=https://ckdev.localhost NODE_EXTRA_CA_CERTS=/Users/neoxr/Library/Application Support/mkcert/rootCA.pem pgck-mcp mcp to local config
-File modified: /Users/neoxr/.claude.json [project: /Users/neoxr/git_conceptkernel/pgCK]
