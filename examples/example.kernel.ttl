@@ -25,7 +25,10 @@
 #######################################################################
 # THE BOARD, AS DOMAIN VOCABULARY (pgCK#46/#47, 0.4.42)
 #
-# ckp:Task and ckp:Goal do NOT exist in the v3.11 root — measured against the
+# ckp:Task and ckp:Goal do NOT exist in the v3.11 root — nor in the v3.12 FINAL
+# root (7de02b35…, the boot default since 0.4.82; same statement re-measured
+# 2026-08-26: the namespace tracks the LINE, so this file needs no edit to load
+# against either root) — measured against the
 # loaded core (e5f7d1e5): rdfs:label over {Goal, Task, Kernel, Instance, Organ}
 # returns three rows. The board was never core vocabulary; it was v3.7 residue
 # that no shape targeted, so every board write took a VACUOUS conforms:true and
