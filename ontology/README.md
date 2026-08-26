@@ -39,11 +39,31 @@ affordance properties: 30 NodeShapes = 27 + 3.
 |---|---|---|
 | `v3.12/core.ttl` | **the root, FINAL — the `ckp.boot()` default since 0.4.82**: 30 shapes = 27+3 | `7de02b35fd1fbc2ecfd32e6e53162704be2791a2d41280102849ddb605eb9297` |
 | `v3.12/core.ttl.wave-3.12.sha256` | the FINAL digest sidecar (rc1/rc2 sidecars retained as history) | — |
-| `v3.12/modules/wave.ttl`, `v3.12/modules/recon.ttl` | module mirrors on the v3.12 shelf (namespaces track the ontology LINE — see the RC2 note on recon) | see sidecars |
+| `v3.12/modules/wave.ttl` | the wave module, v3.12 shelf (Finding requires `rdfs:label`; ruled-at-pass retyped) | `ad887db28c6e0ea04c7cbd835c40dc5441f073be988475a9634c76e9131db727` |
+| `v3.11/modules/recon.ttl` | the recon reference spore, namespace-corrected re-issue (cut in wave-v3.12; the namespace tracks the LINE) | `b2b11f1b76e22f7bfac10be3eba7b5104ff0d5d0a1d92147ec3dc392f1475d7d` |
+| `v3.12/modules/recon.ttl` | **superseded** (wrong-namespace original) — retained ONLY because sealed Adoptions cite it and composition fails closed on an absent adopted graph | `6a7c199e7ad19580…` (sidecar `-superseded`) |
 | `v3.11/core.ttl` | the prior root — ships beside v3.12 for benches pinned to it | `e5f7d1e54b32fa0ba2d41ba248e0909b96ee1ebb4344e2d9e9ccdf4e0b25348d` |
 | `v3.11/modules/wave.ttl` | the coordination-wave vocabulary module (11 shapes) | `f4ad27cec4417e2ed5b566adb7f7ee200b3c3fbfddf25adf840d267fd57e417b` |
 | `v3.11/modules/lexicon.ttl` | the closed defect-symptom lexicon module (4 shapes) | `ce9f20f4dc43b79b704a1266ca69956890b006564824c051d44eb31cc90b0329` |
 | `v3.11/index.html` | the publication page (states the digest discipline of itself) | — |
+
+## The digest-marker contract (for CK-org's automated pull — added 2026-08-26)
+
+Every published `.ttl` carries at least one `<file>.<wave-tag>.sha256` sidecar.
+The rules an automated consumer relies on:
+
+1. **The file's own sha256 IS its identity.** "On change of digest" means the
+   `.ttl` bytes changed — watch the file, not the sidecar set.
+2. **The current sidecar is the one `shasum -c` passes against the current
+   bytes.** Exactly one per file, always (verified 2026-08-26: 8/8 files OK).
+3. **Historical sidecars are RETAINED and fail against current bytes by
+   design** — they pin superseded revisions (`…pass-7` on the v3.11 core,
+   `…rc1` on the v3.12 core) so old citations stay checkable. A `-c` failure
+   on a historical sidecar is not drift; a `-c` failure on EVERY sidecar of a
+   file is.
+4. A new revision ships **bytes + its new sidecar in the same commit** — a
+   commit that moves one without the other is a defect (the suite's audit
+   instrument checks this on the root).
 
 `ckp.boot()` reads `/ontology/v3.12/core.ttl` since `0.4.82` (previously
 `/ontology/v3.11/core.ttl`, moved there at `0.4.40`). Existing v3.11-booted
