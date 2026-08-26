@@ -71,3 +71,10 @@ ConceptKernel*-ontologies.zip
 __MACOSX/
 --
 -e
+
+# 2026-08-26: web/ leaves this repo's tracked tree (operator ruling — pgck-web
+# will not be carried here; working tree kept for the bench bind-mounts, history
+# untouched). Python bytecode litter ignored with it.
+web/
+__pycache__/
+*.pyc
