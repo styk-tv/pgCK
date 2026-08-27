@@ -339,6 +339,7 @@ INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane) VALUES
   ('pgck','adoption.check',      'input.kernel.pgck.action.adoption.check',      'instance'),
   ('pgck','surface.typecheck',   'input.kernel.pgck.action.surface.typecheck',   'instance'),
   ('pgck','surface.unshaped',    'input.kernel.pgck.action.surface.unshaped',    'instance'),
+  ('pgck','surface.refusals',    'input.kernel.pgck.action.surface.refusals',    'instance'),
   ('pgck','surface.declared',    'input.kernel.pgck.action.surface.declared',    'instance'),
   ('pgck','surface.grounding',   'input.kernel.pgck.action.surface.grounding',   'instance'),
   ('pgck','surface.explain',     'input.kernel.pgck.action.surface.explain',     'instance'),
@@ -4001,7 +4002,10 @@ COMMENT ON FUNCTION ckp.germinate_kernel(text, text, text) IS
   'kernel id carrying a NATS subject metacharacter because such a kernel could never be '
   'granted. Replaces the pgRDF route, which lands correct structure that belongs to nobody.';
 
-CREATE OR REPLACE FUNCTION ckp.dispatch(p_verb text, p_payload jsonb)
+-- 0.4.83 (B7) — the route body. ckp.dispatch is now a thin wrapper that applies
+-- ckp._refusal_envelope on the way out, so the refusal envelope is ONE law at the door
+-- instead of 101 hand-built objects. Internal: no role floor grant.
+CREATE OR REPLACE FUNCTION ckp._dispatch_route(p_verb text, p_payload jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -4166,6 +4170,18 @@ BEGIN
 
   WHEN 'surface.unshaped' THEN
     res := ckp.surface_unshaped(v_proj);
+
+  -- 0.4.83 (B7) — the refusal registry is itself learnable through the door
+  -- (a check that is not a verb does not exist): the closed set of refusal
+  -- codes, their typed sqlstate classes, and what each teaches.
+  WHEN 'surface.refusals' THEN
+    res := jsonb_build_object('ok', true,
+      'count', (SELECT count(*) FROM ckp.refusal_registry),
+      'refusals', COALESCE((SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+                    'code', code, 'sqlstate', sqlstate, 'teaches', teaches))
+                    ORDER BY sqlstate, code)
+                  FROM ckp.refusal_registry), '[]'::jsonb),
+      'note', 'an ok:false whose error is not in this set is fault-shaped, not a refusal');
 
   WHEN 'surface.declared' THEN
     res := ckp.surface_declared(p_payload, v_proj);
@@ -4431,6 +4447,135 @@ BEGIN
 END;
 $function$
 ;
+
+-- 0.4.83 (B7, cklib PASS-2 ISSUE-6/7) — THE REFUSAL REGISTRY. The closed, declared
+-- set of refusal codes: pgck's own E0. A code in this table IS a refusal (the gate
+-- spoke); an ok:false whose error is NOT here is fault-shaped and stays unflagged —
+-- the SQLERRM catch-alls and the internal *_failed wrappers, deliberately absent.
+-- sqlstate carries the typed class a wire consumer can branch on without reading
+-- prose; teaches carries the contract a refusal must hand back when the caller's
+-- KEY (not value) was the mistake. Membership here is authored, never inferred:
+-- the structural slug-vs-prose heuristic stays a heuristic and never a contract.
+CREATE TABLE IF NOT EXISTS ckp.refusal_registry (
+  code     text PRIMARY KEY,
+  sqlstate text NOT NULL,
+  teaches  text
+);
+
+INSERT INTO ckp.refusal_registry (code, sqlstate, teaches) VALUES
+  -- 22004 null_value_not_allowed — a required piece of the payload is absent
+  ('type_required',            '22004', NULL),
+  ('ttl_required',             '22004', NULL),
+  ('id_required',              '22004', NULL),
+  ('reason_required',          '22004', NULL),
+  ('missing_param',            '22004', NULL),
+  ('edge_type_required',       '22004', NULL),
+  ('message_type_required',    '22004', NULL),
+  ('project required',                     '22004', NULL),
+  ('kernel name required',                 '22004', NULL),
+  ('kernel and title required',            '22004', NULL),
+  ('source, predicate, target required',   '22004', NULL),
+  ('from, to, body required',              '22004', NULL),
+  -- 22023 invalid_parameter_value — present but unusable as sent
+  ('invalid_about',            '22023', 'kernel.vote and kernel.apply read {about: <proposal_iri>} — cite the ckp://Proposal#… @id returned by kernel.propose_change, under the key ''about'''),
+  ('invalid_vote_value',       '22023', NULL),
+  ('invalid_requires_quorum',  '22023', NULL),
+  ('invalid_term',             '22023', NULL),
+  ('invalid_type',             '22023', NULL),
+  ('invalid_operator',         '22023', NULL),
+  ('invalid_filter_key',       '22023', NULL),
+  ('invalid_numeric_value',    '22023', NULL),
+  ('invalid_from',             '22023', NULL),
+  ('invalid_patch',            '22023', NULL),
+  ('invalid_param',            '22023', NULL),
+  ('invalid_trigger',          '22023', NULL),
+  ('invalid_profile',          '22023', NULL),
+  ('invalid_to_state',         '22023', NULL),
+  ('type_is_a_curie',          '22023', NULL),
+  ('type_must_be_iri',         '22023', NULL),
+  ('detail_projects_nothing',  '22023', NULL),
+  ('op_has_no_projector',      '22023', NULL),
+  ('no self-loops (v3.7 Edge rule)', '22023', NULL),
+  -- 42704 undefined_object — the name cited resolves to nothing declared
+  ('unknown_proposal',         '42704', 'lookup is by the proposal @id (ckp://Proposal#…) — a bare local id matches nothing'),
+  ('unknown_instance',         '42704', NULL),
+  ('unknown_affordance',       '42704', NULL),
+  ('unknown_derived_affordance','42704', NULL),
+  ('unknown_query_affordance', '42704', NULL),
+  ('undeclared_predicate',     '42704', NULL),
+  ('undeclared_filter_key',    '42704', NULL),
+  ('undeclared_patch_key',     '42704', NULL),
+  ('unresolved_shape',         '42704', NULL),
+  ('type_not_readable_here',   '42704', NULL),
+  ('no_plan',                  '42704', NULL),
+  ('instance not found',       '42704', NULL),
+  -- 55000 object_not_in_prerequisite_state — right thing, wrong moment
+  ('proposal_not_pending',     '55000', NULL),
+  ('already_retired',          '55000', NULL),
+  ('quorum_not_met',           '55000', NULL),
+  ('invalid_transition',       '55000', NULL),
+  -- 42501 insufficient_privilege — the write-authority floor spoke
+  ('snapshot_not_granted',     '42501', NULL),
+  ('fence_violation',          '42501', NULL),
+  -- 23514 check_violation — the shape gate spoke
+  ('shape_violation',          '23514', NULL),
+  -- 42601 syntax_error — the caller's document did not parse
+  ('parse_error',              '42601', NULL)
+ON CONFLICT (code) DO UPDATE SET sqlstate = EXCLUDED.sqlstate, teaches = EXCLUDED.teaches;
+
+-- The ring-1 definer set resolves ckp.* as ck_substrate; a table created on the
+-- WARM road exists after the install-completeness blanket grant already ran, so
+-- the grant must travel with the table or every wire refusal collapses into
+-- 42501 'permission denied for table refusal_registry' (measured over wss on
+-- the first warm upgrade, 2026-08-27 — the fresh road hid it).
+GRANT SELECT ON ckp.refusal_registry TO ck_substrate;
+
+-- The normalizer: applied ONCE, at the door. Idempotent over sites that already
+-- ship refused:true; never touches ok:true, delegate seams, or fault-shaped
+-- replies; never overwrites a sqlstate or hint a site chose itself.
+CREATE OR REPLACE FUNCTION ckp._refusal_envelope(p_res jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  r ckp.refusal_registry%ROWTYPE;
+BEGIN
+  IF p_res IS NULL
+     OR p_res->>'ok' IS DISTINCT FROM 'false'
+     OR COALESCE((p_res->>'delegate')::boolean, false) THEN
+    RETURN p_res;
+  END IF;
+  SELECT * INTO r FROM ckp.refusal_registry WHERE code = p_res->>'error';
+  IF NOT FOUND THEN
+    RETURN p_res;   -- fault-shaped: not in the closed set, stays unflagged
+  END IF;
+  p_res := p_res || jsonb_build_object('refused', true,
+             'sqlstate', COALESCE(p_res->>'sqlstate', r.sqlstate));
+  IF r.teaches IS NOT NULL AND NOT p_res ? 'hint' THEN
+    p_res := p_res || jsonb_build_object('hint', r.teaches);
+  END IF;
+  RETURN p_res;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION ckp.dispatch(p_verb text, p_payload jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+BEGIN
+  RETURN ckp._refusal_envelope(ckp._dispatch_route(p_verb, p_payload));
+END;
+$function$;
+
+COMMENT ON FUNCTION ckp.dispatch(text, jsonb) IS
+  'The one door (CKP §2.2). Routes via ckp._dispatch_route, then ckp._refusal_envelope '
+  'normalizes every refusal against ckp.refusal_registry — the declared closed set '
+  'of refusal codes — so {ok:false, refused:true, sqlstate} is one law for every '
+  'construction site (B7; cklib PASS-2 ISSUE-6/7). A reply whose error is not in '
+  'the registry is fault-shaped, and that absence is deliberate.';
 
 CREATE OR REPLACE FUNCTION ckp.enqueue_materialize(p_concept text, p_scope jsonb, p_formula text, p_epoch bigint)
  RETURNS jsonb

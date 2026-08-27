@@ -2,6 +2,50 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.83 - 2026-08-27
+
+**The refusal envelope becomes one law.**
+
+The same refusal class shipped `{ok:false, refused:true, error, hint}` from one
+construction site (`instance.link`) and bare `{ok:false, error, hint}` from another
+(`instance.create`) — 101 hand-built `ok:false` objects and no single definition of what
+a refusal looks like on the wire, so no consumer could structurally tell a refusal from a
+fault. Measured from the client seat (CK.Lib.Js's wire ladder), whose classifier
+correctly refused to manufacture the flag from prose.
+
+The fix is one law at the door, not a 101-site sweep:
+
+- **`ckp.refusal_registry`** — the declared closed set of refusal codes (51), each with a
+  typed SQLSTATE class: pgck's own E0 discipline arriving at its own envelope. Where the
+  caller's *key* was the mistake, the registry carries the teaching hint: `invalid_about`
+  now answers with the contract (`{about: <proposal_iri>}`) instead of only the value it
+  disliked.
+- **`ckp._refusal_envelope`** — the normalizer, applied once on the way out of
+  `ckp.dispatch`: code in registry ⇒ `refused:true` + `sqlstate` (+ hint if owed and
+  absent). An `ok:false` whose error is *not* in the registry is fault-shaped, and that
+  absence is deliberate — the closed set is authored, never inferred.
+- **`surface.refusals`** — the registry is learnable through the door, because a check
+  that is not a verb does not exist.
+
+The warm road contributed its own lesson: a table born in an upgrade exists *after* the
+install-completeness blanket grant already ran, so the first wire refusal after
+`ALTER EXTENSION UPDATE` collapsed into `42501 permission denied` — caught over wss,
+invisible to the fresh-install gates. The grant now travels with the table.
+
+Suite: `tests/v312-tdd` cases 29/30 were added RED on the client's findings and flipped
+GREEN with this release — 30 cases, 15 green, 14 red-as-predicted, 0 broken.
+
+## v0.4.82 - 2026-08-26
+
+**v3.12 FINAL becomes the boot default; aligned to pgRDF v0.6.34.**
+
+`ckp.boot()` defaults to `/ontology/v3.12/core.ttl` (digest `7de02b35…`, 30 NodeShapes =
+27+3, the seven scoring constants gated) on both roads. `ckp.project_links` validates
+against the composed surface instead of a never-seeded board graph (the pgRDF#134
+resolution — the engine's vacuity refusal now has real inputs). Smoke gates run against
+attested pgRDF v0.6.34. Existing v3.11-booted databases are untouched: re-grounding a
+live kernel is a governed act, never an upgrade side effect.
+
 ## v0.4.81 - 2026-08-22
 
 **Germination becomes reachable, and the substrate stops guessing the payload.**
