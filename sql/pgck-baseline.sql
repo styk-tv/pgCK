@@ -4158,19 +4158,22 @@ BEGIN
   -- their answers are attributable, and the negative control ships WITH the
   -- gate instead of beside it.
   WHEN 'wave.signals' THEN
-    res := ckp.wave_signals(p_payload);
+    res := COALESCE(ckp._module_gate(v_proj, 'urn:ckp:module:wave', 'wave.signals'),
+                    ckp.wave_signals(p_payload));
 
   -- one-version alias (0.4.63): routes, answers, and says where to go. Removed
   -- next release — nothing tagged ever carried the old name.
   WHEN 'wave.oracle' THEN
-    res := ckp.wave_signals(p_payload)
+    res := COALESCE(ckp._module_gate(v_proj, 'urn:ckp:module:wave', 'wave.oracle'),
+                    ckp.wave_signals(p_payload))
         || jsonb_build_object('deprecated', 'wave.oracle is wave.signals; this alias is removed next release');
 
   WHEN 'adoption.check' THEN
     res := ckp.adoption_check(p_payload);
 
   WHEN 'wave.project' THEN
-    res := ckp.wave_project_spine(p_payload);
+    res := COALESCE(ckp._module_gate(v_proj, 'urn:ckp:module:wave', 'wave.project'),
+                    ckp.wave_project_spine(p_payload));
 
   WHEN 'surface.typecheck' THEN
     res := ckp.surface_typecheck(p_payload, v_proj);
@@ -4522,6 +4525,7 @@ INSERT INTO ckp.refusal_registry (code, sqlstate, teaches) VALUES
   ('instance not found',       '42704', NULL),
   -- 55000 object_not_in_prerequisite_state — right thing, wrong moment
   ('proposal_not_pending',     '55000', NULL),
+  ('module_not_adopted',       '55000', 'this verb reads a module this kernel has not adopted — adopt it by digest through the governance plane (a sealed ckp:Adoption naming the module graph); proximity is not adoption'),
   ('already_retired',          '55000', NULL),
   ('quorum_not_met',           '55000', NULL),
   ('invalid_transition',       '55000', NULL),
@@ -4544,6 +4548,27 @@ GRANT SELECT ON ckp.refusal_registry TO ck_substrate;
 -- The normalizer: applied ONCE, at the door. Idempotent over sites that already
 -- ship refused:true; never touches ok:true, delegate seams, or fault-shaped
 -- replies; never overwrites a sqlstate or hint a site chose itself.
+-- 0.4.86 (case 24 / cklib PASS-2 ISSUE-8) — THE GHOST-READ GUARD. A module's
+-- verbs must not answer where the module is not adopted: an answer-about-
+-- nothing reads as evidence. The guard consults ckp._adopted_graphs — the SAME
+-- internal composition consults (a probe that re-implements the gate tests the
+-- probe). NULL = adopted, proceed; otherwise the typed refusal (registry code
+-- module_not_adopted) naming the module and the cure. Interim until v3.12 §2b
+-- (verbs travel WITH the module, unadopted ⇒ unknown_affordance by construction).
+CREATE OR REPLACE FUNCTION ckp._module_gate(p_project text, p_module text, p_verb text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+BEGIN
+  IF p_project IS NOT NULL AND p_module = ANY(ckp._adopted_graphs(p_project)) THEN
+    RETURN NULL;
+  END IF;
+  RETURN jsonb_build_object('ok', false, 'error', 'module_not_adopted',
+    'module', p_module, 'verb', p_verb, 'kernel', p_project);
+END;
+$function$;
+
 CREATE OR REPLACE FUNCTION ckp._refusal_envelope(p_res jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql

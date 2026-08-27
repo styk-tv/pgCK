@@ -2,6 +2,30 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.86 - 2026-08-27
+
+**An answer about nothing is not an answer.**
+
+`wave.signals` / `wave.oracle` / `wave.project` answered vacuously-empty on kernels
+that never adopted the wave module — a reply that reads as evidence and is evidence of
+nothing (the ghost-read trap: first measured 2026-08-20, measured again independently
+from the client seat as CK.Lib.Js's ISSUE-8). The verbs are v3.11 built-ins predating
+module-carried execution, and the module-not-adopted guard was a release-gate SHOULD
+that stayed prose.
+
+Now coded: `ckp._module_gate` consults `ckp._adopted_graphs` — the same internal
+composition consults, so the probe cannot drift from the gate — and refuses typed
+(`module_not_adopted`, `55000`, hint teaching the adoption cure) where the module is
+not adopted. Interim until v3.12 §2b lands verbs that travel with their module
+(unadopted ⇒ `unknown_affordance` by construction, no guard to remember).
+
+The fixture this exposed: s67's R-11 census assertion expected a completeness verdict
+from an unadopted kernel — itself a ghost read; it now asserts the typed refusal.
+
+Suite: case 24 flipped GREEN — 30 cases, 20 green, 9 red-as-predicted, 0 broken.
+Wire-verified on the dev bench: the refusal arrives `refused:true, 55000` with the
+teaching hint over wss.
+
 ## v0.4.85 - 2026-08-27
 
 **What was governed in shows up in its own list.**

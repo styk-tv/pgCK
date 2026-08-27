@@ -29,13 +29,13 @@ PGCK_TDD_PSQL="psql …" run.sh      # any bench via full psql command — but w
 Cases only write throwaway artifacts (`urn:tdd:*` names, probe seals) and are safe to
 re-run: the smoke stack drops and recreates both extensions every `smoke-s4`.
 
-## The measured ledger — 2026-08-27, smoke stack (pgck 0.4.85-devel / pgrdf 0.6.34, v3.12-FINAL-booted)
+## The measured ledger — 2026-08-27, smoke stack (pgck 0.4.86-devel / pgrdf 0.6.34, v3.12-FINAL-booted)
 
-**30 cases · green 19 · red-as-predicted 10 · BROKEN 0 · ~5s wall.** Cases 29/30 (the
+**30 cases · green 20 · red-as-predicted 9 · BROKEN 0 · ~5s wall.** Cases 29/30 (the
 refusal envelope) were added RED on cklib PASS-2's ISSUE-6/7 and flipped GREEN the same
 day the refusal registry + door normalizer landed (0.4.83); cases 14/15 (reply
-stamps, completeness verdict) flipped with 0.4.84; the #56 pair (04/28) with 0.4.85
-— the suite working as intended. Layered: core planes first (01–21), modules proven on top (22–30). The
+stamps, completeness verdict) flipped with 0.4.84; the #56 pair (04/28) with 0.4.85; the
+ghost-read guard (24) with 0.4.86 — the suite working as intended. Layered: core planes first (01–21), modules proven on top (22–30). The
 mechanical audit is ONE instrument (`audit/ontology-audit.sh`, structured output,
 methods named) consumed by cases 18/22 and run by authors before any ontology commit.
 
@@ -61,7 +61,7 @@ methods named) consumed by cases 18/22 and run by authors before any ontology co
 | 21 | root | boot-default-v312 | ✅ | installed `boot()` defaults to v3.12 FINAL |
 | 22 | modules | module-audits | 🔴 | wave+recon CLEAN; **lexicon: 11 unreached properties incl. `lex:symptom`** — ungated law, ours |
 | 23 | admission | unadopted-refuses | ✅ | unadopted `wave:Finding` refused — proximity is not adoption |
-| 24 | vacuity | wave-verbs-honest | 🔴 | `wave.signals` answers vacuously where unadopted — ghost-read trap stands |
+| 24 | vacuity | wave-verbs-honest | ✅ | wave verbs refuse `module_not_adopted` (typed, teaching the cure) where unadopted — `ckp._module_gate` reads the same adoption truth composition reads |
 | 25 | spore | recon-roundtrip | ✅ | place → adopt → Chunk gated by module shape → negative control names the clause |
 | 26 | proofs | proof-plane | 🔴 | door path total; legacy fixture paths (edge/match) seal proofless — every-write-appends-evidence owed |
 | 27 | judgement | four-stamps-readback | ✅ | M1–M4 read individually; M2 names the addressed kernel's law |
@@ -69,7 +69,7 @@ methods named) consumed by cases 18/22 and run by authors before any ontology co
 | 29 | envelope | refusal-envelope | ✅ | ONE law: every registry refusal ships `refused:true` + typed `sqlstate` from every site (B7) |
 | 30 | envelope | refusal-teaches-key | ✅ | `invalid_about` teaches `{about: <proposal_iri>}` — refusals name the KEY, not just the value |
 
-**The 10 REDs are the v3.12 build queue, re-runnable anytime.** A RED→GREEN flip is a
+**The 9 REDs are the v3.12 build queue, re-runnable anytime.** A RED→GREEN flip is a
 mechanism landing; anything→BROKEN is a regression or a stale prediction — stop and look.
 
 ## The rule this suite holds

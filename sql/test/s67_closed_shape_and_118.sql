@@ -84,12 +84,18 @@ BEGIN
       RAISE EXCEPTION 's67 FAIL (3): module row lacks the #118 fields: %', m; END IF;
   END LOOP;
 
+  -- 0.4.86 — THE GHOST-READ GUARD REACHES THIS FIXTURE (v312-tdd case 24;
+  -- cklib PASS-2 ISSUE-8). s67-test adopts no wave module, so the census must
+  -- now REFUSE module_not_adopted instead of answering about nothing. The old
+  -- assertion here (a completeness verdict from an UNADOPTED kernel) was
+  -- itself a ghost read — R-11's census contract is only measurable on a
+  -- kernel that adopted the module; the refusal naming module + cure IS the
+  -- honest census of this state.
   res := ckp.dispatch('wave.signals', '{}'::jsonb);
-  IF NOT (res ? 'completeness') THEN RAISE EXCEPTION 's67 FAIL (4): wave.signals carries no completeness verdict'; END IF;
-  IF (res#>>'{completeness,verdict}') NOT ILIKE 'INCOMPLETE%' THEN
-    RAISE EXCEPTION 's67 FAIL (4): the census must call itself INCOMPLETE while its blind spots stand, got %', res#>>'{completeness,verdict}'; END IF;
-  IF jsonb_array_length(res#>'{completeness,blindSpots}') < 3 THEN
-    RAISE EXCEPTION 's67 FAIL (4): blind spots must be DECLARED, not implied'; END IF;
+  IF (res->>'error') IS DISTINCT FROM 'module_not_adopted' THEN
+    RAISE EXCEPTION 's67 FAIL (4): wave.signals on an unadopted kernel must refuse module_not_adopted, got %', res; END IF;
+  IF (res->>'refused') IS DISTINCT FROM 'true' OR (res->>'sqlstate') IS NULL THEN
+    RAISE EXCEPTION 's67 FAIL (4): module_not_adopted arrived untyped (no refused:true / sqlstate) — the envelope law missed it: %', res; END IF;
 END $$;
 
 \echo s67_closed_shape_and_118: PASS
