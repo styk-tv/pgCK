@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # THE SEAL-SHOWS-UP-IN-ITS-LIST OBLIGATION (#56 measured as a LOOP, not a count):
 # govern add_affordance in (P0-E contract: detail.verb + detail.query) → apply ok →
-# the verb must (a) be CALLABLE and (b) APPEAR in the affordances reply's derived[].
+# the verb must (a) be CALLABLE and (b) APPEAR in the affordances reply's list.
 # Predicted RED at (b): apply registers the plan (callable ✓) but seals NO
 # ckp:Affordance — capability works while its sealed declaration is absent, so the
 # list that should carry it stays []. GREEN when apply seals the Affordance and
-# derived[] lists it (v3.12 §2b / VRS R-C / HANDOVER B5).
+# the affordances list carries it (v3.12 §2b / VRS R-C / HANDOVER B5).
 source "$(dirname "$0")/../lib.sh"
 out=$(Q "BEGIN;
 SELECT set_config('ckp.requester','svc:v312-tdd',true);
@@ -22,7 +22,11 @@ DO \$\$ DECLARE p jsonb; pid text; a jsonb; call jsonb; aff jsonb; n int; BEGIN
   call := ckp.dispatch('demo.probe.count','{}'::jsonb);
   RAISE NOTICE 'CALLABLE=%', call->>'ok';
   aff := ckp.dispatch('affordances','{}'::jsonb);
-  RAISE NOTICE 'LISTED=%', (aff->'derived')::text ~ 'demo.probe.count';
+  -- instrument correction 0.4.85: the reply's list key is 'affordances' (B1's
+  -- contract since 0.4.51); 'derived' was HANDOVER shorthand, never a key.
+  -- ::text on the boolean: RAISE formats bare booleans as t/f, which the
+  -- grep below could never match — the instrument hid its own success.
+  RAISE NOTICE 'LISTED=%', ((aff->'affordances')::text ~ 'demo.probe.count')::text;
   SELECT count(*) INTO n FROM ckp.instances WHERE body->>'type' LIKE '%core#Affordance';
   RAISE NOTICE 'SEALED_AFFORDANCES=%', n;
 END \$\$;
@@ -32,6 +36,6 @@ echo "$out" | grep -q "APPLY_OK=true" || BROKEN "apply failed: $out"
 echo "$out" | grep -q "CALLABLE=true" || BROKEN "applied verb is NOT callable — worse than #56 (the registration itself broke): $out"
 if echo "$out" | grep -q "LISTED=true"; then
   echo "$out" | grep -qE "SEALED_AFFORDANCES=[1-9]" || BROKEN "listed in derived[] yet 0 sealed Affordances — the list invented a fact"
-  GREEN "governed verb applied, callable, LISTED in derived[], sealed — #56 is closed on this loop"
+  GREEN "governed verb applied, callable, LISTED, sealed — #56 is closed on this loop"
 fi
-RED "applied ok + CALLABLE, but ABSENT from derived[] and $(echo "$out"|grep -o 'SEALED_AFFORDANCES=[0-9]*') — capability without its sealed face; what was governed in does not show up in its own list (#56, the loop form)"
+RED "applied ok + CALLABLE, but ABSENT from the affordances list and $(echo "$out"|grep -o 'SEALED_AFFORDANCES=[0-9]*') — capability without its sealed face; what was governed in does not show up in its own list (#56, the loop form)"

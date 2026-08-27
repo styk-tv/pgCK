@@ -5444,6 +5444,24 @@ BEGIN
   ON CONFLICT (kernel, verb) DO UPDATE SET plane = 'derived', epoch = EXCLUDED.epoch,
     out_topic = EXCLUDED.out_topic, refreshed_at = now();
 
+  -- 0.4.85 (#56 / HANDOVER B5) — EMISSION AND DECLARATION MOVE IN ONE ACT. The
+  -- registry row makes the verb callable; this seal makes it a FACT: a
+  -- ckp:Affordance gated by AffordanceShape, producedBy this kernel's law,
+  -- derivedBy the Materialization this very apply sealed. The sealed plane is
+  -- the ROOT's vocabulary ('derived' — the shape's closed set); the registry's
+  -- plane column stays routing truth. A refusal here fails the apply loudly —
+  -- a capability that cannot declare itself does not go live half-made.
+  PERFORM ckp.seal('aff-'||p_project||'-'||replace(v_verb,'.','-'), jsonb_build_object(
+    'type', 'https://conceptkernel.org/ontology/v3.11/core#Affordance',
+    '@id',  'ckp://Affordance#'||p_project||'.'||v_verb,
+    'https://conceptkernel.org/ontology/v3.11/core#inTopic',
+      'input.kernel.'||p_project||'.action.'||v_verb,
+    'https://conceptkernel.org/ontology/v3.11/core#outTopic',
+      'result.kernel.'||p_project||'.'||v_verb,
+    'https://conceptkernel.org/ontology/v3.11/core#plane', 'derived',
+    'https://conceptkernel.org/ontology/v3.11/core#derivedBy',
+      format('urn:ckp:%s/materialization/%s', p_project, p_epoch)));
+
   RETURN v_verb;
 END;
 $function$
@@ -5490,6 +5508,24 @@ BEGIN
           'result.kernel.'||p_project||'.'||v_verb, 'query', p_epoch)
   ON CONFLICT (kernel, verb) DO UPDATE SET plane = 'query', epoch = EXCLUDED.epoch,
     out_topic = EXCLUDED.out_topic, refreshed_at = now();
+
+  -- 0.4.85 (#56 / HANDOVER B5) — EMISSION AND DECLARATION MOVE IN ONE ACT. The
+  -- registry row makes the verb callable; this seal makes it a FACT: a
+  -- ckp:Affordance gated by AffordanceShape, producedBy this kernel's law,
+  -- derivedBy the Materialization this very apply sealed. The sealed plane is
+  -- the ROOT's vocabulary ('derived' — the shape's closed set); the registry's
+  -- plane column stays routing truth. A refusal here fails the apply loudly —
+  -- a capability that cannot declare itself does not go live half-made.
+  PERFORM ckp.seal('aff-'||p_project||'-'||replace(v_verb,'.','-'), jsonb_build_object(
+    'type', 'https://conceptkernel.org/ontology/v3.11/core#Affordance',
+    '@id',  'ckp://Affordance#'||p_project||'.'||v_verb,
+    'https://conceptkernel.org/ontology/v3.11/core#inTopic',
+      'input.kernel.'||p_project||'.action.'||v_verb,
+    'https://conceptkernel.org/ontology/v3.11/core#outTopic',
+      'result.kernel.'||p_project||'.'||v_verb,
+    'https://conceptkernel.org/ontology/v3.11/core#plane', 'derived',
+    'https://conceptkernel.org/ontology/v3.11/core#derivedBy',
+      format('urn:ckp:%s/materialization/%s', p_project, p_epoch)));
 
   RETURN v_verb;
 END;

@@ -2,6 +2,29 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.85 - 2026-08-27
+
+**What was governed in shows up in its own list.**
+
+pgCK#56, closed on the loop form. `kernel.apply` compiled the plan and inserted the
+registry row — the verb was callable — and sealed no `ckp:Affordance`, so capability
+worked while its declared face was absent, and the affordances list could never carry
+it. The declared/routed gap, measured since the suite existed.
+
+Emission and declaration now move in one act: both registrars (query and derived) seal
+the `ckp:Affordance` in the same transaction as the registry row — gated by
+`AffordanceShape`, `producedBy` the kernel's law, `derivedBy` the very Materialization
+the same apply sealed, plane spoken in the root's closed vocabulary. A seal refusal
+fails the apply loudly: a capability that cannot declare itself does not go live
+half-made.
+
+Two instrument corrections rode along, both in case 28: the reply's list key is
+`affordances` (the B1 contract since 0.4.51 — `derived[]` was handover shorthand that
+never existed as a key), and plpgsql's RAISE formats bare booleans as `t`/`f`, which
+the case's own grep could never match — the instrument was hiding its own success.
+
+Suite: cases 04/28 flipped GREEN — 30 cases, 19 green, 10 red-as-predicted, 0 broken.
+
 ## v0.4.84 - 2026-08-27
 
 **The reply tells you what it is.**
