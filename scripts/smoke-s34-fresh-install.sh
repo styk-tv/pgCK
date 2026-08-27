@@ -151,6 +151,20 @@ FLT="$(PART "SELECT ckp.dispatch('fleet.adoptions','{}'::jsonb)->>'ok'")" \
 [ "$FLT" = "true" ] || fail "(ask 3) fleet.adoptions returned ok=$FLT"
 echo "s34: two governed Adoptions sealed + fleet.adoptions answers — pin ledger at install ✓"
 
+# (3b) wave-3.12 lexicon revision — THE CLOSED SET HAS TEETH, both halves on the
+# LIVE composed law (not the file audit): a bogus lex:symptom must REFUSE naming
+# the clause; a declared symptom must SEAL — the pair ships together because a
+# gate that overshoots is a write outage and a gate that undershoots is prose
+# (measured live 2026-08-26: the bogus symptom SEALED on the shipped bits).
+BAD="$(PART "SELECT ckp.dispatch('instance.create', jsonb_build_object('type','https://conceptkernel.org/ontology/v3.11/core#Supersession','https://conceptkernel.org/ontology/v3.11/core#supersedes','urn:s34:lexgate','https://conceptkernel.org/ontology/v3.11/lexicon#symptom','urn:not:a:declared:symptom'))::text FROM (SELECT set_config('ckp.requester','s34-participant',true), set_config('ckp.project','demo',true)) _id")" \
+  || fail "(ask 3b) bogus-symptom probe ERRORED"
+echo "$BAD" | grep -q '"ok": *false' || fail "(ask 3b) a BOGUS lex:symptom SEALED — the closed set is still prose"
+echo "$BAD" | grep -q 'lexicon#symptom' || fail "(ask 3b) refused, but not on the symptom path: $BAD"
+GOOD="$(PART "SELECT ckp.dispatch('instance.create', jsonb_build_object('type','https://conceptkernel.org/ontology/v3.11/core#Supersession','https://conceptkernel.org/ontology/v3.11/core#supersedes','urn:s34:lexgate2','https://conceptkernel.org/ontology/v3.11/lexicon#symptom','https://conceptkernel.org/ontology/v3.11/lexicon#sym-passes-vacuously'))->>'ok' FROM (SELECT set_config('ckp.requester','s34-participant',true), set_config('ckp.project','demo',true)) _id")" \
+  || fail "(ask 3b) declared-symptom probe ERRORED"
+[ "$GOOD" = "true" ] || fail "(ask 3b) a DECLARED symptom REFUSED — the gate overshoots (emission-and-shape rule breached)"
+echo "s34: lexicon closed set gates live — bogus symptom refused on its path, declared symptom seals ✓"
+
 # (4) 0.4.42 — the board is DOMAIN vocabulary now, so a fresh install that has
 # booted but loaded NO KERNEL cannot create board tasks: urn:ckp:board/Task is
 # declared by examples/example.kernel.ttl, which ckp.load_kernel puts into

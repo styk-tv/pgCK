@@ -41,14 +41,23 @@ print(f"audit.file={path}")
 # ---- file plane: digest + sidecar ------------------------------------------
 digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
 print(f"audit.sha256={digest}")
-side_state = "absent"
-sidecars = sorted(glob.glob(path + ".wave-*.sha256"),
-                  key=lambda p: ("rc" in p, p))   # final (no 'rc') sorts first
+# The digest-marker contract (ontology/README.md, rules 2+3): the CURRENT
+# sidecar is the one that passes against current bytes — exactly one, always;
+# historical sidecars are RETAINED and fail by design. So the audit passes iff
+# SOME sidecar matches, and only every-sidecar-fails is drift.
+sidecars = sorted(glob.glob(path + ".wave-*.sha256"))
 if sidecars:
-    pinned = open(sidecars[0]).read().split()[0]
-    side_state = "match" if pinned == digest else "MISMATCH"
-    print(f"audit.sidecar={side_state} ({os.path.basename(sidecars[0])})")
-    if side_state == "MISMATCH": findings += 1
+    matching = [p for p in sidecars
+                if open(p).read().split()[0] == digest]
+    if matching:
+        # >1 match is LEGAL: a promotion that keeps the bytes (rc2 -> final)
+        # leaves both tags pinning one digest. Zero matches is the only drift.
+        print(f"audit.sidecar=match ({os.path.basename(sorted(matching)[-1])}; "
+              f"{len(matching)} matching, {len(sidecars)-len(matching)} historical)")
+    else:
+        print(f"audit.sidecar=MISMATCH (no sidecar matches current bytes; "
+              f"{len(sidecars)} checked)")
+        findings += 1
 else:
     print("audit.sidecar=absent")
 

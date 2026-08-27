@@ -2,6 +2,40 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.87 - 2026-08-27
+
+**The lexicon's closed sets gain teeth.**
+
+An ontology revision, not a substrate change (the migration is a deliberate no-op).
+Measured live 2026-08-26: a `wave:Finding` carrying `lex:symptom
+<urn:not:a:declared:symptom>` **sealed** — the closed symptom set, the discipline the
+fleet's finding-filing leans on most, was prose to the gate. 11 of the lexicon's 17
+declared properties were reached by no shape (the same defect class as the v3.12
+root's seven ungated constants).
+
+The wave-3.12 lexicon revision (sha256 `5def86ba…`) adds two shapes, both selecting by
+`sh:targetSubjectsOf` so no emission path gains a required property it cannot produce:
+
+- **the assertion gate** — `lex:symptom` / `lex:outcome` / `lex:recurrenceOf` value-
+  gated against their closed sets; `causedBy` / `blocks` / `defectIn` IRI-kinded.
+- **the derived-only fence** — the five derived properties (`blockedBy`,
+  `confirmedBy`, `defectOwner`, `confirmedTicketOwner`, `passDirector`) refuse when
+  *asserted* (`maxCount 0`): the seal gate sees only asserted bodies, so "never
+  asserted, always derived" is now a refusal instead of a comment.
+
+Both halves proven on the live composed law and standing in the fresh-install gate:
+the bogus symptom refuses naming its path; the declared symptom seals. Modules adopt
+by digest, so existing Adoptions citing `ce9f20f4…` keep governing the bytes they
+cite; the revision is taken by adopting `5def86ba…` (fingerprint 46 → 48 where taken).
+
+Riders: the audit instrument and the digest-marker contract now agree that multiple
+sidecars may legitimately pin one digest (a promotion that keeps the bytes); zero
+passing sidecars is the only drift signal. Case 31 was added RED for the residue the
+proof surfaced: the shape-gate refusal — the most important refusal class — still
+rides as prose through `create_typed`'s catch-all, invisible to the envelope law.
+
+Suite: 30 cases, 21 green, 9 red-as-predicted, 0 broken.
+
 ## v0.4.86 - 2026-08-27
 
 **An answer about nothing is not an answer.**

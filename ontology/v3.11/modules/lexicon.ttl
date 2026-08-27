@@ -321,6 +321,75 @@ lex:RuleShape a sh:NodeShape ;
                 sh:in ( "proposed" "active" "refuted" "retired" ) ] ;
   sh:property [ sh:path lex:refutedAtPass     ; sh:maxCount 1 ; sh:datatype xsd:integer ] .
 
+#######################################################################
+# 6b. ASSERTION GATES — wave-3.12 revision. The closed sets §1/§3 declare
+# were prose to the gate: a Finding carrying
+#   lex:symptom <urn:not:a:declared:symptom>
+# SEALED (measured live over the wire, 2026-08-26 — the seven-constants
+# defect class, in the module the fleet's finding discipline leans on
+# most). These two shapes end that. Both select by sh:targetSubjectsOf —
+# they gate whoever ASSERTS the property and demand nothing of anyone
+# else, so no emission path gains a required property it cannot produce
+# (the §6 emission-and-shape rule).
+#
+#   AssertionGateShape   the asserted vocabulary: symptom and outcome
+#                        values from their closed sets; the link
+#                        properties IRI-kinded; recurrenceOf from the
+#                        declared patterns.
+#   DerivedOnlyShape     the five derived properties may never be
+#                        ASSERTED (maxCount 0). The seal gate sees only
+#                        asserted bodies — derived quads appear at
+#                        materialize and never pass through it — so
+#                        "never asserted, always derived" is now a
+#                        refusal, not a comment.
+#######################################################################
+
+lex:AssertionGateShape a sh:NodeShape ;
+  sh:targetSubjectsOf lex:symptom ;
+  sh:targetSubjectsOf lex:outcome ;
+  sh:targetSubjectsOf lex:recurrenceOf ;
+  sh:targetSubjectsOf lex:causedBy ;
+  sh:targetSubjectsOf lex:blocks ;
+  sh:targetSubjectsOf lex:defectIn ;
+  sh:property [ sh:path lex:symptom ; sh:nodeKind sh:IRI ;
+    sh:in ( lex:sym-reports-not-refuses lex:sym-passes-vacuously
+            lex:sym-present-not-wired lex:sym-cited-after-move
+            lex:sym-published-uncounted lex:sym-named-for-finder
+            lex:sym-gate-unread lex:sym-claim-unmeasured lex:sym-step-absent ) ;
+    sh:message "lex:symptom is a closed set — choose one of the nine declared symptom IRIs; a symptom outside the set is a diagnosis, and components do not diagnose" ] ;
+  sh:property [ sh:path lex:outcome ; sh:nodeKind sh:IRI ;
+    sh:in ( lex:out-held lex:out-refuted lex:out-partial
+            lex:out-superseded lex:out-unsettled ) ;
+    sh:message "lex:outcome is a closed set — held, refuted, partial, superseded or unsettled" ] ;
+  sh:property [ sh:path lex:recurrenceOf ; sh:nodeKind sh:IRI ;
+    sh:in ( lex:FalseGate lex:VacuousGate lex:BenchOnly lex:StaleCitation
+            lex:UncountedClaim lex:Misattribution lex:UnreadGate
+            lex:UnmeasuredConsequence lex:BrokenSequence ) ;
+    sh:message "lex:recurrenceOf names one of the nine declared patterns" ] ;
+  sh:property [ sh:path lex:causedBy ; sh:nodeKind sh:IRI ;
+    sh:message "lex:causedBy names a resource, never a literal" ] ;
+  sh:property [ sh:path lex:blocks ; sh:nodeKind sh:IRI ;
+    sh:message "lex:blocks names a resource, never a literal" ] ;
+  sh:property [ sh:path lex:defectIn ; sh:nodeKind sh:IRI ;
+    sh:message "lex:defectIn names the artifact as an IRI" ] .
+
+lex:DerivedOnlyShape a sh:NodeShape ;
+  sh:targetSubjectsOf lex:blockedBy ;
+  sh:targetSubjectsOf lex:confirmedBy ;
+  sh:targetSubjectsOf lex:defectOwner ;
+  sh:targetSubjectsOf lex:confirmedTicketOwner ;
+  sh:targetSubjectsOf lex:passDirector ;
+  sh:property [ sh:path lex:blockedBy ; sh:maxCount 0 ;
+    sh:message "lex:blockedBy is derived — assert lex:blocks and read this" ] ;
+  sh:property [ sh:path lex:confirmedBy ; sh:maxCount 0 ;
+    sh:message "lex:confirmedBy is derived from wave:confirmsTicket — file the confirmation" ] ;
+  sh:property [ sh:path lex:defectOwner ; sh:maxCount 0 ;
+    sh:message "lex:defectOwner is derived (defectIn ∘ owner) — assert lex:defectIn" ] ;
+  sh:property [ sh:path lex:confirmedTicketOwner ; sh:maxCount 0 ;
+    sh:message "lex:confirmedTicketOwner is derived (confirmsTicket ∘ owner)" ] ;
+  sh:property [ sh:path lex:passDirector ; sh:maxCount 0 ;
+    sh:message "lex:passDirector is derived (forPass ∘ director)" ] .
+
 
 #######################################################################
 # 7. THE EPOCH LOOP — what this file is for

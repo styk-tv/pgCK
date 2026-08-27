@@ -1,0 +1,14 @@
+-- pgck--0.4.86--0.4.87.sql — NO-OP ON THE SQL PLANE, deliberately.
+--
+-- 0.4.87 is an ONTOLOGY revision: the lexicon module (wave-3.12 revision,
+-- sha256 5def86ba…) grows its assertion gates — lex:symptom / lex:outcome /
+-- lex:recurrenceOf value-gated against their closed sets, link properties
+-- IRI-kinded, and the five derived-only properties (blockedBy, confirmedBy,
+-- defectOwner, confirmedTicketOwner, passDirector) refused when ASSERTED
+-- (maxCount 0 via sh:targetSubjectsOf — derived quads never pass the seal
+-- gate, so materialization is untouched). 4 NodeShapes -> 6; the adopted-state
+-- fingerprint moves 46 -> 48 on benches that adopt the revision.
+--
+-- Modules are adopted BY DIGEST (proximity is not adoption): existing sealed
+-- Adoptions citing ce9f20f4… keep governing the bytes they cite; a kernel
+-- takes the revision by adopting 5def86ba… . Nothing here re-grounds anyone.

@@ -29,9 +29,10 @@ PGCK_TDD_PSQL="psql …" run.sh      # any bench via full psql command — but w
 Cases only write throwaway artifacts (`urn:tdd:*` names, probe seals) and are safe to
 re-run: the smoke stack drops and recreates both extensions every `smoke-s4`.
 
-## The measured ledger — 2026-08-27, smoke stack (pgck 0.4.86-devel / pgrdf 0.6.34, v3.12-FINAL-booted)
+## The measured ledger — 2026-08-27, smoke stack (pgck 0.4.87-devel / pgrdf 0.6.34, v3.12-FINAL-booted)
 
-**30 cases · green 20 · red-as-predicted 9 · BROKEN 0 · ~5s wall.** Cases 29/30 (the
+**30 cases · green 21 · red-as-predicted 9 · BROKEN 0 · ~5s wall.** (Case 31 —
+the shape-refusal-typed residue found while proving the lexicon gate — was added RED.) Cases 29/30 (the
 refusal envelope) were added RED on cklib PASS-2's ISSUE-6/7 and flipped GREEN the same
 day the refusal registry + door normalizer landed (0.4.83); cases 14/15 (reply
 stamps, completeness verdict) flipped with 0.4.84; the #56 pair (04/28) with 0.4.85; the
@@ -59,13 +60,14 @@ methods named) consumed by cases 18/22 and run by authors before any ontology co
 | 17 | seals | first-seal-134 | ✅* | warm-project seal works; *the authoritative #134 gate is the full smoke-s4 run (fails deterministically at s19)* |
 | 18 | mechanics | ontology-audit | ✅ | ONE audit: digest pinned, 30 shapes, 94/94 reach, namespace line, delta complete |
 | 21 | root | boot-default-v312 | ✅ | installed `boot()` defaults to v3.12 FINAL |
-| 22 | modules | module-audits | 🔴 | wave+recon CLEAN; **lexicon: 11 unreached properties incl. `lex:symptom`** — ungated law, ours |
+| 22 | modules | module-audits | ✅ | all three modules audit CLEAN — lexicon's closed sets gate (wave-3.12 revision, 17/17 reached, 6 shapes) |
 | 23 | admission | unadopted-refuses | ✅ | unadopted `wave:Finding` refused — proximity is not adoption |
 | 24 | vacuity | wave-verbs-honest | ✅ | wave verbs refuse `module_not_adopted` (typed, teaching the cure) where unadopted — `ckp._module_gate` reads the same adoption truth composition reads |
 | 25 | spore | recon-roundtrip | ✅ | place → adopt → Chunk gated by module shape → negative control names the clause |
 | 26 | proofs | proof-plane | 🔴 | door path total; legacy fixture paths (edge/match) seal proofless — every-write-appends-evidence owed |
 | 27 | judgement | four-stamps-readback | ✅ | M1–M4 read individually; M2 names the addressed kernel's law |
 | 28 | capability | govern-then-listed | ✅ | the #56 LOOP closed: governed in → callable → sealed → LISTED, gated by AffordanceShape, `derivedBy` the apply's own Materialization |
+| 31 | envelope | shape-refusal-typed | 🔴 | the shape-gate refusal rides as prose through create_typed's catch-all — no `refused:true`/`sqlstate`; the registry matches codes, not prose (B7 residue) |
 | 29 | envelope | refusal-envelope | ✅ | ONE law: every registry refusal ships `refused:true` + typed `sqlstate` from every site (B7) |
 | 30 | envelope | refusal-teaches-key | ✅ | `invalid_about` teaches `{about: <proposal_iri>}` — refusals name the KEY, not just the value |
 

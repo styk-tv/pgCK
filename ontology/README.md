@@ -40,7 +40,8 @@ affordance properties: 30 NodeShapes = 27 + 3.
 | `v3.12/modules/recon.ttl` | **superseded** (wrong-namespace original) — retained ONLY because sealed Adoptions cite it and composition fails closed on an absent adopted graph | `6a7c199e7ad19580…` (sidecar `-superseded`) |
 | `v3.11/core.ttl` | the prior root — ships beside v3.12 for benches pinned to it | `e5f7d1e54b32fa0ba2d41ba248e0909b96ee1ebb4344e2d9e9ccdf4e0b25348d` |
 | `v3.11/modules/wave.ttl` | the coordination-wave vocabulary module (11 shapes) | `f4ad27cec4417e2ed5b566adb7f7ee200b3c3fbfddf25adf840d267fd57e417b` |
-| `v3.11/modules/lexicon.ttl` | the closed defect-symptom lexicon module (4 shapes) | `ce9f20f4dc43b79b704a1266ca69956890b006564824c051d44eb31cc90b0329` |
+| `v3.11/modules/lexicon.ttl` | the closed defect-symptom lexicon module — **wave-3.12 revision: the closed sets gained teeth** (assertion gates + derived-only fences; 6 shapes = 4 + 2) | `5def86bacfe3d2a8a6a85e9c81f8f9d77c3cfeee72509a360b2b00433d3cf21c` |
+| *(lexicon, superseded revision)* | the 4-shape original — retained only in sealed Adoptions that cite it (`…pass-19` sidecar) | `ce9f20f4dc43b79b704a1266ca69956890b006564824c051d44eb31cc90b0329` |
 | `v3.11/index.html` | the publication page (states the digest discipline of itself) | — |
 
 ## The digest-marker contract (for CK-org's automated pull — added 2026-08-26)
@@ -51,7 +52,10 @@ The rules an automated consumer relies on:
 1. **The file's own sha256 IS its identity.** "On change of digest" means the
    `.ttl` bytes changed — watch the file, not the sidecar set.
 2. **The current sidecar is the one `shasum -c` passes against the current
-   bytes.** Exactly one per file, always (verified 2026-08-26: 8/8 files OK).
+   bytes** — the highest wave tag among the passing ones. Usually exactly one;
+   a promotion that keeps the bytes (rc2 → FINAL on the v3.12 root) leaves two
+   tags legitimately pinning one digest. Zero passing sidecars is the drift
+   signal, never the count.
 3. **Historical sidecars are RETAINED and fail against current bytes by
    design** — they pin superseded revisions (`…pass-7` on the v3.11 core,
    `…rc1` on the v3.12 core) so old citations stay checkable. A `-c` failure
