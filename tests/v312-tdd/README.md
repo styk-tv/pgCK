@@ -29,12 +29,12 @@ PGCK_TDD_PSQL="psql …" run.sh      # any bench via full psql command — but w
 Cases only write throwaway artifacts (`urn:tdd:*` names, probe seals) and are safe to
 re-run: the smoke stack drops and recreates both extensions every `smoke-s4`.
 
-## The measured ledger — 2026-08-27, smoke stack (pgck 0.4.83-devel / pgrdf 0.6.34, v3.12-FINAL-booted)
+## The measured ledger — 2026-08-27, smoke stack (pgck 0.4.84-devel / pgrdf 0.6.34, v3.12-FINAL-booted)
 
-**30 cases · green 15 · red-as-predicted 14 · BROKEN 0 · ~5s wall.** Cases 29/30 (the
+**30 cases · green 17 · red-as-predicted 12 · BROKEN 0 · ~5s wall.** Cases 29/30 (the
 refusal envelope) were added RED on cklib PASS-2's ISSUE-6/7 and flipped GREEN the same
-day the refusal registry + door normalizer landed (0.4.83) — the suite working as
-intended. Layered: core planes first (01–21), modules proven on top (22–30). The
+day the refusal registry + door normalizer landed (0.4.83); cases 14/15 (reply
+stamps, completeness verdict) flipped with 0.4.84 — the suite working as intended. Layered: core planes first (01–21), modules proven on top (22–30). The
 mechanical audit is ONE instrument (`audit/ontology-audit.sh`, structured output,
 methods named) consumed by cases 18/22 and run by authors before any ontology commit.
 
@@ -52,8 +52,8 @@ methods named) consumed by cases 18/22 and run by authors before any ontology co
 | 12 | judgement | signal-gated | ✅ | bogus `signalPolarity` refused naming the path |
 | 12b | law | constants-gated | ✅ | sign gate + `sh:lessThan` band refuse; lawful values fire nothing |
 | 13 | score plane | score-verbs | 🔴 | `score.top` → `unknown_affordance` |
-| 14 | envelope | reply-envelope-stamps | 🔴 | stamps stored but null in the reply (P3) |
-| 15 | envelope | completeness-verdict | 🔴 | no verdict on read replies (B2) |
+| 14 | envelope | reply-envelope-stamps | ✅ | the reply carries the four stamps read from the sealed row (P3/B4, `ckp._stamped`) |
+| 15 | envelope | completeness-verdict | ✅ | reads carry `completeness` — total-known verdicts measured, limit-only honestly `possibly_truncated` (B2, `ckp._read_verdict`) |
 | 16 | vacuity | projection-namespace | 🔴 | `project_links` types `core#Task` (declared nowhere) — zero-focus gate, a silent second pass |
 | 17 | seals | first-seal-134 | ✅* | warm-project seal works; *the authoritative #134 gate is the full smoke-s4 run (fails deterministically at s19)* |
 | 18 | mechanics | ontology-audit | ✅ | ONE audit: digest pinned, 30 shapes, 94/94 reach, namespace line, delta complete |
@@ -68,7 +68,7 @@ methods named) consumed by cases 18/22 and run by authors before any ontology co
 | 29 | envelope | refusal-envelope | ✅ | ONE law: every registry refusal ships `refused:true` + typed `sqlstate` from every site (B7) |
 | 30 | envelope | refusal-teaches-key | ✅ | `invalid_about` teaches `{about: <proposal_iri>}` — refusals name the KEY, not just the value |
 
-**The 14 REDs are the v3.12 build queue, re-runnable anytime.** A RED→GREEN flip is a
+**The 12 REDs are the v3.12 build queue, re-runnable anytime.** A RED→GREEN flip is a
 mechanism landing; anything→BROKEN is a regression or a stale prediction — stop and look.
 
 ## The rule this suite holds

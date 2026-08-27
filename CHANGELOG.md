@@ -2,6 +2,31 @@
 
 All notable changes to `pgCK` are logged here.
 
+## v0.4.84 - 2026-08-27
+
+**The reply tells you what it is.**
+
+Two halves of the same blindness, fixed the same way as 0.4.83's envelope law — one
+instrument each, applied at the door's sites, never a per-site rewrite:
+
+- **P3 — the reply carries what the seal wrote** (`ckp._stamped`). The four stamps
+  (M1 `createdBy` · M2 `producedBy` · M3 `sealedAtEpoch` · M4 `conformsToShape`) were
+  stored by every seal and nulled or absent in every reply, so a producer was blind to
+  its own act and clients (CK.Lib.Js's D7 shim) had to read the seal back. One reader
+  over the stored body, appended by the write sites: `instance.create` (typed and
+  legacy), `instance.update` (both), `instance.link`, `notify`, `instance.transition`,
+  `instance.retire`. The keys ride flat and are never aggregated; an absent M4 stays
+  absent — admitted-but-judged-by-nothing is a fact to surface, not a null to fake.
+- **B2 — a read carries its completeness verdict** (`ckp._read_verdict`). A row count
+  without its verdict is not a count. With the total known the verdict is measured
+  (`complete`/`truncated`); with only a limit, an answer that fills the limit claims no
+  more than `possibly_truncated`. Applied at `kernels.list`, `instances.list/last/count`,
+  `instance.query`, `instance.reach`.
+
+Suite: cases 14/15 flipped GREEN — 30 cases, 17 green, 12 red-as-predicted, 0 broken.
+Warm road 0.4.83→0.4.84 rehearsed on the dev bench; envelope law re-verified over wss
+after the upgrade.
+
 ## v0.4.83 - 2026-08-27
 
 **The refusal envelope becomes one law.**

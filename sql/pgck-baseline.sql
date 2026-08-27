@@ -2639,16 +2639,20 @@ DECLARE
   p_kern text := p_payload->>'kernel';
   p_n    int  := COALESCE((p_payload->>'n')::int, (p_payload->>'limit')::int,
                           CASE WHEN p_verb='instances.last' THEN 10 ELSE 50 END);
+  v_res  jsonb;
+  v_total bigint;
 BEGIN
   IF p_verb = 'instance.get' THEN
     RETURN jsonb_build_object('ok', true, 'instance', ckp._envelope(p_payload->>'id'));
   ELSIF p_verb = 'instances.count' THEN
-    RETURN jsonb_build_object('ok', true, 'count', (
-      SELECT count(*) FROM ckp.instances
+    SELECT count(*) INTO v_total FROM ckp.instances
       WHERE (p_type IS NULL OR body->>'type'=p_type OR body->>'type' LIKE '%'||p_type)
-        AND (p_kern IS NULL OR body->>(N||'target_kernel')=p_kern)));
+        AND (p_kern IS NULL OR body->>(N||'target_kernel')=p_kern);
+    -- a count IS its own total: returned = total, verdict measured 'complete'
+    RETURN jsonb_build_object('ok', true, 'count', v_total)
+      || ckp._read_verdict(v_total::int, NULL, v_total);
   ELSE  -- instances.list / instances.last
-    RETURN jsonb_build_object('ok', true, 'count', (
+    v_res := jsonb_build_object('ok', true, 'count', (
         SELECT count(*) FROM ckp.instances
         WHERE (p_type IS NULL OR body->>'type'=p_type OR body->>'type' LIKE '%'||p_type)
           AND (p_kern IS NULL OR body->>(N||'target_kernel')=p_kern)),
@@ -2658,6 +2662,8 @@ BEGIN
           WHERE (p_type IS NULL OR body->>'type'=p_type OR body->>'type' LIKE '%'||p_type)
             AND (p_kern IS NULL OR body->>(N||'target_kernel')=p_kern)
           ORDER BY ts_created DESC LIMIT p_n) s), '[]'::jsonb));
+    v_res := v_res || ckp._read_verdict(jsonb_array_length(v_res->'instances'), p_n, (v_res->>'count')::bigint);
+    RETURN v_res;
   END IF;
 END;
 $function$
@@ -3324,6 +3330,7 @@ BEGIN
   RETURN jsonb_build_object('ok', true, 'id', v_iid, 'type', v_type,
     'verified', ckp.verify(v_iid),
     'proof_digest', (SELECT digest FROM ckp.proof WHERE about = v_iid ORDER BY id DESC LIMIT 1))
+    || ckp._stamped(v_iid)
     || CASE WHEN NULLIF(current_setting('ckp.last_warnings', true), '') IS NOT NULL
             THEN jsonb_build_object('warnings', current_setting('ckp.last_warnings', true)::jsonb)
             ELSE '{}'::jsonb END;
@@ -4212,6 +4219,7 @@ BEGIN
       SELECT jsonb_agg(jsonb_build_object('name', COALESCE(body->>RL, regexp_replace(id,'^backlog:','')),
         'id', id, 'urn', 'ckp://Kernel#'||ckp._slug(COALESCE(body->>RL, regexp_replace(id,'^backlog:','')))) ORDER BY id)
       FROM ckp.instances WHERE body->>'type' = N||'Goal' AND id LIKE 'backlog:%'), '[]'::jsonb));
+    res := res || ckp._read_verdict(jsonb_array_length(res->'kernels'));
 
   WHEN 'provenance' THEN
     -- v0.4.15: id-form symmetry — resolve a bare-or-@id ref to the bare id the id-keyed
@@ -4284,7 +4292,8 @@ BEGIN
         END IF;
         PERFORM ckp.seal(tid, v_body);
         res := jsonb_build_object('ok',true,'id',tid,'verified',ckp.verify(tid),
-          'proof_digest',(SELECT digest FROM ckp.proof WHERE about=tid ORDER BY id DESC LIMIT 1));
+          'proof_digest',(SELECT digest FROM ckp.proof WHERE about=tid ORDER BY id DESC LIMIT 1))
+          || ckp._stamped(tid);
       END IF;
     EXCEPTION WHEN OTHERS THEN res := jsonb_build_object('ok',false,'error',SQLERRM);
     END;
@@ -4308,7 +4317,8 @@ BEGIN
         END LOOP;
         PERFORM ckp.seal(tid, cur);
         res := jsonb_build_object('ok',true,'id',tid,'verified',ckp.verify(tid),
-          'proof_digest',(SELECT digest FROM ckp.proof WHERE about=tid ORDER BY id DESC LIMIT 1));
+          'proof_digest',(SELECT digest FROM ckp.proof WHERE about=tid ORDER BY id DESC LIMIT 1))
+          || ckp._stamped(tid);
       END IF;
     EXCEPTION WHEN OTHERS THEN res := jsonb_build_object('ok',false,'error',SQLERRM);
     END;
@@ -4396,7 +4406,7 @@ BEGIN
         -- Tier 2 (3/3a): also materialize the traversable quad so instance.reach finds
         -- this participant-created link (the Edge instance alone is not traversable).
         res := jsonb_build_object('ok',true,'id',eid,'type',v_etype,'topic',topic,'verified',ckp.verify(eid),
-          'reachable', ckp.materialize_edge(src, pred, tgt, v_proj));
+          'reachable', ckp.materialize_edge(src, pred, tgt, v_proj)) || ckp._stamped(eid);
       END IF;
     EXCEPTION WHEN OTHERS THEN res := jsonb_build_object('ok',false,'error',SQLERRM);
     END;
@@ -4432,7 +4442,8 @@ BEGIN
         IF sub IS NOT NULL THEN v_body := v_body || jsonb_build_object(v_mns||'created_by','urn:ckp:participant:'||ckp._slug(sub)); END IF;
         PERFORM ckp.seal(mid, v_body);
         res := jsonb_build_object('ok',true,'id',mid,'type',v_mtype,'topic',topic,'verified',ckp.verify(mid),
-          'proof_digest',(SELECT digest FROM ckp.proof WHERE about=mid ORDER BY id DESC LIMIT 1));
+          'proof_digest',(SELECT digest FROM ckp.proof WHERE about=mid ORDER BY id DESC LIMIT 1))
+          || ckp._stamped(mid);
       END IF;
     EXCEPTION WHEN OTHERS THEN res := jsonb_build_object('ok',false,'error',SQLERRM);
     END;
@@ -4557,6 +4568,46 @@ BEGIN
   END IF;
   RETURN p_res;
 END;
+$function$;
+
+-- 0.4.84 (P3 / HANDOVER B4) — the reply carries what the seal wrote. ONE reader
+-- over the STORED body (the same truths the gate stamped), appended by every
+-- write site: the producer is no longer blind to its own seal, and cklib drops
+-- its D7 shim. The four mechanisms ride as four keys, never aggregated;
+-- conformsToShape absent means M4 ABSENT (admitted, judged by nothing) — the
+-- key is withheld, never faked to null.
+-- 0.4.84 (B2) — a read reply carries its completeness verdict. ONE builder:
+-- with the TOTAL known, complete is a measured fact (returned >= total, and a
+-- shortfall names itself 'truncated'); with only a limit, an answer that FILLS
+-- the limit can honestly claim no more than 'possibly_truncated'. A row count
+-- without its verdict is not a count.
+CREATE OR REPLACE FUNCTION ckp._read_verdict(p_returned int, p_limit int DEFAULT NULL, p_total bigint DEFAULT NULL)
+ RETURNS jsonb
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT jsonb_build_object('completeness', jsonb_strip_nulls(jsonb_build_object(
+    'returned', p_returned,
+    'limit',    p_limit,
+    'total',    p_total,
+    'verdict',  CASE
+      WHEN p_total IS NOT NULL AND p_returned >= p_total THEN 'complete'
+      WHEN p_total IS NOT NULL                           THEN 'truncated'
+      WHEN p_limit IS NULL OR p_returned < p_limit       THEN 'complete'
+      ELSE 'possibly_truncated' END)));
+$function$;
+
+CREATE OR REPLACE FUNCTION ckp._stamped(p_id text)
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT COALESCE((SELECT jsonb_strip_nulls(jsonb_build_object(
+    'createdBy',       i.body->>'https://conceptkernel.org/ontology/v3.11/core#createdBy',
+    'producedBy',      i.body->>'https://conceptkernel.org/ontology/v3.11/core#producedBy',
+    'sealedAtEpoch',   i.body->'https://conceptkernel.org/ontology/v3.11/core#sealedAtEpoch',
+    'conformsToShape', i.body->>'https://conceptkernel.org/ontology/v3.11/core#conformsToShape'))
+  FROM ckp.instances i WHERE i.id = p_id), '{}'::jsonb);
 $function$;
 
 CREATE OR REPLACE FUNCTION ckp.dispatch(p_verb text, p_payload jsonb)
@@ -5169,7 +5220,8 @@ BEGIN
   EXECUTE v_sql INTO v_result;
   RETURN jsonb_build_object('ok', true, 'type', v_type, 'shaped', v_shaped,
                             'count', COALESCE(jsonb_array_length(v_result), 0),
-                            'rows', COALESCE(v_result, '[]'::jsonb));
+                            'rows', COALESCE(v_result, '[]'::jsonb))
+         || ckp._read_verdict(COALESCE(jsonb_array_length(v_result), 0), v_limit);
 END;
 $function$
 ;
@@ -5221,7 +5273,8 @@ BEGIN
   SELECT jsonb_agg(DISTINCT j->>'r') INTO v_reached
   FROM pgrdf.sparql(format('SELECT ?r WHERE { GRAPH ?g { <%s> <%s>+ ?r } }', v_from_iri, v_via)) j;
   RETURN jsonb_build_object('ok', true, 'from', v_from, 'resolved', v_from_iri, 'via', v_via,
-                            'max_depth', v_max, 'reached', COALESCE(v_reached, '[]'::jsonb));
+                            'max_depth', v_max, 'reached', COALESCE(v_reached, '[]'::jsonb))
+         || ckp._read_verdict(COALESCE(jsonb_array_length(v_reached), 0));
 END;
 $function$
 ;
@@ -5838,7 +5891,7 @@ BEGIN
   RETURN jsonb_build_object('ok', true, 'id', v_id,
     'retiredAtEpoch', v_epoch,
     'declaredStateMoved', (v_type = C||'Proposal'),
-    'reason', btrim(v_reason), 'verified', ckp.verify(v_id));
+    'reason', btrim(v_reason), 'verified', ckp.verify(v_id)) || ckp._stamped(v_id);
 END;
 $function$
 ;
@@ -6492,7 +6545,7 @@ BEGIN
     PERFORM ckp.seal(v_id, v_body);
   END;
   RETURN jsonb_build_object('ok', true, 'id', v_id, 'from', v_from, 'to', v_to,
-                            'source', v_src, 'verified', ckp.verify(v_id));
+                            'source', v_src, 'verified', ckp.verify(v_id)) || ckp._stamped(v_id);
 END;
 $function$
 ;
@@ -6560,6 +6613,7 @@ BEGIN
   PERFORM ckp.seal(v_id, v_cur);
   RETURN jsonb_build_object('ok', true, 'id', v_id, 'verified', ckp.verify(v_id),
     'proof_digest', (SELECT digest FROM ckp.proof WHERE about = v_id ORDER BY id DESC LIMIT 1))
+    || ckp._stamped(v_id)
     || CASE WHEN NULLIF(current_setting('ckp.last_warnings', true), '') IS NOT NULL
             THEN jsonb_build_object('warnings', current_setting('ckp.last_warnings', true)::jsonb)
             ELSE '{}'::jsonb END;
