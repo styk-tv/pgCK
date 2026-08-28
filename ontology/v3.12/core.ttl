@@ -90,6 +90,16 @@ ckp:inProject a owl:ObjectProperty ;
   rdfs:domain ckp:Kernel ; rdfs:range ckp:Project ;
   rdfs:comment "The project that holds this kernel. Exactly one — a kernel reaches other projects by adoption, never by co-ownership." .
 
+ckp:transportSegment a owl:DatatypeProperty ;
+  rdfs:domain ckp:Kernel ; rdfs:range xsd:string ;
+  rdfs:comment """The one lowercase segment this kernel is addressed by on the wire. STORED, not
+derived — and that is the whole point: NATS matches subjects token by token with no character
+classes and no case folding, so a wildcard grant admits `pgCK` exactly as happily as `pgck`, and
+a name differing only by case mints a SECOND kernel that nothing can ever seal into. The rule was
+already enforced procedurally by ckp.germinate_kernel and ckp._project; declaring it here puts it
+in the composed surface, so a client can learn it from surface.declared and a seal is refused with
+the clause named instead of relying on every client to spell it correctly.""" .
+
 ckp:epoch a owl:DatatypeProperty ;
   rdfs:range xsd:integer ;
   rdfs:comment "The ordinal of a version of meaning. Carried by a kernel as its current position, and by an Epoch as the position it names. No rdfs:domain: both bear it. Advanced only by a sealed Materialization." .
@@ -649,6 +659,9 @@ ckp:KernelShape a sh:NodeShape ;
   sh:targetClass ckp:Kernel ;
   sh:property [ sh:path rdfs:label    ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
   sh:property [ sh:path ckp:inProject ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
+  sh:property [ sh:path ckp:transportSegment ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                sh:pattern "^[a-z0-9]+(-[a-z0-9]+)*$" ;
+                sh:message "kernel id is ONE lowercase transport segment, dashes optional — 'pgck', never 'pgCK'. NATS subject tokens have no case folding, so an uppercase twin is a separate kernel nothing can seal into." ] ;
   sh:property [ sh:path ckp:epoch     ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ] ;
   sh:property [ sh:path ckp:hasOrgan  ; sh:minCount 3 ; sh:maxCount 3 ; sh:nodeKind sh:IRI ] ;
   sh:property [ sh:path ckp:declaresType       ; sh:nodeKind sh:IRI ] ;

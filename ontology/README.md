@@ -33,8 +33,8 @@ affordance properties: 30 NodeShapes = 27 + 3.
 
 | Path | Role | Digest (sha256) |
 |---|---|---|
-| `v3.12/core.ttl` | **the root, FINAL — the `ckp.boot()` default since 0.4.82**: 30 shapes = 27+3 | `7de02b35fd1fbc2ecfd32e6e53162704be2791a2d41280102849ddb605eb9297` |
-| `v3.12/core.ttl.wave-3.12.sha256` | the FINAL digest sidecar (rc1/rc2 sidecars retained as history) | — |
+| `v3.12/core.ttl` | **the root — the `ckp.boot()` default since 0.4.82**: 30 shapes = 27+3. **Revised 2026-08-28 (wave-3.12 pass-1)**: `ckp:transportSegment` + its `sh:pattern`; supersedes FINAL `7de02b35…` | `97f97cb22baa6e710bd088226728aef693c32ff33d0380105c4a9174f3f4857e` |
+| `v3.12/core.ttl.wave-3.12-pass-1.sha256` | **the CURRENT digest sidecar** — wave-3.12 pass-1, 2026-08-28: `ckp:transportSegment` declared on `ckp:Kernel` and constrained in `ckp:KernelShape` with `sh:pattern "^[a-z0-9]+(-[a-z0-9]+)*$"`, moving the lowercase-kernel-id rule out of PL/pgSQL and into the composed surface (rc1/rc2/FINAL sidecars retained as history and fail by design) | — |
 | `v3.12/modules/wave.ttl` | the wave module, v3.12 shelf (Finding requires `rdfs:label`; ruled-at-pass retyped) | `ad887db28c6e0ea04c7cbd835c40dc5441f073be988475a9634c76e9131db727` |
 | `v3.11/modules/recon.ttl` | the recon reference spore, namespace-corrected re-issue (cut in wave-v3.12; the namespace tracks the LINE) | `b2b11f1b76e22f7bfac10be3eba7b5104ff0d5d0a1d92147ec3dc392f1475d7d` |
 | `v3.12/modules/recon.ttl` | **superseded** (wrong-namespace original) — retained ONLY because sealed Adoptions cite it and composition fails closed on an absent adopted graph | `6a7c199e7ad19580…` (sidecar `-superseded`) |

@@ -40,9 +40,28 @@ BEGIN
     IF d <> '9a791c6c3d6d07cbeeefb33b677e66e2b643f22d844689501458c5765272282d' THEN
       RAISE EXCEPTION 's65 FAIL (1): v3.11 core (27 shapes) digest %… does not reproduce the founding pin 9a791c6c… — the algorithm drifted from the fleet''s', left(d,16);
     END IF;
-  ELSIF n = 30 THEN  -- v3.12 FINAL line
-    IF d <> '6e38f7bb631875b4fcacb086219d862bbe08cfc7209ee9c96967222e9c0225a7' THEN
-      RAISE EXCEPTION 's65 FAIL (1): v3.12 core (30 shapes) digest %… does not reproduce the v3.12 founding pin 6e38f7bb… — the algorithm drifted (or the FINAL root''s bytes moved without its pin)', left(d,16);
+  ELSIF n = 30 THEN  -- v3.12 line — TWO roots now share this arithmetic (0.4.88)
+    -- The shape COUNT stopped discriminating on 2026-08-28: wave-3.12-pass-1 added
+    -- ckp:transportSegment as a PROPERTY shape on the existing ckp:KernelShape, so
+    -- the NodeShape count stayed 30 while the structural digest moved. A single pin
+    -- here would report a deliberate, declared content revision as ALGORITHM DRIFT —
+    -- the exact misdiagnosis the comment above says this gate exists to prevent, one
+    -- root later.
+    --
+    -- So the v3.12 line carries a KNOWN SET, each entry named. This is not a
+    -- loosening: an unrecognised 30-shape digest still fails, which is what catches
+    -- real drift. It is the same rule pgCK asked of CK.Lib.Js in A-8 — a digest is a
+    -- per-deployment declaration, never one kit constant — applied to our own gate.
+    -- The fleet legitimately runs both: dev benches boot the repo tree (pass-1) while
+    -- the artifact bench boots the published FINAL, and that divergence is CORRECT.
+    IF d NOT IN (
+      -- v3.12 FINAL — the published root; what ckone and any baked bundle report
+      '6e38f7bb631875b4fcacb086219d862bbe08cfc7209ee9c96967222e9c0225a7',
+      -- v3.12 wave-3.12-pass-1 — FINAL + ckp:transportSegment on ckp:KernelShape
+      -- (file 97f97cb2…); what a bench booting the repo /ontology tree reports
+      '47d24485627e459f44aa5cb1fd414089cb63690b47ad1aabb610575acd096f4a'
+    ) THEN
+      RAISE EXCEPTION E's65 FAIL (1): v3.12 core (30 shapes) digest %… is not a KNOWN v3.12 pin.\n  known: 6e38f7bb… (FINAL, published) · 47d24485… (wave-3.12-pass-1, +transportSegment)\nEither the algorithm drifted, or the root''s bytes moved without adding its pin here. A new root revision adds its digest in the SAME commit as the bytes and the sidecar — never by widening this list to make a run pass.', left(d,16);
     END IF;
   ELSE
     RAISE EXCEPTION 's65 FAIL (1): loaded core carries % NodeShapes — neither founding arithmetic (27 v3.11 / 30 v3.12); the root is not one this gate knows', n;
@@ -132,8 +151,20 @@ BEGIN
   res := ckp.dispatch('surface.grounding', jsonb_build_object('iri','urn:ckp:core'));
   g := res->'graphs'->0;
   ns := (g->>'nodeshapes')::int; dp := (g->>'declaredProperties')::int;
-  IF NOT ((ns = 27 AND dp = 80) OR (ns = 30 AND dp = 94)) THEN
-    RAISE EXCEPTION 's65 FAIL (5): core arithmetic %/% matches neither founding pair (27/80 v3.11 · 30/94 v3.12) — methods: asserted sh:NodeShape typing · asserted owl/rdf property declarations', ns, dp; END IF;
+  -- Founding pairs, one per ROOT REVISION — not one per line (0.4.88). The v3.12 line
+  -- carries two: FINAL, and wave-3.12-pass-1 which added ckp:transportSegment as a
+  -- property declaration + a property shape on the existing ckp:KernelShape. NodeShapes
+  -- stayed 30; declaredProperties moved 94 -> 95. A pair list that knows only one v3.12
+  -- reports a declared, digest-pinned content revision as an instrument fault — the same
+  -- misdiagnosis check (1) above was written to prevent.
+  --
+  -- This is NOT a loosening: an arithmetic outside the known set still fails, and a new
+  -- revision adds its pair in the SAME commit as its bytes, its sidecar and its (1) pin.
+  IF NOT ( (ns = 27 AND dp = 80)      -- v3.11
+        OR (ns = 30 AND dp = 94)      -- v3.12 FINAL              (structural 6e38f7bb…)
+        OR (ns = 30 AND dp = 95) )    -- v3.12 wave-3.12-pass-1   (structural 47d24485…)
+  THEN
+    RAISE EXCEPTION 's65 FAIL (5): core arithmetic %/% matches no known founding pair (27/80 v3.11 · 30/94 v3.12 FINAL · 30/95 v3.12 pass-1) — methods: asserted sh:NodeShape typing · asserted owl/rdf property declarations', ns, dp; END IF;
   IF NOT (g ? 'propertyShapes') THEN
     RAISE EXCEPTION 's65 FAIL (5): propertyShapes instrument missing — a count without its method is not a number'; END IF;
 END $$;

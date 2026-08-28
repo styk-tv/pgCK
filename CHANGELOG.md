@@ -2,6 +2,49 @@
 
 All notable changes to `pgCK` are logged here.
 
+
+## 0.4.88 — germination stamps its own transport segment
+
+**Emission and shape move in one act — this release is that act.** The root revision
+`97f97cb2…` (wave-3.12-pass-1) adds `ckp:transportSegment` to `ckp:KernelShape` with
+`minCount 1`, moving the lowercase-kernel-id rule out of PL/pgSQL and into declared law so a
+client can learn it from `surface.declared` and a bad spelling is refused at the shape gate
+with the clause named. **The shape and the emitter that satisfies it ship together, here.**
+
+They were briefly apart, and that is worth recording rather than tidying away: the revised
+root reached the two dev benches ahead of this release because those benches mount the repo
+`ontology/` tree directly. For four days germination was therefore impossible on them —
+`ckp.germinate_kernel` sealed a
+`ckp:Kernel` carrying label, epoch, `inProject` and `hasOrgan` — and no segment — so the
+kernel reached its own composed-surface gate with `value: null` and was refused on
+`MinCountConstraintComponent`. Germination was therefore impossible on every door carrying
+that root, silently, because germination is not part of a normal working day.
+
+Found by CK.Lib.Js, who attempted the act correctly end to end — per-door credential,
+verified connection, canonical id, `projectKind` supplied — and were refused. Reproduced
+independently before this fix was written. **A bench that mounts the ontology tree runs law
+ahead of the release that carries its emitter; that is the cost of a dev bench, and the
+lesson is that the pairing is a RELEASE boundary, not a working-tree one.**
+
+`ckp.germinate_kernel` now derives the segment from the project id it has **already
+validated** against `^[a-z0-9]+(-[a-z0-9]+)*$`, and stamps it before the seal. The caller says
+*what*; the substrate derives the wire form. A caller-supplied `transportSegment` stays
+ignored on purpose — it would be one more place two names could disagree.
+
+**The shape is not loosened.** A `ckp:Kernel` sealed directly without the property still
+refuses `MinCount`. Only the emitter changed.
+
+New gate `s74_germinate_stamps_segment` pins all three planes: the **emitter** (germination
+seals the canonical segment while the display label stays a separate fact), the **shape** (a
+direct seal without the property still refuses, naming the clause), and the **procedural
+guard** (a non-canonical id is still refused before the gate, with the slug named). A green
+that exercises only one of them is the gap that let this ship.
+
+**Migration.** `ckp:Kernel` instances sealed before 0.4.88 carry no segment and refuse on
+re-validation. Virgin benches have none; a bench holding a germinated kernel re-germinates it
+or accepts RED until it does. Nothing is backfilled — a backfilled segment would be a fact
+nobody sealed.
+
 ## v0.4.87 - 2026-08-27
 
 **The lexicon's closed sets gain teeth.**

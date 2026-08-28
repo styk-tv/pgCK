@@ -3989,6 +3989,14 @@ $ttl$, v_base, v_label, v_pid);
     'http://www.w3.org/2000/01/rdf-schema#label', v_label,
     'https://conceptkernel.org/ontology/v3.11/core#epoch', 0,
     'https://conceptkernel.org/ontology/v3.11/core#inProject', v_pid,
+    -- 0.4.88 (G-1): the wire form is the SUBSTRATE's, derived from the id the caller
+    -- already named and this function already validated at the canonical guard above.
+    -- KernelShape gained transportSegment with minCount 1 in root 97f97cb2…; this
+    -- emitter did not move with it, so germination refused itself on every door
+    -- carrying that root — MinCountConstraintComponent, value null, fleet-wide.
+    -- Not caller-supplied ON PURPOSE: a payload-supplied segment is one more place
+    -- two names could disagree, and the caller has already said which project it means.
+    'https://conceptkernel.org/ontology/v3.11/core#transportSegment', p_project,
     'https://conceptkernel.org/ontology/v3.11/core#hasOrgan',
       -- The organs live at <base>/organ/*, NOT <base>/kernel/organ/*. Both the
       -- graph above and pgCK's own kernel use the former; deriving these from
