@@ -395,3 +395,75 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
   PERFORM tdd('D-1','every stored digest carries its METHOD','behaviour','BROKEN',SQLERRM);
 END $$;
+
+-- ═══ E-1 · an epoch can be checked against the surface it ran under ════════
+-- Raised by pgRDF (v0.6.35-to-PGCK-1 §6), reproduced here. Their attribution was
+-- PassShape; the shape that actually demands both is EpochShape — wave:PassShape
+-- requires ofWave and director. The correction strengthens the point rather than
+-- weakening it: the class pgCK seals Epochs against requires epoch AND
+-- surfaceDigest (minCount 1, pattern ^[0-9a-f]{64}$), while ckp.kernel_epoch
+-- carries (kernel, epoch). An epoch in the table cannot be checked against
+-- anything, which is precisely what a pin is for.
+DO $$
+DECLARE has_col bool; shape_demands int; sealed_carry int;
+BEGIN
+  SELECT EXISTS(SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='ckp' AND table_name='kernel_epoch'
+                   AND column_name ILIKE '%surface%') INTO has_col;
+  -- CONTROL: the class must really demand it, or this is a misreading of the law
+  -- rather than a weakness in the table.
+  SELECT count(*) INTO shape_demands FROM pgrdf.sparql(
+    'PREFIX sh: <http://www.w3.org/ns/shacl#>
+     PREFIX ckp: <https://conceptkernel.org/ontology/v3.11/core#>
+     SELECT ?b WHERE { GRAPH <urn:ckp:core> {
+       ckp:EpochShape sh:property ?b . ?b sh:path ckp:surfaceDigest ; sh:minCount 1 } }');
+  SELECT count(*) INTO sealed_carry FROM ckp.instances
+   WHERE body->>'type' LIKE '%#Epoch' AND body ? 'https://conceptkernel.org/ontology/v3.11/core#surfaceDigest';
+
+  IF shape_demands = 0 THEN
+    PERFORM tdd('E-1','an epoch in ckp.kernel_epoch carries the surfaceDigest it ran under, as EpochShape demands',
+      'behaviour','BROKEN','control failed: EpochShape does not demand surfaceDigest on this surface — the premise is wrong, not the table');
+  ELSIF has_col THEN
+    PERFORM tdd('E-1','an epoch in ckp.kernel_epoch carries the surfaceDigest it ran under, as EpochShape demands',
+      'behaviour','RED','column present — now prove a recorded epoch can actually be checked against its surface');
+  ELSE
+    PERFORM tdd('E-1','an epoch in ckp.kernel_epoch carries the surfaceDigest it ran under, as EpochShape demands',
+      'behaviour','RED', format('ckp.kernel_epoch is (kernel, epoch) with NO surface column, while EpochShape demands surfaceDigest minCount 1 and %s sealed Epoch(s) carry it. The table is weaker than the class it seals against', sealed_carry));
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM tdd('E-1','an epoch in ckp.kernel_epoch carries the surfaceDigest it ran under','behaviour','BROKEN',SQLERRM);
+END $$;
+
+-- ═══ E-2 · the roster reconciles all three populations ═════════════════════
+-- The diagnosability gap behind pgRDF's §4. They asked "why do we have no
+-- /instances graph" and could not answer it from their side. The answer is that
+-- pgrdf is in neither the GUC nor the ledger — never germinated, and unable to
+-- germinate because reaching the door requires being rostered. Nothing reports
+-- that, so the question could only be asked of us.
+DO $$
+DECLARE r jsonb; ghosts int;
+BEGIN
+  IF to_regprocedure('ckp.roster()') IS NULL THEN
+    PERFORM tdd('E-2','the roster reconciles sealed, rostered and graph-bearing kernels, so a kernel with no graph can learn why',
+      'behaviour','RED','ckp.roster() absent'); RETURN;
+  END IF;
+  r := ckp.roster();
+  -- CONTROL: a live specimen must exist, or an absent key proves nothing.
+  SELECT count(*) INTO ghosts FROM (
+    SELECT DISTINCT substring(iri from '^urn:ckp:([a-z0-9-]+)/') k
+      FROM pgrdf._pgrdf_graphs WHERE iri LIKE 'urn:ckp:%/%'
+    EXCEPT SELECT unnest(ckp._ledger_kernels())) x WHERE k IS NOT NULL;
+
+  IF NOT (r ? 'gucOnly') OR NOT (r ? 'ghosts') THEN
+    PERFORM tdd('E-2','the roster reconciles sealed, rostered and graph-bearing kernels, so a kernel with no graph can learn why',
+      'behaviour','RED', format('roster() reports guc/ledger/union/ledgerOnly and NOT gucOnly (rostered, never sealed) or ghosts (graphs, no sealed kernel). %s live ghost(s) exist that it cannot name', ghosts));
+  ELSIF ghosts > 0 AND jsonb_array_length(r->'ghosts') <> ghosts THEN
+    PERFORM tdd('E-2','the roster reconciles sealed, rostered and graph-bearing kernels, so a kernel with no graph can learn why',
+      'behaviour','RED', format('roster() reports %s ghost(s), %s exist', jsonb_array_length(r->'ghosts'), ghosts));
+  ELSE
+    PERFORM tdd('E-2','the roster reconciles sealed, rostered and graph-bearing kernels, so a kernel with no graph can learn why',
+      'behaviour','GREEN', format('all three populations reconciled; %s ghost(s) named', ghosts));
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM tdd('E-2','the roster reconciles sealed, rostered and graph-bearing kernels','behaviour','BROKEN',SQLERRM);
+END $$;
