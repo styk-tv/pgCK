@@ -3029,6 +3029,56 @@ BEGIN
   IF v_about IS NULL OR v_about !~ '^[A-Za-z][A-Za-z0-9+.:#/_-]*$' THEN
     RETURN jsonb_build_object('ok', false, 'error', 'invalid_about', 'about', v_about);
   END IF;
+  -- 0.4.99 (C-2) — OWNERSHIP ON APPLY, IN THE SUBSTRATE.
+  --
+  -- ckp.apply checked that the proposal exists, is pending, and has enough
+  -- DISTINCT non-anonymous approvals. That is all. The owner-applies rule lived
+  -- only in a client — CK-dev's Action panel offers the button to the owner and
+  -- notes that "a counterparty applying lands the change in THEIR graph", which
+  -- is the substrate's actual behaviour showing through a screen. A screen is
+  -- not a gate: any party with a credential could apply a quorum-met proposal
+  -- and land somebody else's governed change wherever they stood.
+  --
+  -- Quorum answers "did enough parties agree". It does not answer "may THIS
+  -- party enact it". Those are different questions and only the first was asked.
+  --
+  -- Bind only what declared itself, exactly as C-1's quorum floor does: if the
+  -- target project seals ckp:ownedBy, the applier must BE that owner; if no
+  -- owner is declared, nothing is imposed. Inventing an owner for a project that
+  -- never named one would be the substrate choosing on the caller's behalf —
+  -- the defect 0.4.81 fixed by defaulting projectKind to NULL.
+  DECLARE
+    v_about_proj text := substring(v_about from '^urn:ckp:([a-z0-9-]+)/');
+    v_owner      text;
+    v_me         text := NULLIF(trim(COALESCE(current_setting('ckp.requester', true), '')), '');
+  BEGIN
+    IF v_about_proj IS NOT NULL THEN
+      SELECT i.body->>(C||'ownedBy') INTO v_owner FROM ckp.instances i
+       WHERE i.body->>'@id' = 'urn:ckp:project:'||v_about_proj
+         AND i.body->>'type' = C||'Project'
+       ORDER BY i.ts_created DESC LIMIT 1;
+      IF v_owner IS NOT NULL THEN
+        v_me := CASE WHEN v_me IS NULL THEN NULL
+                     ELSE 'urn:ckp:participant:'||ckp._slug(v_me) END;
+        IF v_me IS DISTINCT FROM v_owner THEN
+          RETURN jsonb_build_object('ok', false, 'refused', true, 'sqlstate', '42501',
+            'error', 'not_owner',
+            'about', v_about, 'owner', v_owner,
+            'hint', format('proposal %L targets %L, which is owned by %s. Quorum answers whether '
+                           'enough parties AGREED; it does not answer whether THIS party may enact '
+                           'the change. Ask the owner to apply, or propose against a project you '
+                           'own. Applying from elsewhere would land this change in your own graph, '
+                           'which is not what the voters approved.',
+                           v_about, v_about_proj, v_owner));
+        END IF;
+      END IF;
+    END IF;
+  END;
+
+  -- Placed BEFORE the proposal lookup deliberately. "May this party enact
+  -- changes to this about-graph" is answerable from `about` alone, and asking it
+  -- first means a stranger learns nothing about whether a proposal exists — an
+  -- ownership refusal should not double as an existence oracle.
   SELECT id, body INTO v_pid, v_prop FROM ckp.instances
     WHERE body->>'@id' = v_about AND body->>'type' = C||'Proposal';
   IF v_prop IS NULL THEN

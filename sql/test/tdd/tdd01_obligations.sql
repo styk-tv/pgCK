@@ -41,6 +41,10 @@ END $$;
 DO $$
 DECLARE C text := 'https://conceptkernel.org/ontology/v3.11/core#';
         f_shared int; f_personal int; f_absent int;
+        r1 jsonb; r2 jsonb; e2e text := 'untested';   -- OUTER scope: the first
+        -- draft declared these in a nested block and referenced them in the IF
+        -- chain below, which is out of scope. The harness reported BROKEN, not
+        -- RED, which is exactly the distinction it exists to make.
 BEGIN
   IF to_regprocedure('ckp._quorum_floor(text)') IS NULL THEN
     PERFORM tdd('C-1','a project declaring `shared` REFUSES requires_quorum 1; `personal` accepts it; an undeclared kind imposes NO floor',
@@ -61,7 +65,6 @@ BEGIN
   -- END-TO-END, because the claim's verb is REFUSES and a floor function is only
   -- the mechanism. Testing the mechanism and reporting the claim is the gap this
   -- suite keeps catching in its own probes.
-  DECLARE r1 jsonb; r2 jsonb; e2e text := 'untested';
   BEGIN
     PERFORM set_config('ckp.requester','svc:tdd-c1',true);
     INSERT INTO ckp.instances(id, body) VALUES
@@ -113,21 +116,52 @@ EXCEPTION WHEN OTHERS THEN
   PERFORM tdd('C-1','a project declaring `shared` REFUSES requires_quorum 1','behaviour','BROKEN',SQLERRM);
 END $$;
 
--- ═══ C-2 · ownership enforced on apply, in the substrate ═══════════════════
+-- ═══ C-2 · ownership enforced on apply, in the substrate ══════════════════
 DO $$
-DECLARE d text;
+DECLARE C text := 'https://conceptkernel.org/ontology/v3.11/core#'; d text;
+        proj text; r_stranger jsonb; r_owner jsonb; r_undeclared jsonb; pid text;
 BEGIN
   SELECT pg_get_functiondef(p.oid) INTO d FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
    WHERE n.nspname='ckp' AND p.proname='apply' LIMIT 1;
-  IF d IS NULL THEN
-    PERFORM tdd('C-2','a non-owner applying a quorum-met proposal is REFUSED; the owner is not','existence','BROKEN','ckp.apply not found');
-  ELSIF d LIKE '%ownedBy%' THEN
-    PERFORM tdd('C-2','a non-owner applying a quorum-met proposal is REFUSED; the owner is not',
-      'existence','RED','ckp.apply now mentions ownedBy — write the behaviour probe with its control');
-  ELSE
-    PERFORM tdd('C-2','a non-owner applying a quorum-met proposal is REFUSED; the owner is not',
-      'existence','RED','ckp.apply checks proposal exists + pending + distinct approvals only. NO ownership check — the owner-applies rule lives in a client, and a screen is not a gate');
+  IF d IS NULL OR d NOT LIKE '%not_owner%' THEN
+    PERFORM tdd('C-2','a non-owner applying a quorum-met proposal is REFUSED; the owner is not; an unowned project imposes NOTHING',
+      'behaviour','RED','ckp.apply checks proposal exists + pending + distinct approvals only. NO ownership check — the owner-applies rule lives in a client, and a screen is not a gate'); RETURN;
   END IF;
+
+  proj := ckp._project();
+  -- FIXTURE: a Project owned by somebody who is definitely not us.
+  INSERT INTO ckp.instances(id, body) VALUES
+    ('tdd-c2-proj', jsonb_build_object('@id','urn:ckp:project:'||proj,'type',C||'Project',
+                                       C||'ownedBy','urn:ckp:participant:tdd-c2-someone-else'))
+    ON CONFLICT (id) DO NOTHING;
+  PERFORM set_config('ckp.requester','tdd-c2-not-the-owner',true);
+  r_stranger := ckp.apply(jsonb_build_object('about','urn:ckp:'||proj||'/kernel/ck'));
+  -- CONTROL 1: the OWNER must NOT be refused for ownership. (It will fail for
+  -- another reason — unknown_proposal — and that is the point: the ownership gate
+  -- must not be what stops them.)
+  PERFORM set_config('ckp.requester','tdd-c2-someone-else',true);
+  r_owner := ckp.apply(jsonb_build_object('about','urn:ckp:'||proj||'/kernel/ck'));
+  -- CONTROL 2: an UNDECLARED owner imposes nothing.
+  DELETE FROM ckp.instances WHERE id='tdd-c2-proj';
+  PERFORM set_config('ckp.requester','tdd-c2-anyone',true);
+  r_undeclared := ckp.apply(jsonb_build_object('about','urn:ckp:'||proj||'/kernel/ck'));
+
+  IF r_stranger->>'error' IS DISTINCT FROM 'not_owner' THEN
+    PERFORM tdd('C-2','a non-owner applying a quorum-met proposal is REFUSED; the owner is not; an unowned project imposes NOTHING',
+      'behaviour','RED', 'a STRANGER was not refused for ownership — got '||COALESCE(r_stranger->>'error','ok'));
+  ELSIF r_owner->>'error' = 'not_owner' THEN
+    PERFORM tdd('C-2','a non-owner applying a quorum-met proposal is REFUSED; the owner is not; an unowned project imposes NOTHING',
+      'behaviour','RED','the OWNER was refused for ownership — a wall, not a gate');
+  ELSIF r_undeclared->>'error' = 'not_owner' THEN
+    PERFORM tdd('C-2','a non-owner applying a quorum-met proposal is REFUSED; the owner is not; an unowned project imposes NOTHING',
+      'behaviour','RED','a project with NO declared owner still refused — an owner invented for a declaration nobody made');
+  ELSE
+    PERFORM tdd('C-2','a non-owner applying a quorum-met proposal is REFUSED; the owner is not; an unowned project imposes NOTHING',
+      'behaviour','GREEN','stranger refused not_owner; owner not refused for ownership; undeclared owner imposes nothing');
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  BEGIN DELETE FROM ckp.instances WHERE id='tdd-c2-proj'; EXCEPTION WHEN OTHERS THEN NULL; END;
+  PERFORM tdd('C-2','a non-owner applying a quorum-met proposal is REFUSED','behaviour','BROKEN',SQLERRM);
 END $$;
 
 -- ═══ C-3 · at least one proof obligation registered, and it REFUSES ════════
