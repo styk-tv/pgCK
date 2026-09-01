@@ -37,27 +37,80 @@ EXCEPTION WHEN OTHERS THEN
     'behaviour','BROKEN', 'probe errored: '||SQLERRM);
 END $$;
 
--- ═══ C-1 · L-8 quorum derived from projectKind ═════════════════════════════
+-- ═══ C-1 · L-8 quorum derived from projectKind ════════════════════════════
 DO $$
+DECLARE C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+        f_shared int; f_personal int; f_absent int;
 BEGIN
-  -- MATERIALIZED is an optimisation FENCE and it is load-bearing: without it the
-  -- planner evaluates pg_get_functiondef BEFORE the nspname filter and hits
-  -- pg_catalog.array_agg, which throws "is an aggregate function". The harness
-  -- caught that as BROKEN rather than RED, which is exactly its job.
-  IF EXISTS (WITH f AS MATERIALIZED (
-               SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-                WHERE n.nspname='ckp' AND p.prokind='f')
-             SELECT 1 FROM f
-              WHERE pg_get_functiondef(f.oid) LIKE '%projectKind%'
-                AND pg_get_functiondef(f.oid) LIKE '%requiresQuorum%') THEN
-    PERFORM tdd('C-1','a project declaring `shared` REFUSES requires_quorum 1; `personal` accepts it',
-      'existence','RED','a function now mentions both — write the behaviour probe with its control');
+  IF to_regprocedure('ckp._quorum_floor(text)') IS NULL THEN
+    PERFORM tdd('C-1','a project declaring `shared` REFUSES requires_quorum 1; `personal` accepts it; an undeclared kind imposes NO floor',
+      'existence','RED','nothing reads projectKind when computing quorum — it resolves to COALESCE(...,1) at both call sites, so a project can declare it needs a partner and then approve its own change alone'); RETURN;
+  END IF;
+
+  -- FIXTURES, so the verdict does not depend on which projects happen to exist.
+  INSERT INTO ckp.instances(id, body) VALUES
+    ('tdd-c1-shared',   jsonb_build_object('@id','urn:ckp:project:tddc1shared','type',C||'Project', C||'projectKind','shared')),
+    ('tdd-c1-personal', jsonb_build_object('@id','urn:ckp:project:tddc1personal','type',C||'Project', C||'projectKind','personal')),
+    ('tdd-c1-absent',   jsonb_build_object('@id','urn:ckp:project:tddc1absent','type',C||'Project'))
+  ON CONFLICT (id) DO NOTHING;
+
+  f_shared   := ckp._quorum_floor('tddc1shared');
+  f_personal := ckp._quorum_floor('tddc1personal');
+  f_absent   := ckp._quorum_floor('tddc1absent');
+
+  -- END-TO-END, because the claim's verb is REFUSES and a floor function is only
+  -- the mechanism. Testing the mechanism and reporting the claim is the gap this
+  -- suite keeps catching in its own probes.
+  DECLARE r1 jsonb; r2 jsonb; e2e text := 'untested';
+  BEGIN
+    PERFORM set_config('ckp.requester','svc:tdd-c1',true);
+    INSERT INTO ckp.instances(id, body) VALUES
+      ('tdd-c1-live', jsonb_build_object('@id','urn:ckp:project:'||ckp._project(),
+                                         'type',C||'Project', C||'projectKind','shared'))
+      ON CONFLICT (id) DO NOTHING;
+    r1 := ckp.propose_change(ckp._project(), jsonb_build_object('op','add_class','requires_quorum',1,
+            'detail', jsonb_build_object('class','urn:ckp:'||ckp._project()||'/type/TddC1','label','TddC1')));
+    r2 := ckp.propose_change(ckp._project(), jsonb_build_object('op','add_class','requires_quorum',2,
+            'detail', jsonb_build_object('class','urn:ckp:'||ckp._project()||'/type/TddC1b','label','TddC1b')));
+    DELETE FROM ckp.instances WHERE id = 'tdd-c1-live';
+    IF (r1->>'ok')::boolean IS TRUE THEN e2e := 'quorum-1-accepted';
+    ELSIF (r2->>'ok')::boolean IS NOT TRUE THEN e2e := 'quorum-2-also-refused';
+    ELSE e2e := 'ok'; END IF;
+  EXCEPTION WHEN OTHERS THEN
+    BEGIN DELETE FROM ckp.instances WHERE id='tdd-c1-live'; EXCEPTION WHEN OTHERS THEN NULL; END;
+    e2e := 'probe-error';
+  END;
+
+  DELETE FROM ckp.instances WHERE id LIKE 'tdd-c1-%';
+
+  IF e2e = 'quorum-1-accepted' THEN
+    PERFORM tdd('C-1','a project declaring `shared` REFUSES requires_quorum 1; `personal` accepts it; an undeclared kind imposes NO floor',
+      'behaviour','RED','the floor computes correctly but propose_change still ACCEPTED quorum 1 on a shared project — the mechanism exists and the claim does not hold');
+  ELSIF e2e = 'quorum-2-also-refused' THEN
+    PERFORM tdd('C-1','a project declaring `shared` REFUSES requires_quorum 1; `personal` accepts it; an undeclared kind imposes NO floor',
+      'behaviour','RED','quorum 2 was refused too — a wall, not a gate');
+  ELSIF f_shared < 2 THEN
+    PERFORM tdd('C-1','a project declaring `shared` REFUSES requires_quorum 1; `personal` accepts it; an undeclared kind imposes NO floor',
+      'behaviour','RED', format('a `shared` project has floor %s — it can still approve its own change alone, which is exactly what shared is declared to prevent', f_shared));
+  ELSIF f_personal <> 1 THEN
+    -- CONTROL: personal is quorum-of-one BY DECLARATION. A floor that refuses it
+    -- too is a wall, not a gate, and would break every legitimate solo project.
+    PERFORM tdd('C-1','a project declaring `shared` REFUSES requires_quorum 1; `personal` accepts it; an undeclared kind imposes NO floor',
+      'behaviour','RED', format('a `personal` project has floor %s — quorum-of-one is its declared meaning; refusing it makes this a wall', f_personal));
+  ELSIF f_absent <> 1 THEN
+    -- CONTROL: an undeclared kind must impose NOTHING. Inventing a floor for a
+    -- project that never declared a mating type is the substrate choosing a
+    -- reproductive strategy nobody asked for — the defect 0.4.81 fixed by making
+    -- the default NULL rather than 'personal'.
+    PERFORM tdd('C-1','a project declaring `shared` REFUSES requires_quorum 1; `personal` accepts it; an undeclared kind imposes NO floor',
+      'behaviour','RED', format('a project with NO declared kind got floor %s — a rule invented for a declaration nobody made', f_absent));
   ELSE
-    PERFORM tdd('C-1','a project declaring `shared` REFUSES requires_quorum 1; `personal` accepts it',
-      'existence','RED','no code path reads projectKind when computing quorum — quorum is COALESCE(...,1) at both call sites');
+    PERFORM tdd('C-1','a project declaring `shared` REFUSES requires_quorum 1; `personal` accepts it; an undeclared kind imposes NO floor',
+      'behaviour','GREEN','shared floor=2, personal floor=1, undeclared floor=1; and end-to-end propose REFUSED quorum 1 on a shared project while accepting quorum 2 — the locus is read, it binds only what declared itself, and it is a gate not a wall');
   END IF;
 EXCEPTION WHEN OTHERS THEN
-  PERFORM tdd('C-1','a project declaring `shared` REFUSES requires_quorum 1; `personal` accepts it','existence','BROKEN',SQLERRM);
+  BEGIN DELETE FROM ckp.instances WHERE id LIKE 'tdd-c1-%'; EXCEPTION WHEN OTHERS THEN NULL; END;
+  PERFORM tdd('C-1','a project declaring `shared` REFUSES requires_quorum 1','behaviour','BROKEN',SQLERRM);
 END $$;
 
 -- ═══ C-2 · ownership enforced on apply, in the substrate ═══════════════════

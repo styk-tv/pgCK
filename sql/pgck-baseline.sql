@@ -3037,7 +3037,12 @@ BEGIN
   IF v_prop->>(C||'proposalState') <> 'pending' THEN
     RETURN jsonb_build_object('ok', false, 'error', 'proposal_not_pending', 'state', v_prop->>(C||'proposalState'));
   END IF;
-  v_quorum := COALESCE((v_prop->>(C||'requiresQuorum'))::int, 1);
+  -- 0.4.98 (C-1 / L-8): the floor binds at APPLY as well, so a proposal sealed
+  -- at quorum 1 before the project declared `shared` — or before this shipped —
+  -- cannot still be self-applied. GREATEST, never replacement: a proposal that
+  -- asked for MORE than the floor keeps what it asked for.
+  v_quorum := GREATEST(COALESCE((v_prop->>(C||'requiresQuorum'))::int, 1),
+                       ckp._quorum_floor(v_proj));
   -- 0.4.62 — QUORUM IS DISTINCT ACCOUNTABLE PARTIES. This counted VOTES: one
   -- identity voting twice was two approvals, and ckp.seal mints a FRESH
   -- anon:<uuid> per unattributed call, so N naked-path seals presented as N
@@ -5595,6 +5600,43 @@ END;
 $function$
 ;
 
+-- 0.4.98 (C-1 / L-8) — projectKind FINALLY MEANS SOMETHING.
+--
+-- ckp:projectKind is sh:in ("personal" "shared") and its own rdfs:comment states
+-- the rule: "personal — one owner, WHO IS QUORUM OF ONE; or shared — several
+-- members, WHERE GOVERNED CHANGE CLEARS A QUORUM." Measured: nothing read it.
+-- Quorum resolved to COALESCE(..., 1) at both call sites, so a project could
+-- declare that it needs a partner and then approve its own law change alone.
+--
+-- WHAT THIS IS FOR, corrected by measurement. The obvious framing — "stop
+-- kernels self-approving" — is wrong on the door where it matters: ckdev has 16
+-- proposals and NONE declare quorum 1; CK.Lib.Js's handshake #2 corrected the
+-- practice without any gate. pgck still runs 17 of 22 at quorum 1, and some of
+-- that is legitimate on a destructive bench. So this is NOT stopping current
+-- abuse. It is PREVENTING REGRESSION: practice that holds only by convention is
+-- one hurried session from lapsing, and the ledger cannot tell a principled
+-- quorum-2 from a lucky one.
+--
+-- Absence imposes NO floor. A project sealed before projectKind was required has
+-- not declared a mating type, and inventing one for it would be the substrate
+-- choosing a reproductive strategy nobody asked for — the same defect 0.4.81
+-- fixed by making the default NULL instead of 'personal'.
+CREATE OR REPLACE FUNCTION ckp._quorum_floor(p_project text)
+ RETURNS integer
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+  SELECT CASE
+           WHEN (SELECT i.body->>'https://conceptkernel.org/ontology/v3.11/core#projectKind'
+                   FROM ckp.instances i
+                  WHERE i.body->>'@id' = 'urn:ckp:project:'||p_project
+                    AND i.body->>'type' = 'https://conceptkernel.org/ontology/v3.11/core#Project'
+                  ORDER BY i.ts_created DESC LIMIT 1) = 'shared'
+           THEN 2 ELSE 1 END;
+$function$
+;
+
 CREATE OR REPLACE FUNCTION ckp.propose_change(p_kernel_urn text, p_payload jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -5680,6 +5722,20 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'error', 'invalid_requires_quorum',
                               'value', p_payload->>'requires_quorum');
   END;
+  -- 0.4.98 (C-1 / L-8): a project that declared `shared` cannot then propose a
+  -- change it may approve alone. The refusal names the clause and the cure, and
+  -- points at the declaration rather than at a policy nobody can read.
+  IF v_quorum < ckp._quorum_floor(p_kernel_urn) THEN
+    RETURN jsonb_build_object('ok', false, 'refused', true, 'sqlstate', '55000',
+      'error', 'invalid_requires_quorum',
+      'value', v_quorum,
+      'floor', ckp._quorum_floor(p_kernel_urn),
+      'hint', format('this project seals ckp:projectKind "shared", whose declared meaning is '
+                     '"several members, where governed change clears a quorum". A quorum of %s '
+                     'would let the proposer approve its own change. Propose at %s or higher, or '
+                     'govern the project to "personal" first — that is a decision with a record, '
+                     'which is the point.', v_quorum, ckp._quorum_floor(p_kernel_urn)));
+  END IF;
   IF v_quorum < 1 THEN
     RETURN jsonb_build_object('ok', false, 'error', 'invalid_requires_quorum', 'value', v_quorum);
   END IF;
