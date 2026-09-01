@@ -3047,6 +3047,54 @@ BEGIN
     v_applied := jsonb_build_object('graph_changed', true, 'applied_quads', v_ga->'applied_quads');
   END IF;
 
+  -- 4a-bis. KERNEL POLICY (0.4.95, C-4). No shape projection — _op_to_ttl returns
+  -- NULL for this op and the graph is untouched. The policy lives on the SEALED
+  -- Kernel instance, so it is applied as a governed patch through the same path a
+  -- client would use, and that is the entire point:
+  --
+  --   NOTHING HERE CHECKS A RANGE. The law already declares every bound —
+  --   weightAssent >= 0, weightDissent <= 0, weightImplicit in [0,1],
+  --   decayLambda >= 0, thresholdDefer >= 0, and thresholdDiscard sh:lessThan
+  --   thresholdPromote, which is the only cross-property invariant of the seven
+  --   and the one no per-property constraint can catch. Measured on the composed
+  --   surface before this was written: an in-range set conforms, and each of those
+  --   four violations is refused. A projector carrying its own copy of the bounds
+  --   would be a second implementation of a rule that already exists — the exact
+  --   defect D-1 corrected one layer over. You do not enforce your own shape; you
+  --   declare it, and the ground refuses what violates it.
+  --
+  --   update_typed is composed-aware, so an UNDECLARED field is refused by name
+  --   (undeclared_patch_key) rather than minted, and ckp.seal runs the gate that
+  --   enforces the bounds. Both halves come for free.
+  IF v_op = 'set_kernel_policy' THEN
+    DECLARE
+      v_kid   text := 'urn:ckp:'||v_proj||'/kernel';
+      -- BARE key, matching every other reader (lines 2381, 3151, 3168). The
+      -- body stores proposalOp under its full IRI and proposalDetail bare; that
+      -- inconsistency is noted at 2441 as a known family and is not mine to fix
+      -- here — but writing C||'proposalDetail' would have silently read NULL and
+      -- refused every policy proposal with "needs {field, value}".
+      v_field text := v_prop->'proposalDetail'->>'field';
+      v_val   jsonb := v_prop->'proposalDetail'->'value';
+      v_upd   jsonb;
+    BEGIN
+      IF v_field IS NULL OR v_val IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'error', 'invalid_patch',
+          'hint', 'set_kernel_policy needs {field, value}');
+      END IF;
+      v_upd := ckp.update_typed(jsonb_build_object(
+                 'id', v_kid,
+                 'patch', jsonb_build_object(C||v_field, v_val)));
+      IF (v_upd->>'ok') IS DISTINCT FROM 'true' THEN
+        -- the refusal travels VERBATIM. A policy refused by the shape gate must
+        -- say which clause refused it, not be flattened into "apply failed".
+        RETURN jsonb_build_object('ok', false, 'error', 'policy_apply_refused',
+          'field', v_field, 'detail', v_upd);
+      END IF;
+      v_applied := v_applied || jsonb_build_object('policy', jsonb_build_object('field', v_field, 'value', v_val));
+    END;
+  END IF;
+
   -- 4b. CASCADE — epoch advance, and it MUST produce a sealed Materialization
   --     (P0-E, pgCK#28). The epoch is not a counter: the bump recompiles the
   --     plan surface (compile_plans + plan_cache_clear inside bump_epoch), and
@@ -5525,7 +5573,12 @@ DECLARE
   -- not editing the list. 0.4.65 adds add_proof_obligation (§5b): its projector
   -- is ckp.register_proof_obligation at apply — the obligation registry is the
   -- change it projects, the seal-exit dual of add_affordance's dispatch entry.
-  v_ops    text[] := ARRAY['add_class','add_property','set_transition_map','add_affordance','add_proof_obligation'];
+  -- 0.4.95 (C-4) — set_kernel_policy joins the closed op set. The law declares
+  -- seven Kernel policy properties (weights, decay, thresholds) and states that
+  -- each is "an OVERRIDE, sealed only through propose->vote->apply". No projector
+  -- could write a Kernel property, so the route the law mandates did not exist and
+  -- all seven were unreachable. This is that route.
+  v_ops    text[] := ARRAY['add_class','add_property','set_transition_map','add_affordance','add_proof_obligation','set_kernel_policy'];
   v_op     text := p_payload->>'op';
   -- ckp.dispatch calls this with v_proj -- the bare project SEGMENT ('pgck'),
   -- not a URN, despite the parameter name. Defaulting `about` to it produced a
