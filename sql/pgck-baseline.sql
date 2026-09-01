@@ -530,13 +530,35 @@ BEGIN
   -- 0.4.90 (Q-3): existing installs already have refusal_registry, so
   -- CREATE TABLE IF NOT EXISTS cannot add the column — it must be ALTERed in,
   -- and the classification rule re-run, on every upgrade path.
+  -- 0.4.97 (E-1, raised by pgRDF) — AN EPOCH WITHOUT ITS SURFACE CANNOT BE
+  -- CHECKED AGAINST ANYTHING. ckp.kernel_epoch was (kernel, epoch) while
+  -- ckp:EpochShape demands epoch AND surfaceDigest together — minCount 1 each,
+  -- pattern ^[0-9a-f]{64}$ — so the table was weaker than the class it seals
+  -- against, and a pin that records the position without the law it ran under is
+  -- not a pin. (pgRDF attributed this to PassShape; wave:PassShape requires
+  -- ofWave and director. The correction strengthens their point.)
+  ALTER TABLE ckp.kernel_epoch ADD COLUMN IF NOT EXISTS surface_digest TEXT;
+
+  -- Backfill ONLY from what was actually sealed. A kernel whose current epoch has
+  -- no sealed ckp:Epoch keeps NULL rather than being handed a digest computed
+  -- now: that would assert which surface was in force at a moment we never
+  -- measured. Same rule as D-1's canonical backfill — absence is an answer.
+  UPDATE ckp.kernel_epoch ke SET surface_digest = e.sd
+    FROM (SELECT substring(i.body->>'https://conceptkernel.org/ontology/v3.11/core#producedBy'
+                           from '^urn:ckp:([a-z0-9-]+)/kernel/ck$') AS k,
+                 (i.body->>'https://conceptkernel.org/ontology/v3.11/core#epoch')::int AS ep,
+                 i.body->>'https://conceptkernel.org/ontology/v3.11/core#surfaceDigest' AS sd
+            FROM ckp.instances i
+           WHERE i.body->>'type' = 'https://conceptkernel.org/ontology/v3.11/core#Epoch') e
+   WHERE e.k = ke.kernel AND e.ep = ke.epoch AND ke.surface_digest IS NULL;
+
   ALTER TABLE ckp.refusal_registry ADD COLUMN IF NOT EXISTS plane TEXT;
   UPDATE ckp.refusal_registry SET plane = 'declared'
    WHERE code LIKE 'undeclared\_%' ESCAPE '\'
       OR code IN ('unresolved_shape','shape_violation','type_not_readable_here',
                   'detail_projects_nothing','op_has_no_projector');
   UPDATE ckp.refusal_registry SET plane = 'procedural'
-   WHERE plane IS NULL AND sqlstate IN ('22004','42501','42601','55000');
+   WHERE plane IS NULL AND sqlstate IN ('22004','42501','42601','55000','2BP01');
 
   -- 0.4.94 (D-1) — A STORED DIGEST MUST CARRY ITS METHOD.
   -- `graph_digest` is populated with ckp._surface_digest(), the COPY plane:
@@ -3140,6 +3162,12 @@ BEGIN
       C||'epoch', to_jsonb(v_epoch),
       C||'surfaceDigest', v_surfd,
       C||'structuralDigest', ckp._structural_digest(v_comp_e)));
+    -- 0.4.97 (E-1): the live epoch row records the surface it ran under, from the
+    -- SAME v_surfd that was just sealed into the Epoch. One computation, three
+    -- writers — the table cannot drift from the seal, which is the whole failure
+    -- D-1 was about one layer over.
+    UPDATE ckp.kernel_epoch SET surface_digest = v_surfd WHERE kernel = v_proj;
+
     -- the Materialization: the sealed rebuild that produced that epoch.
     PERFORM ckp.seal('mat-'||v_proj||'-'||v_epoch, jsonb_build_object(
       'type', C||'Materialization', '@id', v_miri,
@@ -4996,6 +5024,20 @@ CREATE TABLE IF NOT EXISTS ckp.refusal_registry (
 );
 
 INSERT INTO ckp.refusal_registry (code, sqlstate, teaches) VALUES
+  -- 0.4.97 (C-16) — CLASS 2B, on pgRDF's advice and verified reachable before
+  -- registering it. Their LIB spec asks consumers to add 2B (dependent objects)
+  -- to the refusal classifier, and warns more usefully still: treat as a REFUSAL
+  -- anything that is not class XX, because XX is the only code a genuine fault
+  -- carries. Registering a code we cannot raise would be the declared-but-unreal
+  -- pattern this substrate keeps finding, so it was triggered first:
+  --   pgrdf.drop_graph(g, cascade => false) on a graph with inferred rows
+  --   -> 2BP01  "drop_graph: inferred rows present (graph_id = 1);
+  --              pass cascade => true to proceed"
+  -- That message already names its cure, so `teaches` points at the engine's
+  -- prose rather than paraphrasing it — a restatement is how the retired
+  -- doctrine spread, and refusal copy is exactly where R-15 says a sweep must
+  -- reach.
+  ('dependent_objects',        '2BP01', 'the engine refused a destructive act because dependent rows exist; its own message names the cure (pass cascade => true). pgCK does not paraphrase it — render the engine prose verbatim'),
   -- 22004 null_value_not_allowed — a required piece of the payload is absent
   ('type_required',            '22004', NULL),
   ('ttl_required',             '22004', NULL),
@@ -5066,7 +5108,7 @@ UPDATE ckp.refusal_registry SET plane = 'declared'
                 'detail_projects_nothing','op_has_no_projector');
 UPDATE ckp.refusal_registry SET plane = 'procedural'
  WHERE plane IS NULL
-   AND sqlstate IN ('22004','42501','42601','55000');
+   AND sqlstate IN ('22004','42501','42601','55000','2BP01');
 
 -- The ring-1 definer set resolves ckp.* as ck_substrate; a table created on the
 -- WARM road exists after the install-completeness blanket grant already ran, so

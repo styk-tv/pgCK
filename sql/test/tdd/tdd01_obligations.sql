@@ -9,7 +9,7 @@ DO $$
 DECLARE n int; ids bigint[]; one bigint; g bigint; before int; after int;
 BEGIN
   IF to_regprocedure('pgrdf.drop_graph(bigint,boolean)') IS NULL THEN
-    PERFORM tdd('B-1','dead+empty validate-scratch graphs are reaped; non-empty and live are spared',
+    PERFORM tdd('B-1','dead+empty scratch graphs the caller OWNS are reaped; non-empty and live are spared; an undroppable one is REPORTED, never silently skipped',
       'existence','RED','pgrdf.drop_graph() absent — engine predates it'); RETURN;
   END IF;
   -- BEHAVIOUR: make a dead-empty one, reap it, prove it is GONE; and prove a
@@ -26,14 +26,14 @@ BEGIN
   SELECT count(*) INTO before FROM pgrdf._pgrdf_graphs WHERE iri='urn:ckp:validate-scratch:999902';
   BEGIN PERFORM pgrdf.drop_graph((SELECT graph_id FROM pgrdf._pgrdf_graphs WHERE iri='urn:ckp:validate-scratch:999902'),true); EXCEPTION WHEN OTHERS THEN NULL; END;
   IF after = 0 AND before = 1 THEN
-    PERFORM tdd('B-1','dead+empty validate-scratch graphs are reaped; non-empty and live are spared',
-      'behaviour','GREEN','dead+empty GONE, non-empty SURVIVED the same pass');
+    PERFORM tdd('B-1','dead+empty scratch graphs the caller OWNS are reaped; non-empty and live are spared; an undroppable one is REPORTED, never silently skipped',
+      'behaviour','GREEN','dead+empty GONE, non-empty SURVIVED. NOTE: measured on this door, pgrdf partitions are 134 ck_substrate / 21 pgck and pgrdf.drop_graph is NOT security-definer, so the reap drops only what its effective role owns — an unowned one raises a WARNING rather than failing silently, which is why the per-graph handler logs');
   ELSE
-    PERFORM tdd('B-1','dead+empty validate-scratch graphs are reaped; non-empty and live are spared',
+    PERFORM tdd('B-1','dead+empty scratch graphs the caller OWNS are reaped; non-empty and live are spared; an undroppable one is REPORTED, never silently skipped',
       'behaviour','RED', format('empty survived(%s) or non-empty was taken(%s)', after, before));
   END IF;
 EXCEPTION WHEN OTHERS THEN
-  PERFORM tdd('B-1','dead+empty validate-scratch graphs are reaped; non-empty and live are spared',
+  PERFORM tdd('B-1','dead+empty scratch graphs the caller OWNS are reaped; non-empty and live are spared; an undroppable one is REPORTED, never silently skipped',
     'behaviour','BROKEN', 'probe errored: '||SQLERRM);
 END $$;
 
@@ -270,18 +270,18 @@ BEGIN
   DELETE FROM ckp.kernel_epoch WHERE kernel = 'tddc13';
 
   IF stale > 0 THEN
-    PERFORM tdd('C-13','no sealed instance carries a value that silently goes stale',
-      'behaviour','RED', stale||' sealed Kernel(s) carry ckp:epoch disagreeing with the live epoch (fixture included) — a sealed fact holding a mutable value. This is why every sun renders e0 on the board');
+    PERFORM tdd('C-13','a sealed instance carries no value a reader can mistake for a live one — either it tracks, or its NAME says it does not',
+      'behaviour','RED', stale||' sealed Kernel(s) carry ckp:epoch disagreeing with the live epoch (fixture included) — a sealed fact holding a mutable value; this is why every sun renders e0 on the board. ⚠ CURE CORRECTED: ckp:epoch is minCount 1 on KernelShape, so REMOVING it from the germination template would violate the law. The options are a governed rename to germinatedAtEpoch (an ontology change, proposable now that set_kernel_policy exists as precedent) or fixing every reader — not a deletion');
   ELSE
     -- The fixture GUARANTEES one stale row while the defect exists, so reaching
     -- here means germination no longer stamps a mutable ckp:epoch. That is the
     -- only way this claim can honestly be GREEN.
-    PERFORM tdd('C-13','no sealed instance carries a value that silently goes stale',
+    PERFORM tdd('C-13','a sealed instance carries no value a reader can mistake for a live one — either it tracks, or its NAME says it does not',
       'behaviour','GREEN','even the constructed stale fixture did not register — no sealed Kernel carries a mutable epoch');
   END IF;
 EXCEPTION WHEN OTHERS THEN
   BEGIN DELETE FROM ckp.instances WHERE id='tdd-c13-kernel'; DELETE FROM ckp.kernel_epoch WHERE kernel='tddc13'; EXCEPTION WHEN OTHERS THEN NULL; END;
-  PERFORM tdd('C-13','no sealed instance carries a value that silently goes stale','behaviour','BROKEN',SQLERRM);
+  PERFORM tdd('C-13','a sealed instance carries no value a reader can mistake for a live one — either it tracks, or its NAME says it does not','behaviour','BROKEN',SQLERRM);
 END $$;
 
 -- ═══ C-14 · routed vs declared affordances ═════════════════════════════════
@@ -318,16 +318,54 @@ EXCEPTION WHEN OTHERS THEN
   PERFORM tdd('C-15','every refusal carries a registered code and sqlstate','behaviour','BROKEN',SQLERRM);
 END $$;
 
--- ═══ C-16 · class 2B in the refusal classifier ═════════════════════════════
+-- ═══ C-16 · class 2B in the refusal classifier ════════════════════════════
 DO $$
-DECLARE n int;
+DECLARE n int; teaches text; plane text; st text; raised text;
 BEGIN
-  SELECT count(*) INTO n FROM ckp.refusal_registry WHERE sqlstate LIKE '2B%';
-  PERFORM tdd('C-16','the refusal registry carries class 2B (dependent objects) so a classifier keys on it',
-    'behaviour', CASE WHEN n>0 THEN 'GREEN' ELSE 'RED' END,
-    CASE WHEN n>0 THEN n||' 2B code(s) registered' ELSE 'no 2B code registered; pgRDF advises adding it, and treating anything not class XX as a refusal' END);
+  SELECT count(*), max(r.teaches), max(r.plane) INTO n, teaches, plane
+    FROM ckp.refusal_registry r WHERE r.sqlstate LIKE '2B%';
+  IF n = 0 THEN
+    PERFORM tdd('C-16','the registry carries class 2B, and it names a refusal the substrate can actually raise',
+      'behaviour','RED','no 2B code registered; pgRDF advises adding it and treating anything not class XX as a refusal'); RETURN;
+  END IF;
+
+  -- CONTROL: a registered code that names no reachable refusal is worse than an
+  -- absent one — it tells a classifier to expect something that never comes.
+  -- Trigger the real condition and read the sqlstate the engine actually raises.
+  BEGIN
+    DECLARE g bigint;
+    BEGIN
+      SELECT graph_id INTO g FROM pgrdf._pgrdf_graphs gg
+       WHERE EXISTS (SELECT 1 FROM pgrdf._pgrdf_quads q WHERE q.graph_id=gg.graph_id AND q.is_inferred) LIMIT 1;
+      IF g IS NULL THEN raised := 'no-fixture'; ELSE
+        BEGIN
+          PERFORM pgrdf.drop_graph(g, false);
+          raised := 'none';                    -- it SUCCEEDED: the condition is gone
+        EXCEPTION WHEN OTHERS THEN
+          GET STACKED DIAGNOSTICS st = RETURNED_SQLSTATE; raised := st;
+        END;
+        RAISE EXCEPTION 'rollback';            -- never actually drop anything
+      END IF;
+    END;
+  EXCEPTION WHEN OTHERS THEN
+    IF raised IS NULL THEN raised := 'probe-failed'; END IF;
+  END;
+
+  IF teaches IS NULL OR plane IS NULL THEN
+    PERFORM tdd('C-16','the registry carries class 2B, and it names a refusal the substrate can actually raise',
+      'behaviour','RED','2B registered without a teaches or a plane — a code that does not teach is a bare error');
+  ELSIF raised = 'no-fixture' THEN
+    PERFORM tdd('C-16','the registry carries class 2B, and it names a refusal the substrate can actually raise',
+      'behaviour','RED','2B registered, but this database has no graph with inferred rows so the claim is UNEXERCISED — an unexercised claim is not GREEN');
+  ELSIF raised NOT LIKE '2B%' THEN
+    PERFORM tdd('C-16','the registry carries class 2B, and it names a refusal the substrate can actually raise',
+      'behaviour','RED', format('2B registered but the real condition raised %s — the registry documents a refusal that does not occur', raised));
+  ELSE
+    PERFORM tdd('C-16','the registry carries class 2B, and it names a refusal the substrate can actually raise',
+      'behaviour','GREEN', format('%s code(s), plane=%s, and the live condition raises %s', n, plane, raised));
+  END IF;
 EXCEPTION WHEN OTHERS THEN
-  PERFORM tdd('C-16','the refusal registry carries class 2B','behaviour','BROKEN',SQLERRM);
+  PERFORM tdd('C-16','the registry carries class 2B','behaviour','BROKEN',SQLERRM);
 END $$;
 
 -- ═══ C-17 · identity triple ════════════════════════════════════════════════
@@ -432,38 +470,54 @@ EXCEPTION WHEN OTHERS THEN
 END $$;
 
 -- ═══ E-1 · an epoch can be checked against the surface it ran under ════════
--- Raised by pgRDF (v0.6.35-to-PGCK-1 §6), reproduced here. Their attribution was
--- PassShape; the shape that actually demands both is EpochShape — wave:PassShape
--- requires ofWave and director. The correction strengthens the point rather than
--- weakening it: the class pgCK seals Epochs against requires epoch AND
--- surfaceDigest (minCount 1, pattern ^[0-9a-f]{64}$), while ckp.kernel_epoch
--- carries (kernel, epoch). An epoch in the table cannot be checked against
--- anything, which is precisely what a pin is for.
 DO $$
-DECLARE has_col bool; shape_demands int; sealed_carry int;
+DECLARE has_col bool; shape_demands int; agree int; disagree int; unsealed int;
 BEGIN
   SELECT EXISTS(SELECT 1 FROM information_schema.columns
                  WHERE table_schema='ckp' AND table_name='kernel_epoch'
                    AND column_name ILIKE '%surface%') INTO has_col;
-  -- CONTROL: the class must really demand it, or this is a misreading of the law
-  -- rather than a weakness in the table.
+  -- CONTROL: the class must really demand it, or this is a misreading of the law.
   SELECT count(*) INTO shape_demands FROM pgrdf.sparql(
     'PREFIX sh: <http://www.w3.org/ns/shacl#>
      PREFIX ckp: <https://conceptkernel.org/ontology/v3.11/core#>
      SELECT ?b WHERE { GRAPH <urn:ckp:core> {
        ckp:EpochShape sh:property ?b . ?b sh:path ckp:surfaceDigest ; sh:minCount 1 } }');
-  SELECT count(*) INTO sealed_carry FROM ckp.instances
-   WHERE body->>'type' LIKE '%#Epoch' AND body ? 'https://conceptkernel.org/ontology/v3.11/core#surfaceDigest';
-
   IF shape_demands = 0 THEN
     PERFORM tdd('E-1','an epoch in ckp.kernel_epoch carries the surfaceDigest it ran under, as EpochShape demands',
-      'behaviour','BROKEN','control failed: EpochShape does not demand surfaceDigest on this surface — the premise is wrong, not the table');
-  ELSIF has_col THEN
+      'behaviour','BROKEN','control failed: EpochShape does not demand surfaceDigest here — the premise is wrong, not the table'); RETURN;
+  END IF;
+  IF NOT has_col THEN
     PERFORM tdd('E-1','an epoch in ckp.kernel_epoch carries the surfaceDigest it ran under, as EpochShape demands',
-      'behaviour','RED','column present — now prove a recorded epoch can actually be checked against its surface');
+      'behaviour','RED','ckp.kernel_epoch is (kernel, epoch) with NO surface column while EpochShape demands surfaceDigest minCount 1 — the table is weaker than the class it seals against'); RETURN;
+  END IF;
+
+  -- POSITIVE: where a sealed Epoch exists, the row must AGREE with it.
+  -- CONTROL: where none exists the row must be NULL, not a value invented now.
+  SELECT count(*) FILTER (WHERE ke.surface_digest = e.sd),
+         count(*) FILTER (WHERE e.sd IS NOT NULL AND ke.surface_digest IS DISTINCT FROM e.sd),
+         count(*) FILTER (WHERE e.sd IS NULL AND ke.surface_digest IS NOT NULL)
+    INTO agree, disagree, unsealed
+    FROM ckp.kernel_epoch ke
+    LEFT JOIN (SELECT substring(i.body->>'https://conceptkernel.org/ontology/v3.11/core#producedBy'
+                                from '^urn:ckp:([a-z0-9-]+)/kernel/ck$') k,
+                      (i.body->>'https://conceptkernel.org/ontology/v3.11/core#epoch')::int ep,
+                      i.body->>'https://conceptkernel.org/ontology/v3.11/core#surfaceDigest' sd
+                 FROM ckp.instances i
+                WHERE i.body->>'type'='https://conceptkernel.org/ontology/v3.11/core#Epoch') e
+      ON e.k = ke.kernel AND e.ep = ke.epoch;
+
+  IF disagree > 0 THEN
+    PERFORM tdd('E-1','an epoch in ckp.kernel_epoch carries the surfaceDigest it ran under, as EpochShape demands',
+      'behaviour','RED', disagree||' row(s) disagree with the sealed Epoch — the table drifted from the seal, which is the failure the shared variable exists to prevent');
+  ELSIF unsealed > 0 THEN
+    PERFORM tdd('E-1','an epoch in ckp.kernel_epoch carries the surfaceDigest it ran under, as EpochShape demands',
+      'behaviour','RED', unsealed||' row(s) carry a digest with NO sealed Epoch behind it — a value invented for a moment nobody measured');
+  ELSIF agree = 0 THEN
+    PERFORM tdd('E-1','an epoch in ckp.kernel_epoch carries the surfaceDigest it ran under, as EpochShape demands',
+      'behaviour','RED','column present but NO row agrees with a sealed Epoch — the claim is unexercised, which is not GREEN');
   ELSE
     PERFORM tdd('E-1','an epoch in ckp.kernel_epoch carries the surfaceDigest it ran under, as EpochShape demands',
-      'behaviour','RED', format('ckp.kernel_epoch is (kernel, epoch) with NO surface column, while EpochShape demands surfaceDigest minCount 1 and %s sealed Epoch(s) carry it. The table is weaker than the class it seals against', sealed_carry));
+      'behaviour','GREEN', agree||' row(s) agree with their sealed Epoch; none invented where nothing was sealed');
   END IF;
 EXCEPTION WHEN OTHERS THEN
   PERFORM tdd('E-1','an epoch in ckp.kernel_epoch carries the surfaceDigest it ran under','behaviour','BROKEN',SQLERRM);
