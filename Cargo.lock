@@ -1232,7 +1232,7 @@ dependencies = [
 
 [[package]]
 name = "pgck"
-version = "0.4.88"
+version = "0.4.89"
 dependencies = [
  "async-nats",
  "base64",

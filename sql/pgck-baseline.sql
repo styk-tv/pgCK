@@ -3587,22 +3587,57 @@ BEGIN
     v_find := v_find || jsonb_build_array(
       'composed surface carries ZERO NodeShapes — every gate is vacuous; refuse to trust any conformance result');
   END IF;
+  -- 0.4.89 — NEVER-PINNED IS NOT DRIFT, AND A FINDING IS NEVER NULL.
+  -- 0.4.81 guarded the FIRST branch with `v_epoch > 0` and left the ELSIF
+  -- unguarded, so the case it deliberately excluded fell straight through:
+  -- with v_pin_surf NULL, `NULL IS DISTINCT FROM <digest>` is TRUE, the drift
+  -- message concatenated `left(NULL,12)`, and in SQL one NULL operand makes
+  -- the WHOLE string NULL. jsonb_build_array(NULL) is `[null]`, so a freshly
+  -- germinated kernel at epoch 0 accused itself with a finding nobody could
+  -- read. Two independent routes agree on this root cause: the mechanical
+  -- trace above, and SPORE §5.3's measurement — "findings:[null] appears
+  -- specifically in the NEVER-PINNED case, not generally."
+  --
+  -- The three states are now explicit and mutually exclusive, so no branch can
+  -- be reached by falling out of another:
+  --   never pinned, epoch 0   -> pre-governance. A STATE. Not a finding.
+  --   never pinned, epoch > 0 -> a real fault: an apply advanced without sealing.
+  --   pinned, and differs     -> real drift, both digests named.
   IF v_pin_surf IS NULL AND v_state = 'germinated' AND v_epoch > 0 THEN
-    -- Only a fault once the kernel HAS governed: an epoch advanced without
-    -- sealing what was in force. Before that, unpinned is the pre-governance
-    -- state, reported below as `state`, not as a finding.
-    v_find := v_find || jsonb_build_array(
-      'epoch '||v_epoch||' is in force but no ckp:Epoch seals its digest — an apply advanced the epoch without recording the surface, so drift is undetectable');
-  ELSIF v_pin_surf IS DISTINCT FROM v_act_surf THEN
-    v_find := v_find || jsonb_build_array(
-      'SURFACE DRIFT: the composed surface differs from the digest epoch '||v_epoch||' sealed. '||
-      'Either the surface changed outside a governed apply (adoption, a direct graph write, or a wipe), '||
-      'or an apply failed to reseal. Pinned '||left(v_pin_surf,12)||'… actual '||left(v_act_surf,12)||'…');
+    v_find := v_find || jsonb_build_array(format(
+      'epoch %s is in force but no ckp:Epoch seals its digest — an apply advanced the epoch without recording the surface, so drift is undetectable',
+      v_epoch));
+  ELSIF v_pin_surf IS NOT NULL AND v_pin_surf IS DISTINCT FROM v_act_surf THEN
+    -- format(), never `||`: format renders a NULL argument as the empty string,
+    -- so a missing digest degrades the message rather than annihilating it.
+    v_find := v_find || jsonb_build_array(format(
+      'SURFACE DRIFT: the composed surface differs from the digest epoch %s sealed. '
+      'Either the surface changed outside a governed apply (adoption, a direct graph write, or a wipe), '
+      'or an apply failed to reseal. Pinned %s… actual %s…',
+      v_epoch, left(v_pin_surf,12), COALESCE(left(v_act_surf,12),'(none)')));
   END IF;
   IF v_pin_src IS NOT NULL AND v_pin_src IS DISTINCT FROM v_act_src THEN
-    v_find := v_find || jsonb_build_array(
-      'SOURCE DRIFT: the kernel graph differs from the sourceDigest its Materialization sealed. '||
-      'Pinned '||left(v_pin_src,12)||'… actual '||left(v_act_src,12)||'…');
+    v_find := v_find || jsonb_build_array(format(
+      'SOURCE DRIFT: the kernel graph differs from the sourceDigest its Materialization sealed. '
+      'Pinned %s… actual %s…',
+      left(v_pin_src,12), COALESCE(left(v_act_src,12),'(none)')));
+  END IF;
+
+  -- 0.4.89 — THE FLOOR UNDER ALL OF THE ABOVE. Every finding is built by
+  -- concatenation somewhere in this function and in integrity_check, and any
+  -- NULL operand silently produces a JSON null. A check that reports a fault
+  -- it cannot NAME is worse than no check: it is unfalsifiable by the reader.
+  -- Rather than trust every call site forever, strip nulls here and, if one
+  -- ever occurs, say so LOUDLY as a pgCK defect rather than as a substrate
+  -- condition — the two must never be confused.
+  IF v_find @> 'null'::jsonb THEN
+    v_find := (SELECT COALESCE(jsonb_agg(e), '[]'::jsonb)
+                 FROM jsonb_array_elements(v_find) e
+                WHERE jsonb_typeof(e) <> 'null')
+              || jsonb_build_array(
+                 'INTERNAL DEFECT (pgck): a finding was constructed NULL and has been '
+                 'dropped. This is a bug in surface_check, NOT a condition of this '
+                 'kernel. Report it — the substrate must never emit findings:[null].');
   END IF;
 
   RETURN jsonb_build_object(
@@ -3920,6 +3955,8 @@ DECLARE
   v_base  text := format('urn:ckp:%s', p_project);
   v_kid   text := format('urn:ckp:%s/kernel', p_project);
   v_pid   text := format('urn:ckp:project:%s', p_project);
+  v_prior text;
+  v_seeded boolean;
 BEGIN
   IF p_project IS NULL OR btrim(p_project) = '' THEN
     RETURN jsonb_build_object('ok', false, 'error', 'project required');
@@ -3951,6 +3988,36 @@ BEGIN
       'error', 'germination requires a verified identity: ckp.ownedBy is stamped from the connection, never supplied. Anonymous callers cannot own a project.');
   END IF;
   v_owner := 'urn:ckp:participant:' || ckp._slug(v_sub);
+
+  -- 0.4.89 (F-TAKEOVER, finding-1788052032938005000): germination CLEARS the kernel
+  -- graph and re-stamps ownedBy, and until now nothing refused a SECOND germination
+  -- of a project someone else owns. Every verified identity holds publish on every
+  -- ROSTERED segment (auth_callout::permissions_for mints input.kernel.<k>.id.<own
+  -- sub>.action.> per roster entry, measured), so any bot on a shared door could
+  -- wipe a live kernel's graph and stamp itself as its owner. The act was always
+  -- ATTRIBUTED — the four stamps never lie — but attribution is a record, not a
+  -- refusal, and a destructive act must be refused. It also blocked the bootstrap
+  -- cure for finding-1788051883233705000: a self-grant on your own segment is only
+  -- safe once re-germination is gated, or the hazard goes from bounded to open.
+  --
+  -- Ownership lives on the sealed ckp:Project (ckp:ownedBy); existence is the sealed
+  -- ckp:Kernel. FAIL CLOSED on the destructive path: an existing kernel whose owner
+  -- this ledger cannot name refuses too, rather than being clearable by anyone.
+  SELECT i.body->>'https://conceptkernel.org/ontology/v3.11/core#ownedBy' INTO v_prior
+    FROM ckp.instances i
+   WHERE i.body->>'@id' = v_pid
+     AND i.body->>'type' = 'https://conceptkernel.org/ontology/v3.11/core#Project'
+   ORDER BY i.ts_created DESC LIMIT 1;
+  SELECT EXISTS(SELECT 1 FROM ckp.instances i
+                 WHERE i.body->>'@id' = v_kid
+                   AND i.body->>'type' = 'https://conceptkernel.org/ontology/v3.11/core#Kernel')
+    INTO v_seeded;
+  IF v_seeded AND COALESCE(v_prior, '') IS DISTINCT FROM v_owner THEN
+    RETURN jsonb_build_object('ok', false, 'refused', true,
+      'sqlstate', '42501',
+      'error', format('kernel %L is already germinated and owned by %s. Germination CLEARS the kernel graph, so re-germinating a kernel you do not own is refused -- ask its owner, or germinate a name you own.',
+                      p_project, COALESCE(v_prior, 'an owner this ledger cannot name')));
+  END IF;
 
   -- 1. the structure — Kernel + three organs, counted dependencies, gated authorities
   v_g := pgrdf.add_graph(v_iri);
