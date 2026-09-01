@@ -22,6 +22,15 @@
 --   creates an empty function with the right name — which is exactly how 0.4.92
 --   shipped a reaper that reaped nothing.
 --
+-- ⚠ DO NOT RUN CONCURRENTLY WITH smoke-s4. Measured 2026-09-01: running the
+-- ledger while the gate was rebuilding the same database produced two BROKEN
+-- rows — B-1 "deadlock detected" and E-3 "no sealed Kernel to patch" — because
+-- the suite drops and recreates the extension underneath the probes. Neither was
+-- a substrate defect and neither was a wrong test; both were contention. The
+-- harness reported BROKEN rather than RED, which is correct: it could not tell
+-- whether the claim held, and said so instead of guessing. Run this when the
+-- gate is idle.
+--
 -- This file is a STATUS REPORT, not a gate. It exits 0 whatever it finds, so it
 -- can be run every release to watch obligations flip. It becomes a gate on the
 -- day every row is GREEN, and not before.

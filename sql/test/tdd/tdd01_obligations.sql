@@ -164,20 +164,93 @@ EXCEPTION WHEN OTHERS THEN
   PERFORM tdd('C-2','a non-owner applying a quorum-met proposal is REFUSED','behaviour','BROKEN',SQLERRM);
 END $$;
 
--- ═══ C-3 · at least one proof obligation registered, and it REFUSES ════════
+-- ═══ C-3 · a registered obligation actually REFUSES ═══════════════════════
 DO $$
-DECLARE n int;
+DECLARE C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+        proj text := ckp._project(); real_iri text;
+        bad_msg text := ''; good_ok bool := false; other_ok bool := false; other_msg text := '';
 BEGIN
-  SELECT count(*) INTO n FROM ckp.proof_obligations WHERE active;
-  IF n = 0 THEN
-    PERFORM tdd('C-3','a registered obligation REFUSES a seal that violates it; an unrelated seal still lands',
-      'existence','RED','zero obligations registered on this door — the gate that refuses a seal is switched off everywhere');
+  PERFORM set_config('ckp.requester','svc:tdd-c3',true);
+  SELECT g.iri INTO real_iri FROM pgrdf._pgrdf_graphs g
+   WHERE EXISTS (SELECT 1 FROM pgrdf._pgrdf_quads q WHERE q.graph_id=g.graph_id AND NOT q.is_inferred)
+   ORDER BY g.graph_id LIMIT 1;
+  IF real_iri IS NULL THEN
+    PERFORM tdd('C-3','a registered obligation REFUSES a seal that violates it; a conforming seal and an unrelated type still land',
+      'behaviour','BROKEN','no non-empty graph to point a conforming Adoption at — fixture problem'); RETURN;
+  END IF;
+
+  -- REGISTER. The claim is about the gate REFUSING, not about how it was
+  -- registered; the governed route (add_proof_obligation) is a separate act.
+  INSERT INTO ckp.proof_obligations(project, obligation, target_type, check_name, active)
+  VALUES (proj, 'tdd-c3-adopts', C||'Adoption', 'adopts-resolves', true)
+  ON CONFLICT (project, obligation) DO UPDATE SET active = true;
+
+  -- (a) VIOLATING: adopts a module IRI with nothing behind it.
+  BEGIN
+    PERFORM ckp.seal('tdd-c3-bad', jsonb_build_object(
+      '@id','ckp://Adoption#tdd-c3-bad','type',C||'Adoption',
+      C||'adopts','urn:ckp:module:tdd-c3-nothing-here',
+      -- AdoptionShape's required trio, so the SHAPE cannot be what refuses and
+      -- the obligation is the only thing left that can. The first draft omitted
+      -- them and the probe correctly reported "refused, but NOT by the
+      -- obligation" — a control that accepts any failure proves nothing.
+      C||'intoEpoch', to_jsonb(0),
+      C||'sourceDigest', repeat('a',64),
+      C||'intoProject','urn:ckp:'||proj));
+  EXCEPTION WHEN OTHERS THEN bad_msg := SQLERRM;
+  END;
+
+  -- (b) CONFORMING: same type, adopts a graph that really resolves.
+  BEGIN
+    PERFORM ckp.seal('tdd-c3-good', jsonb_build_object(
+      '@id','ckp://Adoption#tdd-c3-good','type',C||'Adoption',
+      C||'adopts', real_iri,
+      C||'intoEpoch', to_jsonb(0),
+      C||'sourceDigest', repeat('b',64),
+      C||'intoProject','urn:ckp:'||proj));
+    good_ok := true;
+  EXCEPTION WHEN OTHERS THEN good_ok := false;
+  END;
+
+  -- (c) UNRELATED TYPE: the obligation targets Adoption; a Vote must be untouched.
+  BEGIN
+    PERFORM ckp.seal('tdd-c3-other', jsonb_build_object(
+      '@id','ckp://Vote#tdd-c3-other','type',C||'Vote'));
+    other_ok := true;
+  EXCEPTION WHEN OTHERS THEN other_ok := false; other_msg := SQLERRM;
+  END;
+
+  DELETE FROM ckp.proof_obligations WHERE project = proj AND obligation = 'tdd-c3-adopts';
+  DELETE FROM ckp.instances WHERE id IN ('tdd-c3-bad','tdd-c3-good','tdd-c3-other');
+
+  IF bad_msg = '' THEN
+    PERFORM tdd('C-3','a registered obligation REFUSES a seal that violates it; a conforming seal and an unrelated type still land',
+      'behaviour','RED','a violating Adoption SEALED — the obligation is registered and refuses nothing');
+  ELSIF position('adopts-resolves' in bad_msg) = 0 THEN
+    -- the wrong-reason trap, made explicit: a shape refusal is not an obligation
+    -- refusal, and a control that accepts any failure proves nothing.
+    PERFORM tdd('C-3','a registered obligation REFUSES a seal that violates it; a conforming seal and an unrelated type still land',
+      'behaviour','RED','refused, but NOT by the obligation — got: '||left(bad_msg,120));
+  ELSIF NOT good_ok THEN
+    PERFORM tdd('C-3','a registered obligation REFUSES a seal that violates it; a conforming seal and an unrelated type still land',
+      'behaviour','RED','a CONFORMING Adoption was also refused — a wall, not a gate');
+  ELSIF NOT other_ok AND position('adopts-resolves' in other_msg) > 0 THEN
+    -- The control's claim is that the obligation does NOT FIRE on another type.
+    -- A bare Vote also fails VoteShape, and that refusal is irrelevant here —
+    -- asserting merely "it was refused" would fail the control for the wrong
+    -- reason, which is the same trap this file catches everywhere else.
+    PERFORM tdd('C-3','a registered obligation REFUSES a seal that violates it; a conforming seal and an unrelated type still land',
+      'behaviour','RED','the obligation fired on an UNRELATED type — it is not scoped to its target_type: '||left(other_msg,100));
   ELSE
-    PERFORM tdd('C-3','a registered obligation REFUSES a seal that violates it; an unrelated seal still lands',
-      'existence','RED', n||' registered — now prove it REFUSES, and that an unrelated seal still lands');
+    PERFORM tdd('C-3','a registered obligation REFUSES a seal that violates it; a conforming seal and an unrelated type still land',
+      'behaviour','GREEN','violating Adoption refused BY the obligation ('||left(bad_msg,60)||'…); conforming Adoption sealed; the obligation did NOT fire on an unrelated type');
   END IF;
 EXCEPTION WHEN OTHERS THEN
-  PERFORM tdd('C-3','a registered obligation REFUSES a seal that violates it; an unrelated seal still lands','existence','BROKEN',SQLERRM);
+  BEGIN
+    DELETE FROM ckp.proof_obligations WHERE obligation='tdd-c3-adopts';
+    DELETE FROM ckp.instances WHERE id IN ('tdd-c3-bad','tdd-c3-good','tdd-c3-other');
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+  PERFORM tdd('C-3','a registered obligation REFUSES a seal that violates it','behaviour','BROKEN',SQLERRM);
 END $$;
 
 -- ═══ C-4 · set_kernel_policy projector ═════════════════════════════════════
@@ -660,8 +733,14 @@ BEGIN
   PERFORM set_config('ckp.requester','svc:tdd-e3',true);
   SELECT body->>'@id' INTO kid FROM ckp.instances WHERE body->>'type'=C||'Kernel' ORDER BY ts_created LIMIT 1;
   IF kid IS NULL THEN
-    PERFORM tdd('E-3','an undeclared property is refused in EVERY key form — bare, CURIE and full IRI',
-      'behaviour','BROKEN','no sealed Kernel to patch — fixture problem, not a result'); RETURN;
+    -- BUILD THE FIXTURE rather than reporting BROKEN. A database with no sealed
+    -- Kernel is an ordinary state (a fresh install, or a gate mid-rebuild), not a
+    -- broken test — and a probe that cannot run on a clean database can only ever
+    -- report on databases somebody else prepared. Same lesson as C-13 and D-1.
+    INSERT INTO ckp.instances(id, body) VALUES
+      ('tdd-e3-kernel', jsonb_build_object('@id','urn:ckp:tdde3/kernel','type',C||'Kernel'))
+      ON CONFLICT (id) DO NOTHING;
+    kid := 'urn:ckp:tdde3/kernel';
   END IF;
   r_bare := ckp.update_typed(jsonb_build_object('id',kid,'patch',jsonb_build_object('e3NonsenseBare',0.5)));
   r_iri  := ckp.update_typed(jsonb_build_object('id',kid,'patch',jsonb_build_object(C||'e3NonsenseIri',0.5)));
@@ -681,6 +760,9 @@ BEGIN
   ELSE
     PERFORM tdd('E-3','an undeclared property is refused in EVERY key form — bare, CURIE and full IRI',
       'behaviour','GREEN','undeclared refused in both forms; a declared full-IRI property still accepted');
+  END IF;
+  BEGIN DELETE FROM ckp.instances WHERE id='tdd-e3-kernel'; EXCEPTION WHEN OTHERS THEN NULL; END;
+  IF FALSE THEN
   END IF;
 EXCEPTION WHEN OTHERS THEN
   PERFORM tdd('E-3','an undeclared property is refused in EVERY key form','behaviour','BROKEN',SQLERRM);
