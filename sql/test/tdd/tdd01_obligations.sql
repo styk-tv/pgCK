@@ -95,17 +95,52 @@ END $$;
 
 -- ═══ C-4 · set_kernel_policy projector ═════════════════════════════════════
 DO $$
-DECLARE d text;
+DECLARE C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+        comp int; base text; kid text; r jsonb; in_ok bool; bad int := 0;
 BEGIN
-  SELECT pg_get_functiondef(p.oid) INTO d FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-   WHERE n.nspname='ckp' AND p.proname='propose_change' LIMIT 1;
-  IF d IS NOT NULL AND d LIKE '%set_kernel_policy%' THEN
-    PERFORM tdd('C-4','set_kernel_policy writes a Kernel property through propose->vote->apply; an out-of-range value is refused',
-      'existence','RED','op name present — write the behaviour probe: a governed write AND a refused out-of-range value');
-  ELSE
-    PERFORM tdd('C-4','set_kernel_policy writes a Kernel property through propose->vote->apply; an out-of-range value is refused',
-      'existence','RED','allowed ops are add_class · add_property · set_transition_map · add_affordance · add_proof_obligation — none writes a Kernel property, so the seven policy fields the law declares are UNREACHABLE by the route the law mandates');
+  IF NOT EXISTS (WITH f AS MATERIALIZED (
+                   SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+                    WHERE n.nspname='ckp' AND p.prokind='f')
+                 SELECT 1 FROM f WHERE pg_get_functiondef(f.oid) LIKE '%set_kernel_policy%') THEN
+    PERFORM tdd('C-4','set_kernel_policy writes a Kernel property through propose->vote->apply; an out-of-range value AND a misspelled field are both refused',
+      'existence','RED','the op is not in the allowed set — the seven policy fields the law declares are unreachable by the route the law mandates');
+    RETURN;
   END IF;
+
+  comp := ckp._composed_shapes(ckp._project());
+  base := '@prefix ckp: <'||C||'> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+           @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+    <urn:ckp:tddc4/kernel> a ckp:Kernel ; rdfs:label "t" ; ckp:epoch 0 ;
+      ckp:inProject <urn:ckp:project:tddc4> ; ckp:transportSegment "tddc4" ;
+      ckp:hasOrgan <urn:ckp:tddc4/organ/ck>, <urn:ckp:tddc4/organ/tool>, <urn:ckp:tddc4/organ/data> ';
+  in_ok := ckp.validate(base||'; ckp:weightAssent "1.0"^^xsd:decimal ; ckp:weightDissent "-0.8"^^xsd:decimal .', comp);
+  IF ckp.validate(base||'; ckp:weightDissent "0.5"^^xsd:decimal .', comp)  THEN bad := bad+1; END IF;
+  IF ckp.validate(base||'; ckp:weightImplicit "1.5"^^xsd:decimal .', comp) THEN bad := bad+1; END IF;
+  IF ckp.validate(base||'; ckp:decayLambda "-0.1"^^xsd:decimal .', comp)   THEN bad := bad+1; END IF;
+  IF ckp.validate(base||'; ckp:thresholdPromote "0.5"^^xsd:decimal ; ckp:thresholdDiscard "0.9"^^xsd:decimal .', comp) THEN bad := bad+1; END IF;
+
+  -- the half that is NOT satisfied: a MISSPELLED field must be refused too. An
+  -- out-of-range value is caught by the shape; a field that does not exist is
+  -- targeted by no shape and conforms VACUOUSLY, which is worse.
+  PERFORM set_config('ckp.requester','svc:tdd-c4',true);
+  SELECT body->>'@id' INTO kid FROM ckp.instances WHERE body->>'type'=C||'Kernel' ORDER BY ts_created LIMIT 1;
+  r := ckp.update_typed(jsonb_build_object('id',kid,'patch',jsonb_build_object(C||'weightTddC4Nonsense',0.5)));
+
+  IF NOT in_ok THEN
+    PERFORM tdd('C-4','set_kernel_policy writes a Kernel property through propose->vote->apply; an out-of-range value AND a misspelled field are both refused',
+      'behaviour','BROKEN','an in-range policy set does not conform — the premise is wrong, so every control below passes for the wrong reason');
+  ELSIF bad > 0 THEN
+    PERFORM tdd('C-4','set_kernel_policy writes a Kernel property through propose->vote->apply; an out-of-range value AND a misspelled field are both refused',
+      'behaviour','RED', bad||' of 4 out-of-range control(s) CONFORMED — the law is not enforcing its own bounds, so the projector would have to carry a copy after all');
+  ELSIF (r->>'ok')::boolean IS TRUE THEN
+    PERFORM tdd('C-4','set_kernel_policy writes a Kernel property through propose->vote->apply; an out-of-range value AND a misspelled field are both refused',
+      'behaviour','RED','bounds hold, but a MISSPELLED field in full-IRI form was ACCEPTED onto a sealed Kernel — see E-3. Out-of-range is refused; nonexistent is minted and conforms vacuously');
+  ELSE
+    PERFORM tdd('C-4','set_kernel_policy writes a Kernel property through propose->vote->apply; an out-of-range value AND a misspelled field are both refused',
+      'behaviour','GREEN','four out-of-range controls refused (incl. the cross-property invariant) and a misspelled field refused by name');
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM tdd('C-4','set_kernel_policy writes a Kernel property','behaviour','BROKEN',SQLERRM);
 END $$;
 
 -- ═══ C-5 · participation scope (cross-kernel rule layer) ═══════════════════
@@ -466,4 +501,46 @@ BEGIN
   END IF;
 EXCEPTION WHEN OTHERS THEN
   PERFORM tdd('E-2','the roster reconciles sealed, rostered and graph-bearing kernels','behaviour','BROKEN',SQLERRM);
+END $$;
+
+-- ═══ E-3 · undeclared keys are refused in EVERY form ═══════════════════════
+-- Found while fixing s81's control (e), which had passed for the wrong reason —
+-- an unattributed-identity refusal, not an undeclared-field one. With an identity
+-- named, the truth appeared: update_typed refuses a BARE undeclared key and
+-- ACCEPTS the same property spelled as a full IRI. A caller who writes the
+-- namespace out can mint any property onto a sealed instance, and nothing
+-- refuses it — no shape targets a property that does not exist, so it conforms
+-- vacuously. This is the trap the composed-aware patch path was built to close,
+-- surviving inside it.
+DO $$
+DECLARE C text := 'https://conceptkernel.org/ontology/v3.11/core#'; kid text;
+        r_bare jsonb; r_iri jsonb; r_good jsonb;
+BEGIN
+  PERFORM set_config('ckp.requester','svc:tdd-e3',true);
+  SELECT body->>'@id' INTO kid FROM ckp.instances WHERE body->>'type'=C||'Kernel' ORDER BY ts_created LIMIT 1;
+  IF kid IS NULL THEN
+    PERFORM tdd('E-3','an undeclared property is refused in EVERY key form — bare, CURIE and full IRI',
+      'behaviour','BROKEN','no sealed Kernel to patch — fixture problem, not a result'); RETURN;
+  END IF;
+  r_bare := ckp.update_typed(jsonb_build_object('id',kid,'patch',jsonb_build_object('e3NonsenseBare',0.5)));
+  r_iri  := ckp.update_typed(jsonb_build_object('id',kid,'patch',jsonb_build_object(C||'e3NonsenseIri',0.5)));
+  -- CONTROL: a DECLARED property in full-IRI form must still be ACCEPTED, or the
+  -- cure is "refuse every IRI", which breaks every legitimate patch.
+  r_good := ckp.update_typed(jsonb_build_object('id',kid,'patch',jsonb_build_object(C||'weightAssent',1.0)));
+
+  IF (r_bare->>'ok')::boolean IS TRUE THEN
+    PERFORM tdd('E-3','an undeclared property is refused in EVERY key form — bare, CURIE and full IRI',
+      'behaviour','RED','even a BARE undeclared key was accepted — the gate is gone entirely');
+  ELSIF (r_iri->>'ok')::boolean IS TRUE THEN
+    PERFORM tdd('E-3','an undeclared property is refused in EVERY key form — bare, CURIE and full IRI',
+      'behaviour','RED','bare form refused ('||COALESCE(r_bare->>'error','?')||') and the SAME property in full-IRI form ACCEPTED — spelling out the namespace bypasses the gate');
+  ELSIF (r_good->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('E-3','an undeclared property is refused in EVERY key form — bare, CURIE and full IRI',
+      'behaviour','RED','control failed: a DECLARED property in full-IRI form was also refused ('||COALESCE(r_good->>'error','?')||') — the cure refuses everything, which is a wall not a gate');
+  ELSE
+    PERFORM tdd('E-3','an undeclared property is refused in EVERY key form — bare, CURIE and full IRI',
+      'behaviour','GREEN','undeclared refused in both forms; a declared full-IRI property still accepted');
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM tdd('E-3','an undeclared property is refused in EVERY key form','behaviour','BROKEN',SQLERRM);
 END $$;

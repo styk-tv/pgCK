@@ -7190,7 +7190,30 @@ BEGIN
   LOOP
     CONTINUE WHEN v_key IN ('id', 'type', '@id');   -- not patchable via this path
     IF position(':' in v_key) > 0 THEN
-      v_keyiri := v_key;                                    -- already a full IRI
+      -- 0.4.96 (E-3) — BEING AN IRI IS NOT BEING DECLARED.
+      -- This branch passed any key containing ':' straight through on the
+      -- strength of its FORM. The bare form was checked against the declared
+      -- set and refused; the SAME property spelled as a full IRI was accepted.
+      -- Measured: patch {'weightNonsense': …} refuses undeclared_patch_key,
+      -- patch {'https://…core#weightNonsense': …} lands on the sealed instance.
+      -- Nothing downstream catches it either — no shape targets a property that
+      -- does not exist, so it conforms VACUOUSLY. That is the exact trap this
+      -- composed-aware path was built to close, surviving inside it, and it was
+      -- found only because a control that had been passing for the wrong reason
+      -- was made to assert the reason.
+      --
+      -- The check is by VALUE, because _propmap maps localname -> IRI. On an
+      -- UNSHAPED type it is deliberately skipped: there is no declared contract
+      -- to check against, and refusing would invent one the surface never made.
+      IF v_shaped AND NOT EXISTS (
+           SELECT 1 FROM jsonb_each_text(v_propmap) m WHERE m.value = v_key) THEN
+        RETURN jsonb_build_object('ok', false, 'error', 'undeclared_patch_key',
+                                  'key', v_key, 'type', v_type, 'form', 'absolute-iri',
+                                  'hint', 'spelling the namespace out does not declare a property',
+                                  'declared', (SELECT jsonb_agg(m.value ORDER BY m.value)
+                                                 FROM jsonb_each_text(v_propmap) m));
+      END IF;
+      v_keyiri := v_key;                                    -- declared, in IRI form
     ELSIF v_shaped THEN
       IF v_propmap ? v_key THEN
         v_keyiri := v_propmap->>v_key;                      -- declared localname -> IRI
