@@ -547,7 +547,7 @@ END $$;
 
 -- ═══ D-1 · adoption_pins digests carry their method ════════════════════════
 DO $$
-DECLARE unlabelled int; planes_differ int; canon_ok int; canon_present int;
+DECLARE unlabelled int; planes_differ int; canon_ok int; canon_present int; fx text;
 BEGIN
   IF NOT EXISTS(SELECT 1 FROM information_schema.columns
                  WHERE table_schema='ckp' AND table_name='adoption_pins' AND column_name='methods') THEN
@@ -561,7 +561,16 @@ BEGIN
   -- fixture picked graph_id 0 — which is EMPTY, so the copy plane and RDFC both
   -- returned sha256("") and coincided. The control correctly refused to certify
   -- a method label it could not show was load-bearing. Pin a graph WITH CONTENT.
+  -- ⚠ FIXTURE HYGIENE. The first version inserted a pin and never removed it, so
+  -- pins accumulated across runs and one eventually went STALE as a later probe
+  -- changed the graph beneath it — D-1 then reported RED for a real disagreement
+  -- that this file had manufactured. The detector was right; the fixture was
+  -- dirty. Record what we insert and remove it before judging.
   IF to_regprocedure('pgrdf.graph_digest(bigint)') IS NOT NULL THEN
+    SELECT g.iri INTO fx FROM pgrdf._pgrdf_graphs g
+     WHERE EXISTS (SELECT 1 FROM pgrdf._pgrdf_quads q WHERE q.graph_id = g.graph_id)
+       AND NOT EXISTS (SELECT 1 FROM ckp.adoption_pins ap WHERE ap.graph_iri = g.iri)
+     ORDER BY g.graph_id LIMIT 1;
     INSERT INTO ckp.adoption_pins(graph_iri, graph_digest, structural_digest,
                                   canonical_digest, methods, nodeshapes, properties, asserted)
     SELECT g.iri,
@@ -604,6 +613,9 @@ BEGIN
     INTO canon_present, canon_ok
     FROM ckp.adoption_pins p JOIN pgrdf._pgrdf_graphs g ON g.iri = p.graph_iri
    WHERE to_regprocedure('pgrdf.graph_digest(bigint)') IS NOT NULL;
+
+  -- remove the fixture BEFORE judging, so this run cannot poison the next
+  IF fx IS NOT NULL THEN DELETE FROM ckp.adoption_pins WHERE graph_iri = fx; END IF;
 
   IF unlabelled > 0 THEN
     PERFORM tdd('D-1','every stored digest carries its METHOD, so a mismatch means drift and never a method confusion',
