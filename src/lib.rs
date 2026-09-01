@@ -278,12 +278,48 @@ pub(crate) fn admit_anonymous() -> bool {
 static CALLOUT_POLICY: std::sync::RwLock<Option<(bool, Vec<String>)>> =
     std::sync::RwLock::new(None);
 
+/// The LEDGER half of the roster union (operator ruling 2026-08-29: germination
+/// is EXISTENCE — a sealed `ckp:Kernel` is what makes a name real; the GUC
+/// string is bootstrap/override, never the whole truth). Written by the
+/// bgworker tick's SPI refresh (`bgworker::refresh_ledger_kernels`), read by
+/// [`refresh_callout_policy`] on the same thread. Additive by construction: an
+/// empty ledger set leaves GUC-only behaviour byte-identical to 0.4.88.
+#[cfg(feature = "nats-client")]
+static LEDGER_KERNELS: std::sync::RwLock<Vec<String>> = std::sync::RwLock::new(Vec::new());
+
+/// Store the ledger-derived kernel set. Applies the same token filter as
+/// [`configured_kernels`] — a sealed name can never widen a grant beyond its
+/// own subject token, whichever half of the union it arrived through.
+#[cfg(feature = "nats-client")]
+pub(crate) fn set_ledger_kernels(kernels: Vec<String>) {
+    let filtered: Vec<String> = kernels
+        .into_iter()
+        .map(|k| k.trim().to_string())
+        .filter(|k| !k.is_empty() && !k.contains(['.', '*', '>', ' ', '\t', '\r', '\n']))
+        .collect();
+    if let Ok(mut w) = LEDGER_KERNELS.write() {
+        *w = filtered;
+    }
+}
+
 /// Refresh the callout policy cache from the GUCs. bgworker thread only (FFI).
 /// Called once before the relay spawns and again every tick, so a Sighup'd
 /// `pgck.admit_anonymous=false` reaches the responder within one tick interval.
 #[cfg(feature = "nats-client")]
 pub(crate) fn refresh_callout_policy() {
-    let fresh = (admit_anonymous(), configured_kernels());
+    // Roster union (2026-08-29): GUC ∪ sealed `ckp:Kernel` instances. GUC
+    // entries stay first so a bootstrap seed remains deterministic; the union
+    // only ever ADDS — nothing sealed can subtract a declared name, and an
+    // empty ledger leaves the GUC-only path exactly as measured through 0.4.88.
+    let mut kernels = configured_kernels();
+    if let Ok(ledger) = LEDGER_KERNELS.read() {
+        for k in ledger.iter() {
+            if !kernels.contains(k) {
+                kernels.push(k.clone());
+            }
+        }
+    }
+    let fresh = (admit_anonymous(), kernels);
     if let Ok(mut w) = CALLOUT_POLICY.write() {
         *w = Some(fresh);
     }

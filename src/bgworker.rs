@@ -65,6 +65,53 @@ fn start_server_once(state: &OnceLock<()>, starter: impl FnOnce()) {
     });
 }
 
+/// Roster-union ledger refresh cadence — time-based so it lands ~5s apart on
+/// both tick intervals (100ms embedded / 5s plain), and the per-tick cost of
+/// the union stays a lock read, not an SPI query.
+#[cfg(feature = "nats-client")]
+const LEDGER_REFRESH_EVERY: std::time::Duration = std::time::Duration::from_secs(5);
+#[cfg(feature = "nats-client")]
+static LEDGER_LAST: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
+/// Refresh the ledger half of the roster union (2026-08-29): every sealed,
+/// unretired `ckp:Kernel` instance's transport segment, read via SPI on the
+/// bgworker thread (the only thread that may). Gated behind `pgck_ready()` by
+/// the caller; a NULL/absent result keeps the previous set — the union can
+/// only add to the GUC, never break it. The segment comes from the sealed
+/// `@id` (`urn:ckp:<segment>/kernel`), canonical-lowercase by the pattern, so
+/// a non-canonical historical spelling simply never enters the grant set.
+#[cfg(feature = "nats-client")]
+fn refresh_ledger_kernels() {
+    let due = match LEDGER_LAST.lock() {
+        Ok(mut g) => match *g {
+            Some(t) if t.elapsed() < LEDGER_REFRESH_EVERY => false,
+            _ => {
+                *g = Some(std::time::Instant::now());
+                true
+            }
+        },
+        Err(_) => false,
+    };
+    if !due {
+        return;
+    }
+    let csv = BackgroundWorker::transaction(|| {
+        Spi::get_one::<String>(
+            "SELECT string_agg(DISTINCT seg, ',') FROM ( \
+               SELECT substring(body->>'@id' FROM '^urn:ckp:([a-z0-9-]+)/kernel$') AS seg \
+               FROM ckp.instances \
+               WHERE body->>'type' = 'https://conceptkernel.org/ontology/v3.11/core#Kernel' \
+                 AND NOT body ? 'https://conceptkernel.org/ontology/v3.11/core#retiredAtEpoch' \
+             ) s WHERE seg IS NOT NULL",
+        )
+        .ok()
+        .flatten()
+    });
+    if let Some(csv) = csv {
+        crate::set_ledger_kernels(csv.split(',').map(str::to_string).collect());
+    }
+}
+
 /// One scheduler tick. Called by the bgworker loop on the latch interval.
 pub fn tick() {
     #[cfg(feature = "embedded-nats")]
@@ -134,6 +181,9 @@ pub fn tick() {
         // F1-inbound: run any WSS-published governed actions the relay queued,
         // replying on result.kernel.pgCK.<verb>. SPI-bound, so it runs here (not
         // the relay's async thread).
+        // Roster union, ledger half — refreshed here (SPI-bound, extension
+        // present), consumed by the next tick's refresh_callout_policy.
+        refresh_ledger_kernels();
         crate::inbound_dispatch::drain_and_dispatch();
         let _ = crate::publish_drain::drain_once();
     }
