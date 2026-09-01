@@ -7156,7 +7156,60 @@ DECLARE
   -- one-per-backend and can never alias a data graph.
   scratch_id BIGINT := pgrdf.add_graph('urn:ckp:validate-scratch:'||pg_backend_pid());
   report jsonb;
+  reaped int := 0;
 BEGIN
+  -- 0.4.92 — REAP THE DEAD SCRATCH GRAPHS. Found by ckp.storage() on its FIRST
+  -- gated run, which is the whole argument for building the instrument: the
+  -- compose rig reported 49 validate-scratch graphs out of 201 — 24% of every
+  -- graph on that database was validation debris. Each is only ~24 kB, and the
+  -- bytes are not the point: the count pollutes graph_inventory, skews the
+  -- freshness census `stale` is read against, and grows without bound for the
+  -- life of the instance.
+  --
+  -- The scratch graph is one-per-BACKEND by design (see the note above — the
+  -- alternative aliased real data), and it is cleared but never dropped. So a
+  -- long-lived postmaster accumulates one dead graph per backend that ever
+  -- validated. This is what "the clock becomes the leak" looks like in the
+  -- small: growth tracking sessions elapsed rather than work retained.
+  --
+  -- ONE HONEST LIMIT, found by testing: the reap shares this function's
+  -- transaction, so a validate that REFUSES (the vacuity guard, a parse error)
+  -- rolls the drops back with everything else. Reaping therefore happens on
+  -- successful validations only. That is the correct trade — housekeeping must
+  -- never be the reason a refusal fails to refuse — and it is stated here rather
+  -- than discovered later as a mystery about why debris survives a busy day.
+  --
+  -- Reaped HERE rather than on the bgworker tick, and that is deliberate. The
+  -- tick is a pulse, not a scheduler; giving it per-kernel cleanup work couples
+  -- every kernel's latency to every other kernel's debris. Reaping at the point
+  -- of use is self-limiting in exactly the right direction: the more validation
+  -- runs, the more reaping happens, proportional to the activity that creates
+  -- the mess. Bounded per call so no single validate pays an unbounded cost.
+  --
+  -- Three conditions, all required, because a scratch graph belonging to a LIVE
+  -- backend is in use by definition and dropping it would break that session:
+  --   named validate-scratch  ·  EMPTY  ·  its pid is not an active backend.
+  IF to_regprocedure('pgrdf.drop_graph(bigint,boolean)') IS NOT NULL THEN
+    BEGIN
+      WITH dead AS (
+        SELECT g.graph_id, g.iri
+          FROM pgrdf._pgrdf_graphs g
+         WHERE g.iri LIKE 'urn:ckp:validate-scratch:%'
+           AND g.graph_id <> scratch_id
+           AND substring(g.iri from '^urn:ckp:validate-scratch:([0-9]+)$') IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM pg_stat_activity a
+                            WHERE a.pid = substring(g.iri from '^urn:ckp:validate-scratch:([0-9]+)$')::int)
+           AND NOT EXISTS (SELECT 1 FROM pgrdf._pgrdf_quads q WHERE q.graph_id = g.graph_id)
+         LIMIT 25)
+      SELECT count(*) INTO reaped FROM (
+        SELECT pgrdf.drop_graph(d.graph_id, true) FROM dead d) x;
+    EXCEPTION WHEN OTHERS THEN
+      -- Reaping is HOUSEKEEPING and must never fail a validation. If the engine
+      -- refuses a drop, the debris stays and ckp.storage() keeps reporting it —
+      -- visible, which is the honest failure mode.
+      reaped := 0;
+    END;
+  END IF;
   -- Bench-proven form (reconciled from pgck.localhost, 2026-08-08): the graph
   -- is materialized BEFORE validation. pgrdf.validate does not entail and
   -- entailment is per-graph, so without this the candidate's rdf:type closure
