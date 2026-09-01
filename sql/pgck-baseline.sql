@@ -2171,6 +2171,26 @@ DECLARE
   v_ground text;
   v_sigs   text;
 BEGIN
+  -- 0.4.91 — DELEGATE (FINAL-HANDOVER B1). pgRDF v0.6.34 ships this exact
+  -- algorithm as pgrdf.structural_digest(), method label pgrdf-fd1-sha256, owned
+  -- by the engine that owns the graphs. Keeping a second implementation of a
+  -- digest is a pure divergence risk with no upside: the day the two drift, every
+  -- structural pin in this ledger silently means something different from what
+  -- the engine says, and NOTHING would report it.
+  --
+  -- Delegation is gated on a MEASUREMENT, not on a version number. Verified
+  -- 2026-09-01 on ckdev, three graphs of different shape:
+  --   urn:ckp:core            47d24485627e459f… identical
+  --   urn:ckp:module:wave     97f1066fc04460bb… identical
+  --   urn:ckp:pgck/kernel/ck  8788ee647b5f2e4c… identical
+  -- Byte-for-byte on all three. The local body is RETAINED, not deleted, so an
+  -- engine without the function still answers rather than refusing — and so this
+  -- delegation stays falsifiable: s79 asserts the two agree wherever both exist,
+  -- which is a check that can actually fail if the engine ever changes.
+  IF to_regprocedure('pgrdf.structural_digest(bigint)') IS NOT NULL THEN
+    RETURN pgrdf.structural_digest(p_graph);
+  END IF;
+
   IF to_regclass('pgrdf._pgrdf_quads') IS NULL OR to_regclass('pgrdf._pgrdf_dictionary') IS NULL THEN
     RAISE EXCEPTION 'ckp._structural_digest: the engine''s quad/dictionary tables are not where the pinned bundle put them — refusing rather than inventing a digest (interim seat; pgRDF#117 is the lasting one)';
   END IF;
@@ -3618,6 +3638,157 @@ AS $function$
 $function$
 ;
 
+-- 0.4.91 — WHAT THE SUBSTRATE COSTS, reported as a state and never as an alarm.
+--
+-- The engine ships the instruments; pgCK was not calling them. pgrdf 0.6.34 has
+-- graph_inventory() with a per-graph materialization freshness
+-- (current | stale | never | unknown) and orphan_partitions() — storage that no
+-- SPARQL can reach. Both are exactly the class of fact this substrate keeps
+-- getting wrong by inventing its own vocabulary: pgRDF already enforces
+-- "state is not health" one layer down, so adopt their words rather than mint
+-- ours.
+--
+-- Measured motivation, ckdev 2026-09-01: 60 MB across 38 graphs and 148 quad
+-- partitions — ~1.58 MB per graph, so a self-service germination costs ~3.2 MB
+-- before anything is sealed into it. Four graphs were `stale` and every one was
+-- a `validate-scratch` leftover: 11% of the graphs on that bench were validation
+-- debris. That number matters more than the bytes — put validation on a
+-- recurring schedule and the CLOCK becomes the leak, growth tracking time
+-- elapsed rather than work done.
+--
+-- Guarded on to_regprocedure, and every field is a STATE. `never` and `unknown`
+-- are not warnings; only `stale` is, and orphans are a warn only when non-empty.
+-- 0.4.91 — THE TWO DIGEST PLANES, EACH CARRYING ITS METHOD.
+--
+-- fd1 equality is ISOMORPHIC_LIKELY: strong evidence, never proof, because
+-- symmetric blank-node structures can collide. INEQUALITY is conclusive either
+-- way. pgRDF v0.6.34 ships the second plane — graph_digest(), RDFC-1.0, where
+-- equality IS proof — and the in-engine witness is a 4-cycle of blank nodes vs
+-- two 2-cycles: they collide under fd1 and separate under RDFC.
+--
+-- This is ADDITIVE and deliberately so. Nothing sealed changes meaning: the
+-- structural pins in this ledger stay fd1, and this exposes the conclusive plane
+-- alongside so a comparison can be UPGRADED when it matters. Changing what
+-- surfaceDigest means would silently reinterpret every pin ever sealed.
+--
+-- The method label is not decoration and is never optional. The two planes'
+-- values are never comparable with each other, and the label is what stops a
+-- reader trying. A digest whose method is not stated is not a pin; it is a
+-- number that looks like one.
+-- 0.4.91 — THE ENGINE'S COMPLETENESS, adopted from pgRDF v0.6.34's own advice.
+--
+-- pgRDF's LIB spec makes a direct ask of this substrate: "since ckp.dispatch
+-- executes pgrdf reads via SPI in the same backend, the substrate can attach the
+-- verdict to every read envelope server-side — worth one line in the envelope
+-- contract." This is that line, and it closes a blind spot _read_verdict cannot
+-- see: that function counts ROWS, and this engine's characteristic failure is an
+-- answer that is SHORT, not wrong. Paths truncate and filter clauses drop INSIDE
+-- the engine; a read that returns 10 of 10 rows is `complete` by our count and may
+-- still have been silently narrowed. Our R-8 rule — a count without its method is
+-- not a number — extends exactly one step: a row count without the ENGINE's
+-- verdict is not a count either.
+--
+-- ⚠ THE TRAP, AND WHY THIS IS NOT ATTACHED AUTOMATICALLY. last_call_stats() is
+-- SESSION-LOCAL and PER-CALL: it describes the most recent query verb in this
+-- backend. Attaching it to a read that ran no SPARQL would report SOME OTHER
+-- query's numbers as if they were this one's — a confident wrong answer, which is
+-- the defect class this substrate exists to retire. So it is a function the
+-- SPARQL-running call sites opt into, never a decoration sprayed on every reply.
+-- A read that did not touch the engine says so rather than borrowing a verdict.
+CREATE OR REPLACE FUNCTION ckp._engine_completeness()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE v jsonb; v_trunc int; v_drop int;
+BEGIN
+  IF to_regprocedure('pgrdf.last_call_stats()') IS NULL THEN
+    RETURN jsonb_build_object('engine', jsonb_build_object(
+      'verdict', 'unreported',
+      'note', 'this engine predates pgrdf.last_call_stats() — UNREPORTED is a state, not a fault, and not a claim of completeness'));
+  END IF;
+  SELECT pgrdf.last_call_stats() INTO v;
+  v_trunc := COALESCE((v->>'path_depth_truncations')::int, 0);
+  v_drop  := COALESCE((v->>'filter_clauses_dropped')::int, 0);
+  RETURN jsonb_build_object('engine', jsonb_build_object(
+    'verdict', CASE WHEN v_trunc > 0 OR v_drop > 0 THEN 'short' ELSE 'complete' END,
+    'pathDepthTruncations', v_trunc,
+    'filterClausesDropped', v_drop,
+    'method', 'pgrdf.last_call_stats — session-local, describes THIS backend''s most recent query verb',
+    'note', CASE WHEN v_trunc > 0 OR v_drop > 0
+      THEN 'SHORT: the engine narrowed this answer. The rows returned are correct; the set is incomplete, and a row count alone would not have shown it.'
+      ELSE 'complete: the engine truncated no path and dropped no filter clause for this call.' END));
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp.digests(p_graph bigint)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE v jsonb;
+BEGIN
+  v := jsonb_build_object(
+    'structural', jsonb_build_object(
+      'value',  ckp._structural_digest(p_graph),
+      'method', 'pgrdf-fd1-sha256',
+      'equalMeans', 'ISOMORPHIC_LIKELY — evidence, not proof; UNEQUAL is conclusive'));
+  IF to_regprocedure('pgrdf.graph_digest(bigint)') IS NOT NULL THEN
+    v := v || jsonb_build_object('canonical', jsonb_build_object(
+      'value',  pgrdf.graph_digest(p_graph),
+      'method', 'rdfc-1.0-sha256',
+      'equalMeans', 'PROOF of isomorphism'));
+  ELSE
+    v := v || jsonb_build_object('canonical', jsonb_build_object(
+      'value', NULL, 'method', NULL,
+      'equalMeans', 'unavailable — this engine predates pgrdf.graph_digest(); the conclusive plane is a state, not a fault'));
+  END IF;
+  RETURN v || jsonb_build_object(
+    'note', 'the two planes are NEVER comparable with each other. Render the method beside '
+            'every value; a digest whose method is not stated is not a pin.');
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp.storage()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE v_fresh jsonb; v_orph int; v_scratch int; v_graphs int;
+BEGIN
+  IF to_regprocedure('pgrdf.graph_inventory()') IS NULL THEN
+    RETURN jsonb_build_object(
+      'available', false,
+      'note', 'pgrdf.graph_inventory() is absent — this engine predates v0.6.34. Storage is UNREPORTED, which is a state, not a fault.');
+  END IF;
+
+  SELECT jsonb_object_agg(m, c), sum(c) INTO v_fresh, v_graphs
+    FROM (SELECT COALESCE(materialization,'unknown') m, count(*) c FROM pgrdf.graph_inventory() GROUP BY 1) t;
+
+  SELECT count(*) INTO v_orph FROM pgrdf.orphan_partitions();
+  SELECT count(*) INTO v_scratch FROM pgrdf.graph_inventory() WHERE iri LIKE 'urn:ckp:validate-scratch%';
+
+  RETURN jsonb_build_object(
+    'available', true,
+    'bytes', pg_database_size(current_database()),
+    'pretty', pg_size_pretty(pg_database_size(current_database())),
+    'graphs', COALESCE(v_graphs,0),
+    'materialization', COALESCE(v_fresh,'{}'::jsonb),
+    'orphanPartitions', v_orph,
+    'scratchGraphs', v_scratch,
+    'note', 'materialization states are pgRDF''s vocabulary, adopted rather than re-minted: '
+            '`never` and `unknown` are STATES, only `stale` is a warning, and orphanPartitions '
+            'warns only when non-zero. scratchGraphs counts validation leftovers — if that '
+            'number grows without validations being run, a schedule is leaking, not a user.');
+END;
+$function$
+;
+
 CREATE OR REPLACE FUNCTION ckp.surface_check(p_project text DEFAULT NULL)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -3661,6 +3832,7 @@ BEGIN
          pgrdf.graph_iri(v_comp)))),
       'modules', '[]'::jsonb,
       'roster', ckp.roster(),          -- 0.4.90 Q-1
+      'storage', ckp.storage(),        -- 0.4.91
       'findings', '[]'::jsonb,
       'note', 'no kernel named: the law is loaded and readable (surface.declared, surface.typecheck, instance.validate all answer), and sealing refuses on M2. A complete state, not a fault.',
       'healthy', true);
@@ -3805,6 +3977,7 @@ BEGIN
     'composed_nodeshapes', v_shapes,
     'modules', v_mods,
     'roster', ckp.roster(),            -- 0.4.90 Q-1
+    'storage', ckp.storage(),          -- 0.4.91
     'findings', v_find,
     'note', CASE v_state
       WHEN 'core-only'  THEN 'no kernel named: the law is loaded and readable, sealing refuses on M2. A complete state, not a fault.'
