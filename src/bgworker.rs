@@ -95,14 +95,15 @@ fn refresh_ledger_kernels() {
     if !due {
         return;
     }
+    // 0.4.90: call ckp._ledger_kernels() rather than carrying a second copy of
+    // the query. surface.check reports the same roster through ckp.roster(), and
+    // two copies of a rule is how routed and declared halves drift apart —
+    // §2: a probe that re-implements the gate tests the probe. One query, two
+    // callers. Guarded: an older extension without the function returns None and
+    // the previous set is kept, exactly as an SPI miss already did.
     let csv = BackgroundWorker::transaction(|| {
         Spi::get_one::<String>(
-            "SELECT string_agg(DISTINCT seg, ',') FROM ( \
-               SELECT substring(body->>'@id' FROM '^urn:ckp:([a-z0-9-]+)/kernel$') AS seg \
-               FROM ckp.instances \
-               WHERE body->>'type' = 'https://conceptkernel.org/ontology/v3.11/core#Kernel' \
-                 AND NOT body ? 'https://conceptkernel.org/ontology/v3.11/core#retiredAtEpoch' \
-             ) s WHERE seg IS NOT NULL",
+            "SELECT array_to_string(ckp._ledger_kernels(), ',')",
         )
         .ok()
         .flatten()

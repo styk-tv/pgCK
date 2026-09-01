@@ -527,6 +527,17 @@ BEGIN
   -- structural fields backfill at the next composition's re-pin or stay NULL,
   -- honestly reported as "pinned before the structural plane existed".
   ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS structural_digest TEXT;
+  -- 0.4.90 (Q-3): existing installs already have refusal_registry, so
+  -- CREATE TABLE IF NOT EXISTS cannot add the column — it must be ALTERed in,
+  -- and the classification rule re-run, on every upgrade path.
+  ALTER TABLE ckp.refusal_registry ADD COLUMN IF NOT EXISTS plane TEXT;
+  UPDATE ckp.refusal_registry SET plane = 'declared'
+   WHERE code LIKE 'undeclared\_%' ESCAPE '\'
+      OR code IN ('unresolved_shape','shape_violation','type_not_readable_here',
+                  'detail_projects_nothing','op_has_no_projector');
+  UPDATE ckp.refusal_registry SET plane = 'procedural'
+   WHERE plane IS NULL AND sqlstate IN ('22004','42501','42601','55000');
+
   ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS nodeshapes INTEGER;
   ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS properties INTEGER;
   ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS asserted INTEGER;
@@ -995,6 +1006,16 @@ DECLARE
 BEGIN
   -- Sealed, unsuperseded Adoptions of THIS project, in seal order.
   --
+  -- 0.4.90 — DISTINCT. Nothing refuses or dedupes a SECOND Adoption of a module
+  -- already adopted, and pgck had two of `urn:ckp:module:wave` (adoption-…758197383
+  -- and adoption-…690718555). Measured through the door: ck_reach listed the module
+  -- twice and _adopted_graphs returned it twice, so the composer walked the same
+  -- graph twice. Same family as the germinate takeover — a second act nothing
+  -- refused — but here the honest cure is idempotence, not refusal: adopting what
+  -- you already adopted is a no-op a caller may legitimately retry, and REFUSING it
+  -- would break re-adoption after a supersession. Dedupe at the read, keep the
+  -- ledger's record of both acts intact.
+  --
   -- 0.4.57 — THE THIRD SPELLING, found by pgck-mcp the hard way. This accepted
   -- 'urn:ckp:<p>' and 'urn:ckp:<p>/kernel/ck' and MISSED 'urn:ckp:project:<p>' —
   -- which is the MOST principled form, because germinate_kernel seals exactly
@@ -1008,7 +1029,11 @@ BEGIN
   -- rewarded the accident and ignored the principle. A sealed record whose
   -- declared value has no effect is R2's defect shape, inside the composer.
   RETURN COALESCE((
-    SELECT array_agg(a.body->>(N||'adopts') ORDER BY a.ts_created)
+    -- 0.4.90: dedupe by module IRI, ordered by FIRST seal, so a module adopted
+    -- twice composes once and the earliest adoption still sets its position.
+    SELECT array_agg(d.g ORDER BY d.first_sealed)
+    FROM (
+    SELECT a.body->>(N||'adopts') AS g, min(a.ts_created) AS first_sealed
     FROM ckp.instances a
     WHERE a.body->>'type' = N||'Adoption'
       AND a.body->>(N||'adopts') IS NOT NULL
@@ -1025,6 +1050,7 @@ BEGIN
         SELECT 1 FROM ckp.instances s
         WHERE s.body->>'type' = N||'Supersession'
           AND s.body->>(N||'supersedes') = a.body->>'@id')
+    GROUP BY 1) d
   ), ARRAY[]::text[]);
 END;
 $function$
@@ -2643,7 +2669,36 @@ DECLARE
   v_total bigint;
 BEGIN
   IF p_verb = 'instance.get' THEN
-    RETURN jsonb_build_object('ok', true, 'instance', ckp._envelope(p_payload->>'id'));
+    -- 0.4.90 (§3 id-form, operator ruling 2026-08-29). This passed the RAW id to
+    -- _envelope, which looks up ckp.instances.id — the BARE form only. Every other
+    -- form the substrate itself emits (`ckp://Type#id` for 82 of 98 rows on the
+    -- measured bench, `urn:ckp:…`) missed, and the reply was `ok:true,
+    -- instance:null` — a CONFIDENT ABSENCE about an id the substrate minted. Two
+    -- independent clients built the same private query+filter lens to work around
+    -- it, which is the proof it belongs here. _resolve_id already handled all three
+    -- forms; this call site simply never asked it.
+    --
+    -- The ruling has two halves and both ship: resolve every emitted form, AND
+    -- never null on an id we minted — an unknown id REFUSES, naming the forms.
+    DECLARE
+      v_rid text := ckp._resolve_id(p_payload->>'id');
+      v_env jsonb;
+    BEGIN
+      IF p_payload->>'id' IS NULL OR btrim(p_payload->>'id') = '' THEN
+        RETURN jsonb_build_object('ok', false, 'refused', true, 'sqlstate', '22023',
+          'error', 'instance.get: id required');
+      END IF;
+      v_env := ckp._envelope(v_rid);
+      IF v_env IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'refused', true, 'sqlstate', '42704',
+          'error', format('instance.get: no instance resolves %L. Accepted forms are the '
+                          'bare id (vote-123…), the stamped @id (ckp://Type#vote-123…), and '
+                          'urn:ckp:instance:<id>. A confident null here would be worse than '
+                          'this refusal — if you minted this id from a reply, that reply is '
+                          'the form to send back.', p_payload->>'id'));
+      END IF;
+      RETURN jsonb_build_object('ok', true, 'instance', v_env);
+    END;
   ELSIF p_verb = 'instances.count' THEN
     SELECT count(*) INTO v_total FROM ckp.instances
       WHERE (p_type IS NULL OR body->>'type'=p_type OR body->>'type' LIKE '%'||p_type)
@@ -2945,7 +3000,9 @@ BEGIN
   DECLARE
     -- this project's epoch, not a fixed kernel's: reading one kernel's epoch
     -- while bumping another's makes every other kernel restart from 1.
-    v_from   int := COALESCE((SELECT epoch FROM ckp.kernel_epoch WHERE kernel = v_proj), 1);
+    -- 0.4.90 (§2): was COALESCE(...,1) while all six read sites use 0 — the two
+    -- planes rendered the SAME absent row as different numbers. One convention now.
+    v_from   int := COALESCE((SELECT epoch FROM ckp.kernel_epoch WHERE kernel = v_proj), 0);
     v_comp_e int;
     v_srcd   text;
     v_surfd  text;
@@ -3016,8 +3073,22 @@ BEGIN
   v_new_body := v_prop || jsonb_build_object(C||'proposalState', 'applied', C||'appliedEpoch', v_epoch::text);
   PERFORM ckp.seal(v_pid, v_new_body);
 
+  -- 0.4.90 (L-6 / R5.3, CK.Lib.Js) — THE SUCCESS PATH CARRIES THE PAIR TOO.
+  -- The REFUSAL path returned approvals AND quorum (see quorum_not_met above);
+  -- the success path returned approvals alone, so a caller reading a successful
+  -- apply could not tell 1-of-1 from 3-of-3 without a second read. The pair is
+  -- the whole meaning: an approval count without the bar it cleared is not a
+  -- number. `rehearsal` states the standing rule out loud rather than leaving
+  -- the reader to infer it — quorum 1 means proposer, voter and applier may be
+  -- the same identity, which is a rehearsal of governance, not consensus, and
+  -- this substrate says so every time rather than once in a document.
   RETURN jsonb_build_object('ok', true, 'proposal', v_about, 'state', 'applied', 'epoch', v_epoch,
-                            'op', v_op, 'approvals', v_approvals, 'applied', v_applied,
+                            'op', v_op, 'approvals', v_approvals, 'quorum', v_quorum,
+                            'rehearsal', (v_quorum = 1),
+                            'quorumNote', CASE WHEN v_quorum = 1
+                              THEN 'quorum 1 — proposer, voter and applier may be one identity. This is REHEARSAL, not consensus.'
+                              ELSE format('quorum %s cleared by %s DISTINCT non-anonymous identities', v_quorum, v_approvals) END,
+                            'applied', v_applied,
                             'verified', ckp.verify(v_pid));
 END;
 $function$
@@ -3083,7 +3154,16 @@ CREATE OR REPLACE FUNCTION ckp.bump_epoch(p_kernel text)
 AS $function$
 DECLARE v_epoch integer;
 BEGIN
-  INSERT INTO ckp.kernel_epoch(kernel, epoch) VALUES (p_kernel, 1) ON CONFLICT (kernel) DO NOTHING;
+  -- 0.4.90 (§2 epoch convention, ask from CK.Lib.Js PASS-9 §1). This seeded the
+  -- absent row at 1 and then incremented it, so a virgin kernel's FIRST apply
+  -- moved 1 -> 2 while every READ had been rendering the same absent row as 0
+  -- (six COALESCE(...,0) sites) and apply's fromEpoch rendered it as 1. Epoch 1
+  -- was a PHANTOM: no read ever reported it and no ckp:Epoch ever sealed its
+  -- digest, so a counterparty auditing the chain found a gap that was pure
+  -- convention drift between the read plane and the write plane. Seeding at 0
+  -- makes the first apply an honest 0 -> 1 and leaves every already-advanced
+  -- kernel untouched (the row exists; ON CONFLICT DO NOTHING).
+  INSERT INTO ckp.kernel_epoch(kernel, epoch) VALUES (p_kernel, 0) ON CONFLICT (kernel) DO NOTHING;
   UPDATE ckp.kernel_epoch SET epoch = epoch + 1 WHERE kernel = p_kernel RETURNING epoch INTO v_epoch;
   PERFORM ckp.compile_plans(p_kernel);   -- recompile at the new epoch (same txn)
   PERFORM pgrdf.plan_cache_clear();       -- invalidate the engine SPARQL plan cache (same txn)
@@ -3468,6 +3548,76 @@ END;
 $function$
 ;
 
+-- 0.4.90 (Q-1 / A6) — THE LEDGER HALF OF THE ROSTER, IN ONE PLACE.
+--
+-- The bgworker's refresh_ledger_kernels() ran this query inline in Rust, and
+-- surface.check needs the same answer. Two copies of a rule is how the routed
+-- and declared halves of an affordance drift apart, and pgCK's own §2 says a
+-- probe that RE-IMPLEMENTS the gate tests the probe. So the query lives here,
+-- once, and both the tick and the verb call it.
+--
+-- The pattern is the contract: a segment enters the grant set only from a
+-- sealed, unretired ckp:Kernel whose @id is canonical-lowercase. A
+-- non-canonical historical spelling simply never matches.
+CREATE OR REPLACE FUNCTION ckp._ledger_kernels()
+ RETURNS text[]
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+  SELECT COALESCE(array_agg(DISTINCT seg ORDER BY seg), ARRAY[]::text[])
+  FROM (
+    SELECT substring(body->>'@id' FROM '^urn:ckp:([a-z0-9-]+)/kernel$') AS seg
+    FROM ckp.instances
+    WHERE body->>'type' = 'https://conceptkernel.org/ontology/v3.11/core#Kernel'
+      AND NOT body ? 'https://conceptkernel.org/ontology/v3.11/core#retiredAtEpoch'
+  ) s
+  WHERE seg IS NOT NULL
+$function$
+;
+
+-- 0.4.90 (Q-1) — THE ROSTER AS THE DOOR WILL COMPUTE IT, both halves, named.
+--
+-- CK.Lib.Js asked for `roster` on the wire so R-11 could read "my kernel is in
+-- the roster and the door answers me". The 2026-08-29 ruling
+-- (ruling-1788038690953958000) changed what the honest answer IS: the grant set
+-- is the GUC *unioned with* every sealed ckp:Kernel, refreshed ~5s by the tick.
+-- Reporting only the GUC would now UNDER-report, and a kernel absent from the
+-- reported roster that nonetheless answers is exactly the confusing shape this
+-- field was asked for to remove.
+--
+-- The original Q-1 ruling specified a `rosterNote` naming the RESTART rule. That
+-- doctrine is RETIRED, and shipping it in a string is the R-15 failure that hit
+-- every other seat in the fleet the same day — a doctrine sweep that stops at
+-- documents has not swept. The note below carries the ruling's id instead of its
+-- prose, so it cannot drift into the next echo.
+CREATE OR REPLACE FUNCTION ckp.roster()
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+  WITH guc AS (
+    SELECT COALESCE(array_agg(DISTINCT btrim(k) ORDER BY btrim(k))
+             FILTER (WHERE btrim(k) <> ''), ARRAY[]::text[]) AS names
+    FROM unnest(string_to_array(COALESCE(current_setting('pgck.kernels', true), ''), ',')) k
+  ), led AS (SELECT ckp._ledger_kernels() AS names)
+  SELECT jsonb_build_object(
+    'guc',    to_jsonb((SELECT names FROM guc)),
+    'ledger', to_jsonb((SELECT names FROM led)),
+    'union',  to_jsonb((SELECT ARRAY(SELECT DISTINCT unnest((SELECT names FROM guc) || (SELECT names FROM led)) ORDER BY 1))),
+    'ledgerOnly', to_jsonb((SELECT ARRAY(SELECT unnest((SELECT names FROM led))
+                                          EXCEPT SELECT unnest((SELECT names FROM guc)) ORDER BY 1))),
+    'refreshSeconds', 5,
+    'note', 'the grant set the callout mints from is guc UNION ledger, refreshed ~5s by the '
+            'bgworker tick — germination IS existence. This is what the SUBSTRATE holds; the '
+            'broker mints per CONNECT and a LIVE socket keeps what it was minted with, so a '
+            'name appearing here reaches a NEW connection, not an existing one. Reconnect '
+            'first, then diagnose the door. Authority: ruling-1788038690953958000 — read the '
+            'ruling, do not rely on this paraphrase.');
+$function$
+;
+
 CREATE OR REPLACE FUNCTION ckp.surface_check(p_project text DEFAULT NULL)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -3510,6 +3660,7 @@ BEGIN
          'PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?s WHERE { GRAPH <%s> { ?s a sh:NodeShape } }',
          pgrdf.graph_iri(v_comp)))),
       'modules', '[]'::jsonb,
+      'roster', ckp.roster(),          -- 0.4.90 Q-1
       'findings', '[]'::jsonb,
       'note', 'no kernel named: the law is loaded and readable (surface.declared, surface.typecheck, instance.validate all answer), and sealing refuses on M2. A complete state, not a fault.',
       'healthy', true);
@@ -3653,6 +3804,7 @@ BEGIN
     'kernel_graph', jsonb_build_object('iri', v_kiri, 'quads', v_kquads, 'empty', v_kquads = 0),
     'composed_nodeshapes', v_shapes,
     'modules', v_mods,
+    'roster', ckp.roster(),            -- 0.4.90 Q-1
     'findings', v_find,
     'note', CASE v_state
       WHEN 'core-only'  THEN 'no kernel named: the law is loaded and readable, sealing refuses on M2. A complete state, not a fault.'
@@ -4039,6 +4191,12 @@ $ttl$, v_base, v_label, v_pid);
   GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
   GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
 
+  -- 0.4.90 (§2): seed the epoch ledger at germination so the row EXISTS from the
+  -- kernel's first moment. Both planes then read a real 0 rather than each
+  -- rendering an absent row by its own convention.
+  INSERT INTO ckp.kernel_epoch(kernel, epoch) VALUES (p_project, 0)
+    ON CONFLICT (kernel) DO NOTHING;
+
   -- 2. the Project — ownedBy STAMPED, never supplied. This is the triple a client
   --    cannot write and the reason germination is a governed verb at all.
   PERFORM ckp.seal(v_pid, jsonb_build_object(
@@ -4260,13 +4418,29 @@ BEGIN
   -- (a check that is not a verb does not exist): the closed set of refusal
   -- codes, their typed sqlstate classes, and what each teaches.
   WHEN 'surface.refusals' THEN
+    -- 0.4.90 (Q-2 + Q-3, CK.Lib.Js). registryDigest is sha256 over the ORDERED
+    -- code set, so a client caches on the digest and re-reads only when the set
+    -- actually moves. plane rides per row and is NULL where the classification
+    -- would be a guess (see the registry table comment).
+    -- NOTE: jsonb_strip_nulls is deliberately NOT applied to plane — a stripped
+    -- key and an explicit null are different answers, and "we did not classify
+    -- this one" must survive the wire. Only `teaches` is stripped when absent.
     res := jsonb_build_object('ok', true,
       'count', (SELECT count(*) FROM ckp.refusal_registry),
-      'refusals', COALESCE((SELECT jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
-                    'code', code, 'sqlstate', sqlstate, 'teaches', teaches))
+      'registryDigest', (SELECT encode(digest(string_agg(code, E'\n' ORDER BY code), 'sha256'), 'hex')
+                           FROM ckp.refusal_registry),
+      'planes', (SELECT jsonb_object_agg(k, c) FROM (
+                   SELECT COALESCE(plane,'unclassified') k, count(*) c
+                     FROM ckp.refusal_registry GROUP BY 1) t),
+      'refusals', COALESCE((SELECT jsonb_agg(
+                    jsonb_strip_nulls(jsonb_build_object(
+                      'code', code, 'sqlstate', sqlstate, 'teaches', teaches))
+                    || jsonb_build_object('plane', plane)
                     ORDER BY sqlstate, code)
                   FROM ckp.refusal_registry), '[]'::jsonb),
-      'note', 'an ok:false whose error is not in this set is fault-shaped, not a refusal');
+      'note', 'an ok:false whose error is not in this set is fault-shaped, not a refusal. '
+              'plane:null means the classification would be a guess — 22023 and 42704 each '
+              'carry codes of both planes; cache on registryDigest, not on count.');
 
   WHEN 'surface.declared' THEN
     res := ckp.surface_declared(p_payload, v_proj);
@@ -4548,7 +4722,17 @@ $function$
 CREATE TABLE IF NOT EXISTS ckp.refusal_registry (
   code     text PRIMARY KEY,
   sqlstate text NOT NULL,
-  teaches  text
+  teaches  text,
+  -- 0.4.90 (Q-3, CK.Lib.Js): which PLANE refused — `declared` (the law: a shape,
+  -- an undeclared term, an unresolved shape) or `procedural` (the code path:
+  -- a missing argument, a privilege, a lifecycle state). Deliberately NULLABLE:
+  -- the ruling scoped this to "where the classification is mechanical; entries
+  -- whose plane is genuinely mixed ship plane: null rather than a guess." Two
+  -- sqlstates (22023, 42704) carry codes of both kinds, and a confident label on
+  -- those would be the same defect class as findings:[null] — an answer the
+  -- reader cannot check. The rule that fills it is in the UPDATE below and is
+  -- auditable; nothing is hand-assigned.
+  plane    text
 );
 
 INSERT INTO ckp.refusal_registry (code, sqlstate, teaches) VALUES
@@ -4612,6 +4796,17 @@ INSERT INTO ckp.refusal_registry (code, sqlstate, teaches) VALUES
   -- 42601 syntax_error — the caller's document did not parse
   ('parse_error',              '42601', NULL)
 ON CONFLICT (code) DO UPDATE SET sqlstate = EXCLUDED.sqlstate, teaches = EXCLUDED.teaches;
+
+-- 0.4.90 (Q-3) — THE PLANE, ASSIGNED BY RULE, NEVER BY HAND.
+-- Two predicates, applied in order; anything neither matches stays NULL and the
+-- reply says so. Re-runnable: the rule is the documentation.
+UPDATE ckp.refusal_registry SET plane = 'declared'
+ WHERE code LIKE 'undeclared\_%' ESCAPE '\'
+    OR code IN ('unresolved_shape','shape_violation','type_not_readable_here',
+                'detail_projects_nothing','op_has_no_projector');
+UPDATE ckp.refusal_registry SET plane = 'procedural'
+ WHERE plane IS NULL
+   AND sqlstate IN ('22004','42501','42601','55000');
 
 -- The ring-1 definer set resolves ckp.* as ck_substrate; a table created on the
 -- WARM road exists after the install-completeness blanket grant already ran, so
