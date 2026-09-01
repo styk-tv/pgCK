@@ -7157,6 +7157,8 @@ DECLARE
   scratch_id BIGINT := pgrdf.add_graph('urn:ckp:validate-scratch:'||pg_backend_pid());
   report jsonb;
   reaped int := 0;
+  dead_ids bigint[];
+  one_id bigint;
 BEGIN
   -- 0.4.92 — REAP THE DEAD SCRATCH GRAPHS. Found by ckp.storage() on its FIRST
   -- gated run, which is the whole argument for building the instrument: the
@@ -7189,26 +7191,42 @@ BEGIN
   -- Three conditions, all required, because a scratch graph belonging to a LIVE
   -- backend is in use by definition and dropping it would break that session:
   --   named validate-scratch  ·  EMPTY  ·  its pid is not an active backend.
+  -- ⚠ TWO PHASES, AND THE SECOND ONE IS WHY. The first draft did the SELECT and
+  -- the DROP in one statement, and PostgreSQL refused every time:
+  --   cannot DROP TABLE "_pgrdf_quads_gNNN" because it is being used by active
+  --   queries in this session
+  -- The NOT EXISTS scans the PARTITIONED PARENT, which locks every partition,
+  -- while the same statement tries to drop one of them. The scan must COMPLETE
+  -- before any drop begins. Collect ids first; drop afterwards, one at a time.
+  --
+  -- That draft shipped in 0.4.92 and reaped NOTHING, because the exception
+  -- handler below swallowed the error and reported success — a defensive block
+  -- hiding a real failure, which is the pattern this substrate keeps finding in
+  -- other people's code. The handler is kept because housekeeping must never
+  -- fail a validation, but it now logs, so a silent no-op cannot recur.
   IF to_regprocedure('pgrdf.drop_graph(bigint,boolean)') IS NOT NULL THEN
-    BEGIN
-      WITH dead AS (
-        SELECT g.graph_id, g.iri
-          FROM pgrdf._pgrdf_graphs g
-         WHERE g.iri LIKE 'urn:ckp:validate-scratch:%'
-           AND g.graph_id <> scratch_id
-           AND substring(g.iri from '^urn:ckp:validate-scratch:([0-9]+)$') IS NOT NULL
-           AND NOT EXISTS (SELECT 1 FROM pg_stat_activity a
-                            WHERE a.pid = substring(g.iri from '^urn:ckp:validate-scratch:([0-9]+)$')::int)
-           AND NOT EXISTS (SELECT 1 FROM pgrdf._pgrdf_quads q WHERE q.graph_id = g.graph_id)
-         LIMIT 25)
-      SELECT count(*) INTO reaped FROM (
-        SELECT pgrdf.drop_graph(d.graph_id, true) FROM dead d) x;
-    EXCEPTION WHEN OTHERS THEN
-      -- Reaping is HOUSEKEEPING and must never fail a validation. If the engine
-      -- refuses a drop, the debris stays and ckp.storage() keeps reporting it —
-      -- visible, which is the honest failure mode.
-      reaped := 0;
-    END;
+    SELECT COALESCE(array_agg(g.graph_id), ARRAY[]::bigint[]) INTO dead_ids
+      FROM (SELECT g.graph_id
+              FROM pgrdf._pgrdf_graphs g
+             WHERE g.iri LIKE 'urn:ckp:validate-scratch:%'
+               AND g.graph_id <> scratch_id
+               AND substring(g.iri from '^urn:ckp:validate-scratch:([0-9]+)$') IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM pg_stat_activity a
+                                WHERE a.pid = substring(g.iri from '^urn:ckp:validate-scratch:([0-9]+)$')::int)
+               AND NOT EXISTS (SELECT 1 FROM pgrdf._pgrdf_quads q WHERE q.graph_id = g.graph_id)
+             LIMIT 25) g;
+
+    FOREACH one_id IN ARRAY dead_ids LOOP
+      BEGIN
+        PERFORM pgrdf.drop_graph(one_id, true);
+        reaped := reaped + 1;
+      EXCEPTION WHEN OTHERS THEN
+        -- Per graph, so one stubborn partition cannot cost the rest. Logged, not
+        -- swallowed: the previous silent handler is exactly why 0.4.92 shipped a
+        -- reaper that never reaped.
+        RAISE WARNING 'ckp.validate: could not reap scratch graph % — %', one_id, SQLERRM;
+      END;
+    END LOOP;
   END IF;
   -- Bench-proven form (reconciled from pgck.localhost, 2026-08-08): the graph
   -- is materialized BEFORE validation. pgrdf.validate does not entail and

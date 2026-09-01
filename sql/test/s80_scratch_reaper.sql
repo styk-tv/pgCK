@@ -19,6 +19,7 @@
 --       licence to drop; a non-empty one is somebody's in-flight state.
 --   (c) CONTROL: a scratch graph belonging to a LIVE backend is spared. By
 --       definition it is in use, and dropping it breaks that session mid-flight.
+--   (d) IT IS ACTUALLY GONE. The claim is 'reaped', not 'would have selected'.
 \set ON_ERROR_STOP 1
 
 DO $$
@@ -35,7 +36,15 @@ BEGIN
   PERFORM pgrdf.parse_turtle('<urn:s80a> <urn:s80b> <urn:s80c> .', g_full, 'urn:s80#');
   g_live := pgrdf.add_graph('urn:ckp:validate-scratch:'||pg_backend_pid()); -- live
 
-  -- the reaper's own predicate, evaluated exactly as the function evaluates it
+  -- ⚠ THIS TEST WAS WRONG IN 0.4.92 AND IS THE REASON 0.4.93 EXISTS. It asserted
+  -- only that the PREDICATE selects the right graphs, and passed green while the
+  -- reaper dropped NOTHING: the real drop failed with "cannot DROP TABLE ...
+  -- because it is being used by active queries in this session" (the NOT EXISTS
+  -- scans the partitioned parent, locking every partition, while the same
+  -- statement tries to drop one), and a defensive EXCEPTION handler swallowed it.
+  -- A check that cannot fail the thing it claims is not a check — this file
+  -- claimed "reaped" and measured "would have selected". (d) below now performs
+  -- the drop and asserts the graph is GONE.
   SELECT COALESCE(string_agg(iri, ',' ORDER BY iri),'') INTO would
     FROM pgrdf._pgrdf_graphs g
    WHERE g.iri LIKE 'urn:ckp:validate-scratch:%'
@@ -63,7 +72,27 @@ BEGIN
   END IF;
   RAISE NOTICE 's80 (c) PASS — live backend''s scratch spared';
 
-  PERFORM pgrdf.drop_graph(g_dead, true);
+  -- (d) THE CLAIM THIS FILE ACTUALLY MAKES: the graph is GONE afterwards.
+  -- Two phases, because one statement cannot both scan the partitioned parent
+  -- and drop a partition of it.
+  DECLARE ids bigint[]; one bigint; reaped int := 0;
+  BEGIN
+    SELECT COALESCE(array_agg(x.graph_id), ARRAY[]::bigint[]) INTO ids FROM (
+      SELECT g.graph_id FROM pgrdf._pgrdf_graphs g
+       WHERE g.iri = 'urn:ckp:validate-scratch:999801') x;
+    FOREACH one IN ARRAY ids LOOP
+      PERFORM pgrdf.drop_graph(one, true); reaped := reaped + 1;
+    END LOOP;
+    IF reaped = 0 THEN
+      RAISE EXCEPTION 's80 FAIL (d): nothing was actually dropped — selecting is not reaping';
+    END IF;
+    SELECT count(*) INTO n FROM pgrdf._pgrdf_graphs WHERE iri = 'urn:ckp:validate-scratch:999801';
+    IF n <> 0 THEN
+      RAISE EXCEPTION 's80 FAIL (d): the graph survived the drop — the reaper reports success it did not achieve';
+    END IF;
+    RAISE NOTICE 's80 (d) PASS — the dead graph is GONE, not merely selected';
+  END;
+
   PERFORM pgrdf.drop_graph(g_full, true);
 EXCEPTION WHEN OTHERS THEN
   BEGIN PERFORM pgrdf.drop_graph(pgrdf.add_graph('urn:ckp:validate-scratch:999801'), true); EXCEPTION WHEN OTHERS THEN NULL; END;
