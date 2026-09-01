@@ -538,6 +538,33 @@ BEGIN
   UPDATE ckp.refusal_registry SET plane = 'procedural'
    WHERE plane IS NULL AND sqlstate IN ('22004','42501','42601','55000');
 
+  -- 0.4.94 (D-1) — A STORED DIGEST MUST CARRY ITS METHOD.
+  -- `graph_digest` is populated with ckp._surface_digest(), the COPY plane:
+  -- sha256 over rendered lines WITH blank-node labels, so it moves on every
+  -- reload and no third party can recompute it. The column name now collides
+  -- with pgrdf.graph_digest(), which since v0.6.32 means RDFC-1.0 — where equal
+  -- IS proof. Measured on two doors: fd1 MATCHES and counts MATCH on every
+  -- pinned graph, so the modules did not drift, while the stored value disagrees
+  -- with the engine AND differs between doors for identical content. A reader
+  -- diffing pins across doors concludes the module changed, and is wrong every
+  -- time. Raised by pgRDF; reproduced here before accepting it.
+  --
+  -- Two columns, not four: `methods` names every plane in one place, and
+  -- `canonical_digest` adds the plane that is actually comparable between
+  -- parties. Existing readers are untouched.
+  ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS methods JSONB;
+  ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS canonical_digest TEXT;
+
+  -- Backfill the METHODS of what is already stored — and deliberately NOT the
+  -- canonical digest. We do not know what RDFC would have said at pin time, and
+  -- computing it from the graph NOW would assert a historical fact we never
+  -- measured. Absence is an answer; an invented pin is not.
+  UPDATE ckp.adoption_pins SET methods = jsonb_build_object(
+      'graph_digest',     'ckp-copy-sha256',
+      'structural_digest','pgrdf-fd1-sha256',
+      'canonical_digest', NULL)
+   WHERE methods IS NULL;
+
   ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS nodeshapes INTEGER;
   ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS properties INTEGER;
   ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS asserted INTEGER;
@@ -1130,8 +1157,20 @@ BEGIN
       PERFORM pgrdf.copy_graph(v_mod, v_comp);
       CONTINUE;
     END IF;
-    INSERT INTO ckp.adoption_pins(graph_iri, graph_digest, structural_digest, nodeshapes, properties, asserted)
+    -- 0.4.94 (D-1): every plane stored WITH its method, plus the canonical
+    -- plane, which is the only one two parties can compare. The copy plane is
+    -- retained because bench-local drift detection is a real job — it is simply
+    -- not the job its column name implied.
+    INSERT INTO ckp.adoption_pins(graph_iri, graph_digest, structural_digest,
+                                  canonical_digest, methods, nodeshapes, properties, asserted)
     VALUES (v_iri, ckp._surface_digest(v_mod), ckp._structural_digest(v_mod),
+      CASE WHEN to_regprocedure('pgrdf.graph_digest(bigint)') IS NOT NULL
+           THEN pgrdf.graph_digest(v_mod) ELSE NULL END,
+      jsonb_build_object(
+        'graph_digest',     'ckp-copy-sha256',
+        'structural_digest','pgrdf-fd1-sha256',
+        'canonical_digest', CASE WHEN to_regprocedure('pgrdf.graph_digest(bigint)') IS NOT NULL
+                                 THEN 'rdfc-1.0-sha256' ELSE NULL END),
       (SELECT count(DISTINCT q4.subject_id) FROM pgrdf._pgrdf_quads q4
          JOIN pgrdf._pgrdf_dictionary p4 ON p4.id = q4.predicate_id
          JOIN pgrdf._pgrdf_dictionary o4 ON o4.id = q4.object_id

@@ -314,19 +314,83 @@ END $$;
 
 -- ═══ D-1 · adoption_pins digests carry their method ════════════════════════
 DO $$
-DECLARE has_method bool; disagree int;
+DECLARE unlabelled int; planes_differ int; canon_ok int; canon_present int;
 BEGIN
-  SELECT EXISTS(SELECT 1 FROM information_schema.columns
-                 WHERE table_schema='ckp' AND table_name='adoption_pins' AND column_name LIKE '%method%') INTO has_method;
-  SELECT count(*) INTO disagree FROM ckp.adoption_pins p JOIN pgrdf._pgrdf_graphs g ON g.iri=p.graph_iri
-   WHERE to_regprocedure('pgrdf.graph_digest(bigint)') IS NOT NULL
-     AND p.graph_digest IS DISTINCT FROM pgrdf.graph_digest(g.graph_id);
-  IF has_method THEN
+  IF NOT EXISTS(SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='ckp' AND table_name='adoption_pins' AND column_name='methods') THEN
     PERFORM tdd('D-1','every stored digest carries its METHOD, so a mismatch means drift and never a method confusion',
-      'behaviour','RED','method column present — now prove a cross-door comparison cannot conclude drift from a method difference');
+      'behaviour','RED','adoption_pins has NO methods column — a reader cannot tell drift from a method difference');
+    RETURN;
+  END IF;
+
+  -- FIXTURE, learned from C-13 AND from this probe's own first run: do not let
+  -- ambient data decide the verdict. A fresh database has no pins, and the first
+  -- fixture picked graph_id 0 — which is EMPTY, so the copy plane and RDFC both
+  -- returned sha256("") and coincided. The control correctly refused to certify
+  -- a method label it could not show was load-bearing. Pin a graph WITH CONTENT.
+  IF to_regprocedure('pgrdf.graph_digest(bigint)') IS NOT NULL THEN
+    INSERT INTO ckp.adoption_pins(graph_iri, graph_digest, structural_digest,
+                                  canonical_digest, methods, nodeshapes, properties, asserted)
+    SELECT g.iri,
+           ckp._surface_digest(g.graph_id),
+           pgrdf.structural_digest(g.graph_id),
+           pgrdf.graph_digest(g.graph_id),
+           jsonb_build_object('graph_digest','ckp-copy-sha256',
+                              'structural_digest','pgrdf-fd1-sha256',
+                              'canonical_digest','rdfc-1.0-sha256'),
+           0, 0, 0
+      FROM pgrdf._pgrdf_graphs g
+     WHERE EXISTS (SELECT 1 FROM pgrdf._pgrdf_quads q WHERE q.graph_id = g.graph_id)
+       -- and NOT already pinned, or ON CONFLICT DO NOTHING silently skips and
+       -- leaves the canonical column unexercised. That happened on the first run
+       -- and the probe reported GREEN on a column nothing had ever written.
+       AND NOT EXISTS (SELECT 1 FROM ckp.adoption_pins ap WHERE ap.graph_iri = g.iri)
+     ORDER BY g.graph_id LIMIT 1
+    ON CONFLICT (graph_iri) DO NOTHING;
+  END IF;
+
+  -- (a) POSITIVE: no stored digest lacks a method
+  SELECT count(*) INTO unlabelled FROM ckp.adoption_pins
+   WHERE (graph_digest      IS NOT NULL AND methods->>'graph_digest'      IS NULL)
+      OR (structural_digest IS NOT NULL AND methods->>'structural_digest' IS NULL)
+      OR (canonical_digest  IS NOT NULL AND methods->>'canonical_digest'  IS NULL);
+
+  -- (b) THE CONTROL: the planes must be genuinely DIFFERENT computations. If the
+  -- copy plane and the canonical plane ever agreed, the method label would be
+  -- decoration and (a) would pass while proving nothing.
+  SELECT count(*) INTO planes_differ FROM ckp.adoption_pins p
+    JOIN pgrdf._pgrdf_graphs g ON g.iri = p.graph_iri
+   WHERE to_regprocedure('pgrdf.graph_digest(bigint)') IS NOT NULL
+     AND p.graph_digest IS DISTINCT FROM pgrdf.graph_digest(g.graph_id)
+     AND p.structural_digest = pgrdf.structural_digest(g.graph_id);
+
+  -- (c) where a canonical digest was recorded it must AGREE with the engine —
+  -- that is the whole point of adding a plane two parties can compare.
+  SELECT count(*) FILTER (WHERE p.canonical_digest IS NOT NULL),
+         count(*) FILTER (WHERE p.canonical_digest = pgrdf.graph_digest(g.graph_id))
+    INTO canon_present, canon_ok
+    FROM ckp.adoption_pins p JOIN pgrdf._pgrdf_graphs g ON g.iri = p.graph_iri
+   WHERE to_regprocedure('pgrdf.graph_digest(bigint)') IS NOT NULL;
+
+  IF unlabelled > 0 THEN
+    PERFORM tdd('D-1','every stored digest carries its METHOD, so a mismatch means drift and never a method confusion',
+      'behaviour','RED', unlabelled||' stored digest(s) carry no method');
+  ELSIF planes_differ = 0 THEN
+    PERFORM tdd('D-1','every stored digest carries its METHOD, so a mismatch means drift and never a method confusion',
+      'behaviour','RED','control did not hold: no pinned graph shows copy-plane disagreement with fd1 agreement, so nothing here proves the planes are distinct');
+  ELSIF canon_present = 0 THEN
+    -- REQUIRED, not optional. The claim includes "the comparable plane agrees
+    -- with the engine"; with no canonical pin anywhere that half is unexercised,
+    -- and an unexercised half cannot be GREEN. This exact hole granted a false
+    -- GREEN on the first run.
+    PERFORM tdd('D-1','every stored digest carries its METHOD, so a mismatch means drift and never a method confusion',
+      'behaviour','RED','no pin carries a canonical digest — the plane two parties can actually compare is unexercised, so the claim is half unproven');
+  ELSIF canon_ok <> canon_present THEN
+    PERFORM tdd('D-1','every stored digest carries its METHOD, so a mismatch means drift and never a method confusion',
+      'behaviour','RED', format('%s of %s canonical digest(s) disagree with the engine — the comparable plane is not comparable', canon_present-canon_ok, canon_present));
   ELSE
     PERFORM tdd('D-1','every stored digest carries its METHOD, so a mismatch means drift and never a method confusion',
-      'behaviour','RED', format('adoption_pins has NO method column and %s row(s) disagree with pgrdf.graph_digest() while fd1 MATCHES — so the graphs did not drift; the column named graph_digest holds a bench-local value. Two doors comparing pins conclude the module changed, and are wrong', disagree));
+      'behaviour','GREEN', format('every digest labelled; %s pin(s) prove the planes are distinct (copy disagrees, fd1 agrees); %s canonical pin(s) agree with the engine', planes_differ, canon_ok));
   END IF;
 EXCEPTION WHEN OTHERS THEN
   PERFORM tdd('D-1','every stored digest carries its METHOD','behaviour','BROKEN',SQLERRM);
