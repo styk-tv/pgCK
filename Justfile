@@ -255,3 +255,10 @@ browser-demo-run:
 
 webui:
     uvicorn web.app:app --host "${PGCK_BROWSER_HOST:-0.0.0.0}" --port "${PGCK_BROWSER_PORT:-8000}"
+
+# The three-state obligation ledger. A STATUS REPORT, not a gate: it exits 0
+# whatever it finds, so obligations can be watched as they flip. It becomes a
+# gate the day every row is GREEN. RED means "fails for the stated reason" and
+# is a specification; BROKEN means the TEST is wrong and is never acceptable.
+tdd-report:
+    cd compose && cat ../sql/test/tdd/tdd00_harness.sql ../sql/test/tdd/tdd01_obligations.sql ../sql/test/tdd/tdd99_report.sql | DOCKER_CONTEXT={{docker_context}} docker compose -p {{compose_project}} exec -T postgres psql -U pgck -d pgck -q
