@@ -73,6 +73,22 @@ ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS structural_digest TEXT;
 ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS nodeshapes INTEGER;
 ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS properties INTEGER;
 ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS asserted INTEGER;
+-- 0.4.101 — D-1 and E-1 JOIN THE INSTALL FLOOR.
+--
+-- Found by installing 0.4.100 into a VIRGIN database on pgck.localhost rather
+-- than by running the gate again. D-1's `methods`/`canonical_digest` and E-1's
+-- `surface_digest` were added inside ckp.bootstrap_kernel(), which is a manual
+-- CALL — CREATE EXTENSION never runs it. So a fresh install shipped WITHOUT the
+-- columns while every upgraded database had them, and both obligations reported
+-- GREEN because they were measured on a database that had been upgraded.
+--
+-- This is the 0.4.77 lesson recurring in the same file: "the adoption pin ledger
+-- joins the install floor... the baseline flatten never carried the top-level
+-- CREATE". Same trap, two releases of mine, caught only because someone asked
+-- for a virgin container instead of another gate run.
+ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS methods JSONB;
+ALTER TABLE ckp.adoption_pins ADD COLUMN IF NOT EXISTS canonical_digest TEXT;
+ALTER TABLE ckp.kernel_epoch  ADD COLUMN IF NOT EXISTS surface_digest TEXT;
 DROP TRIGGER IF EXISTS ckp_ledger_after_insert ON ckp.ledger;
 CREATE TRIGGER ckp_ledger_after_insert
   AFTER INSERT ON ckp.ledger
