@@ -102,11 +102,9 @@ fn refresh_ledger_kernels() {
     // callers. Guarded: an older extension without the function returns None and
     // the previous set is kept, exactly as an SPI miss already did.
     let csv = BackgroundWorker::transaction(|| {
-        Spi::get_one::<String>(
-            "SELECT array_to_string(ckp._ledger_kernels(), ',')",
-        )
-        .ok()
-        .flatten()
+        Spi::get_one::<String>("SELECT array_to_string(ckp._ledger_kernels(), ',')")
+            .ok()
+            .flatten()
     });
     if let Some(csv) = csv {
         crate::set_ledger_kernels(csv.split(',').map(str::to_string).collect());
