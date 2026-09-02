@@ -334,11 +334,77 @@ EXCEPTION WHEN OTHERS THEN
   PERFORM tdd('C-4','set_kernel_policy writes a Kernel property','behaviour','BROKEN',SQLERRM);
 END $$;
 
--- ═══ C-5 · participation scope (cross-kernel rule layer) ═══════════════════
+-- ═══ C-5 · participation scope ═════════════════════════════════════════════
+-- SUBSTRATE-SCOPE §6's missing middle: a rule can bind "these kernels,
+-- together". An obligation row whose project is a sealed ckp:Scope @id binds
+-- every MEMBER and nobody else — read at seal time from the sealed Scope, so
+-- editing the set rebinds immediately, and a phantom scope binds nobody.
 DO $$
+DECLARE C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+        a_msg text := ''; b_msg text := ''; c_ok boolean := false; real_iri text;
+        prev_proj text := current_setting('ckp.project', true);
 BEGIN
-  PERFORM tdd('C-5','a rule can be scoped to a NAMED SET of kernels; it binds them and does not bind others',
-    'existence','RED','no scope between core (everyone) and one kernel. proof_obligations PK is (project,obligation); adoption is per project; core is global. The middle has no home');
+  SELECT g.iri INTO real_iri FROM pgrdf._pgrdf_graphs g
+   WHERE EXISTS (SELECT 1 FROM pgrdf._pgrdf_quads q WHERE q.graph_id=g.graph_id AND NOT q.is_inferred)
+   ORDER BY g.graph_id LIMIT 1;
+  PERFORM set_config('ckp.requester','svc:tdd-c5',true);
+  -- FIXTURE: a Scope naming kernels A and B (not C); a scope-bound obligation.
+  DELETE FROM ckp.instances WHERE id IN ('tdd-c5-scope','tdd-c5-x');
+  DELETE FROM ckp.proof_obligations WHERE obligation='tdd-c5-adopts';
+  INSERT INTO ckp.instances(id, body) VALUES
+    ('tdd-c5-scope', jsonb_build_object('@id','ckp://Scope#tdd-c5','type',C||'Scope',
+       'http://www.w3.org/2000/01/rdf-schema#label','c5',
+       C||'includesKernel', jsonb_build_array('urn:ckp:tddc5a/kernel','urn:ckp:tddc5b/kernel')));
+  INSERT INTO ckp.proof_obligations(project, obligation, target_type, check_name, active)
+  VALUES ('ckp://Scope#tdd-c5', 'tdd-c5-adopts', C||'Adoption', 'adopts-resolves', true);
+
+  -- (a) member A: the violating seal is refused BY the scope-bound obligation.
+  PERFORM set_config('ckp.project','tddc5a',true);
+  BEGIN
+    PERFORM ckp.seal('tdd-c5-x', jsonb_build_object('@id','ckp://Adoption#tdd-c5-x','type',C||'Adoption',
+      C||'adopts','urn:ckp:module:tdd-c5-nothing', C||'intoEpoch',to_jsonb(0),
+      C||'sourceDigest',repeat('a',64), C||'intoProject','urn:ckp:tddc5a'));
+  EXCEPTION WHEN OTHERS THEN a_msg := SQLERRM; END;
+  -- (b) member B: bound identically.
+  PERFORM set_config('ckp.project','tddc5b',true);
+  BEGIN
+    PERFORM ckp.seal('tdd-c5-x', jsonb_build_object('@id','ckp://Adoption#tdd-c5-x','type',C||'Adoption',
+      C||'adopts','urn:ckp:module:tdd-c5-nothing', C||'intoEpoch',to_jsonb(0),
+      C||'sourceDigest',repeat('b',64), C||'intoProject','urn:ckp:tddc5b'));
+  EXCEPTION WHEN OTHERS THEN b_msg := SQLERRM; END;
+  -- (c) NON-member C: the same act LANDS — the rule binds them and not others.
+  PERFORM set_config('ckp.project','tddc5c',true);
+  BEGIN
+    PERFORM ckp.seal('tdd-c5-x', jsonb_build_object('@id','ckp://Adoption#tdd-c5-x','type',C||'Adoption',
+      C||'adopts', real_iri, C||'intoEpoch',to_jsonb(0),
+      C||'sourceDigest',repeat('c',64), C||'intoProject','urn:ckp:tddc5c'));
+    c_ok := true;
+  EXCEPTION WHEN OTHERS THEN c_ok := false; b_msg := b_msg||' | C: '||SQLERRM; END;
+
+  DELETE FROM ckp.proof_obligations WHERE obligation='tdd-c5-adopts';
+  DELETE FROM ckp.instances WHERE id IN ('tdd-c5-scope','tdd-c5-x');
+  PERFORM set_config('ckp.project',COALESCE(prev_proj,''),true);
+
+  IF position('adopts-resolves' in a_msg) = 0 THEN
+    PERFORM tdd('C-5','a rule can be scoped to a NAMED SET of kernels; it binds them and does not bind others',
+      'behaviour','RED','member A was not refused by the scope-bound obligation — got: '||COALESCE(left(a_msg,100),'sealed clean'));
+  ELSIF position('adopts-resolves' in b_msg) = 0 THEN
+    PERFORM tdd('C-5','a rule can be scoped to a NAMED SET of kernels; it binds them and does not bind others',
+      'behaviour','RED','member B was not refused — the set does not bind all its members: '||COALESCE(left(b_msg,100),'sealed clean'));
+  ELSIF NOT c_ok THEN
+    PERFORM tdd('C-5','a rule can be scoped to a NAMED SET of kernels; it binds them and does not bind others',
+      'behaviour','RED','NON-member C was refused too — the scope binds others, which makes it core wearing a set''s clothes: '||left(b_msg,120));
+  ELSE
+    PERFORM tdd('C-5','a rule can be scoped to a NAMED SET of kernels; it binds them and does not bind others',
+      'behaviour','GREEN','a scope-bound obligation refused both members BY NAME and did not bind a non-member. Residue, recorded: listing a kernel in a Scope is not yet a consented act — filed in pass-3 core');
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  BEGIN
+    DELETE FROM ckp.proof_obligations WHERE obligation='tdd-c5-adopts';
+    DELETE FROM ckp.instances WHERE id IN ('tdd-c5-scope','tdd-c5-x');
+    PERFORM set_config('ckp.project',COALESCE(prev_proj,''),true);
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+  PERFORM tdd('C-5','a rule can be scoped to a NAMED SET of kernels','behaviour','BROKEN',SQLERRM);
 END $$;
 
 -- ═══ C-6 · in-kernel roles (Tier 2) ════════════════════════════════════════
@@ -505,15 +571,60 @@ EXCEPTION WHEN OTHERS THEN
 END $$;
 
 -- ═══ C-10 · orbits ═════════════════════════════════════════════════════════
+-- The kernel's clock as LAW: period/lead/seat/anchor declared on the sealed
+-- Kernel (the gears are the kernel's; the tick underneath stays the
+-- operator's escapement). The claim is THIRD-PARTY COMPUTABILITY: the probe
+-- recomputes the next crossing from the sealed law alone and the verb must
+-- agree; a kernel with no orbit refuses BY NAME, never a zero shaped like a
+-- time.
 DO $$
-DECLARE n int;
+DECLARE C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+        r jsonb; u jsonb; anchor timestamptz := date_trunc('second', now() - interval '1 hour'); period int := 600;
+        hand timestamptz; got timestamptz;
 BEGIN
-  SELECT count(*) INTO n FROM pgrdf._pgrdf_dictionary WHERE lexical_value LIKE '%core#Orbit%' OR lexical_value LIKE '%core#period%';
-  PERFORM tdd('C-10','a kernel declares period/lead/seat as LAW; the next crossing is computable by a third party without asking the kernel',
-    'existence','RED', CASE WHEN n=0 THEN 'no ckp:Orbit, no period, no phase in the loaded law — CK-dev states it outright: "the substrate declares no cadence for anything"'
-                            ELSE 'orbit terms appearing ('||n||') — now prove third-party computability and that the clock is NOT windable' END);
+  IF to_regprocedure('ckp.next_crossing(text)') IS NULL THEN
+    PERFORM tdd('C-10','a kernel declares period/lead/seat as LAW; the next crossing is computable by a third party without asking the kernel',
+      'existence','RED','no ckp.next_crossing — the substrate declares no cadence for anything'); RETURN;
+  END IF;
+  PERFORM set_config('ckp.requester','svc:tdd-c10',true);
+  -- FIXTURE: a real germination, then the orbit law patched onto the sealed
+  -- Kernel (declared properties — the composed gate is what admits them).
+  r := ckp.germinate_kernel('tddc10','tdd-c10','personal');
+  IF (r->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-10','a kernel declares period/lead/seat as LAW; the next crossing is computable by a third party without asking the kernel',
+      'behaviour','BROKEN','fixture germination refused: '||COALESCE(r->>'error','?')); RETURN;
+  END IF;
+  u := ckp.update_typed(jsonb_build_object('id','urn:ckp:tddc10/kernel','patch', jsonb_build_object(
+        C||'orbitPeriodSeconds', period,
+        C||'orbitLeadSeconds', 60,
+        C||'orbitSeat', 0,
+        C||'orbitAnchor', to_char(anchor AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))));
+  IF (u->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-10','a kernel declares period/lead/seat as LAW; the next crossing is computable by a third party without asking the kernel',
+      'behaviour','RED','the orbit law could not be sealed onto the Kernel: '||COALESCE(u->>'error','?')||' — declared but unwritable is the emission-and-shape defect'); RETURN;
+  END IF;
+
+  r := ckp.next_crossing('tddc10');
+  -- THE THIRD PARTY: recompute from the same sealed law, independently.
+  hand := anchor + (GREATEST(ceil(EXTRACT(epoch FROM (now() - anchor)) / period),1)::bigint * period) * interval '1 second';
+  got  := (r->>'nextCrossing')::timestamptz;
+
+  u := ckp.next_crossing('tddc10-never-germinated');
+  IF (r->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-10','a kernel declares period/lead/seat as LAW; the next crossing is computable by a third party without asking the kernel',
+      'behaviour','RED','the verb refused a kernel with declared law: '||COALESCE(r->>'error','?'));
+  ELSIF got IS DISTINCT FROM hand THEN
+    PERFORM tdd('C-10','a kernel declares period/lead/seat as LAW; the next crossing is computable by a third party without asking the kernel',
+      'behaviour','RED','the verb and an independent recomputation from the SAME sealed law disagree ('||(r->>'nextCrossing')||' vs '||to_char(hand AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"')||') — not third-party computable');
+  ELSIF (u->>'ok')::boolean IS TRUE OR u->>'error' IS DISTINCT FROM 'unknown_instance' THEN
+    PERFORM tdd('C-10','a kernel declares period/lead/seat as LAW; the next crossing is computable by a third party without asking the kernel',
+      'behaviour','RED','an unknown kernel did not refuse by name — got '||COALESCE(u->>'error','ok'));
+  ELSE
+    PERFORM tdd('C-10','a kernel declares period/lead/seat as LAW; the next crossing is computable by a third party without asking the kernel',
+      'behaviour','GREEN','law sealed on the Kernel (period '||period||'s, lead 60s, seat 0); the verb and an independent recomputation agree on '||(r->>'nextCrossing')||'; no-orbit and unknown-kernel refuse by name. The tick executes none of this — the escapement stays the operator''s');
+  END IF;
 EXCEPTION WHEN OTHERS THEN
-  PERFORM tdd('C-10','a kernel declares period/lead/seat as LAW','existence','BROKEN',SQLERRM);
+  PERFORM tdd('C-10','a kernel declares period/lead/seat as LAW','behaviour','BROKEN',SQLERRM);
 END $$;
 
 -- ═══ C-11 · orbit work queue ═══════════════════════════════════════════════

@@ -40,7 +40,7 @@ BEGIN
     IF d <> '9a791c6c3d6d07cbeeefb33b677e66e2b643f22d844689501458c5765272282d' THEN
       RAISE EXCEPTION 's65 FAIL (1): v3.11 core (27 shapes) digest %… does not reproduce the founding pin 9a791c6c… — the algorithm drifted from the fleet''s', left(d,16);
     END IF;
-  ELSIF n = 30 THEN  -- v3.12 line — TWO roots now share this arithmetic (0.4.88)
+  ELSIF n IN (30, 31) THEN  -- v3.12 line — TWO roots now share this arithmetic (0.4.88)
     -- The shape COUNT stopped discriminating on 2026-08-28: wave-3.12-pass-1 added
     -- ckp:transportSegment as a PROPERTY shape on the existing ckp:KernelShape, so
     -- the NodeShape count stayed 30 while the structural digest moved. A single pin
@@ -63,12 +63,17 @@ BEGIN
       -- v3.12 wave-3.12-pass-2 (0.4.104, C-13) — pass-1 + ckp:germinatedAtEpoch
       -- declared; KernelShape's ckp:epoch clause replaced by germinatedAtEpoch
       -- (no minCount). The stale-stamp rename (file a6cc1ce8…)
-      '5761473d1a45f7b0c5240240e427b9c1d332de6229fd9b83acf8d976b2d81a7e'
+      '5761473d1a45f7b0c5240240e427b9c1d332de6229fd9b83acf8d976b2d81a7e',
+      -- v3.12 wave-3.12-pass-3 (0.4.108, C-5/C-10) — pass-2 + ckp:Scope with
+      -- ScopeShape (31st NodeShape), includesKernel, the orbit law
+      -- (period/lead/seat/anchor + tauImplicitMillis), and 'draft' joining the
+      -- proposalState closed set — the tick may DRAFT only (file 2e90a651…)
+      '2a7b14d81aab303708097eee8acef56c9ebd0f59506539f559c01eafec82c034'
     ) THEN
-      RAISE EXCEPTION E's65 FAIL (1): v3.12 core (30 shapes) digest %… is not a KNOWN v3.12 pin.\n  known: 6e38f7bb… (FINAL, published) · 47d24485… (wave-3.12-pass-1, +transportSegment) · 5761473d… (wave-3.12-pass-2, epoch→germinatedAtEpoch)\nEither the algorithm drifted, or the root''s bytes moved without adding its pin here. A new root revision adds its digest in the SAME commit as the bytes and the sidecar — never by widening this list to make a run pass.', left(d,16);
+      RAISE EXCEPTION E's65 FAIL (1): v3.12 core (30/31 shapes) digest %… is not a KNOWN v3.12 pin.\n  known: 6e38f7bb… (FINAL, published) · 47d24485… (wave-3.12-pass-1, +transportSegment) · 5761473d… (wave-3.12-pass-2, epoch→germinatedAtEpoch)\nEither the algorithm drifted, or the root''s bytes moved without adding its pin here. A new root revision adds its digest in the SAME commit as the bytes and the sidecar — never by widening this list to make a run pass.', left(d,16);
     END IF;
   ELSE
-    RAISE EXCEPTION 's65 FAIL (1): loaded core carries % NodeShapes — neither founding arithmetic (27 v3.11 / 30 v3.12); the root is not one this gate knows', n;
+    RAISE EXCEPTION 's65 FAIL (1): loaded core carries % NodeShapes — no founding arithmetic (27 v3.11 / 30 v3.12 / 31 v3.12 pass-3); the root is not one this gate knows', n;
   END IF;
 END $$;
 
@@ -167,9 +172,10 @@ BEGIN
   IF NOT ( (ns = 27 AND dp = 80)      -- v3.11
         OR (ns = 30 AND dp = 94)      -- v3.12 FINAL              (structural 6e38f7bb…)
         OR (ns = 30 AND dp = 95)      -- v3.12 wave-3.12-pass-1   (structural 47d24485…)
-        OR (ns = 30 AND dp = 96) )    -- v3.12 wave-3.12-pass-2   (structural 5761473d…, +germinatedAtEpoch declaration; the retired ckp:epoch declaration stays for Epoch)
+        OR (ns = 30 AND dp = 96)      -- v3.12 wave-3.12-pass-2   (structural 5761473d…, +germinatedAtEpoch declaration; the retired ckp:epoch declaration stays for Epoch)
+        OR (ns = 31 AND dp = 102) )   -- v3.12 wave-3.12-pass-3   (structural 2a7b14d8…, +ScopeShape; +includesKernel, orbit×4, tauImplicitMillis)
   THEN
-    RAISE EXCEPTION 's65 FAIL (5): core arithmetic %/% matches no known founding pair (27/80 v3.11 · 30/94 v3.12 FINAL · 30/95 v3.12 pass-1 · 30/96 v3.12 pass-2) — methods: asserted sh:NodeShape typing · asserted owl/rdf property declarations', ns, dp; END IF;
+    RAISE EXCEPTION 's65 FAIL (5): core arithmetic %/% matches no known founding pair (27/80 v3.11 · 30/94 v3.12 FINAL · 30/95 pass-1 · 30/96 pass-2 · 31/102 pass-3) — methods: asserted sh:NodeShape typing · asserted owl/rdf property declarations', ns, dp; END IF;
   IF NOT (g ? 'propertyShapes') THEN
     RAISE EXCEPTION 's65 FAIL (5): propertyShapes instrument missing — a count without its method is not a number'; END IF;
 END $$;

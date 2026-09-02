@@ -104,6 +104,40 @@ ckp:epoch a owl:DatatypeProperty ;
   rdfs:range xsd:integer ;
   rdfs:comment "The ordinal of a version of meaning, carried by an Epoch as the position it NAMES — a position is immutable, so on an Epoch this value is honest forever. A Kernel no longer bears it (v0.4.104, C-13): a sealed fact carrying a mutable counter was read as live on every board that drew it — every sun rendered e0 — and a sealed instance must carry no value a reader can mistake for a live one. The kernel's CURRENT position lives in the epoch ledger and its sealed Epochs; the germination moment is ckp:germinatedAtEpoch, whose name says it does not track." .
 
+# ── wave-3.12-pass-3 (0.4.108): the missing middle, and the clock as law ──
+# SUBSTRATE-SCOPE §6 named the gap: a rule can live in core (everyone,
+# forever) or in one kernel (only them) — there was no way to say "these
+# kernels, together". The first measured need was the two-kernel dialogue,
+# whose synchrony an operator carried by hand.
+ckp:Scope a rdfs:Class ;
+  rdfs:label "Scope — a named set of kernels that turn together" ;
+  rdfs:comment "The participation layer between core and one kernel. A rule bound to a Scope binds its member kernels and does not bind others. Membership is declared by includesKernel and read at enforcement time, so editing the sealed Scope rebinds immediately. OPEN RESIDUE, recorded not hidden: being listed is not yet consented — the governance of who may seal a Scope naming another's kernel is a filed design gap, not a solved one." .
+
+ckp:includesKernel a owl:ObjectProperty ;
+  rdfs:domain ckp:Scope ; rdfs:range ckp:Kernel ;
+  rdfs:comment "A member kernel, by its sealed Kernel @id (urn:ckp:<segment>/kernel). A kernel not listed is not bound — the whole point of a NAMED set." .
+
+# The orbit: each kernel a sun, NOW fixed at north. The kernel governs its own
+# period and lead — THE GEARS; the tick underneath is the operator's — THE
+# ESCAPEMENT (SUBSTRATE-SCOPE §4.1). None carries minCount: a kernel with no
+# declared orbit has no orbit, which is a real answer; a wrong VALUE is what
+# must be refusable.
+ckp:orbitPeriodSeconds a owl:DatatypeProperty ;
+  rdfs:range xsd:integer ;
+  rdfs:comment "Law: the duration of one full rotation, seconds. Positive — a zero or negative period is not a slow clock, it is no clock." .
+ckp:orbitLeadSeconds a owl:DatatypeProperty ;
+  rdfs:range xsd:integer ;
+  rdfs:comment "Law: the prepare window before NOW — at 300 degrees submissions validate, then this many seconds remain to prepare before the crossing seals. Non-negative, and less than the period or the window never closes." .
+ckp:orbitSeat a owl:DatatypeProperty ;
+  rdfs:range xsd:integer ;
+  rdfs:comment "Law: the kernel's approved position on its ring — server-driven, changed by another vote as required. Non-negative ordinal; rendering derives geometry from it, never the reverse." .
+ckp:orbitAnchor a owl:DatatypeProperty ;
+  rdfs:range xsd:dateTime ;
+  rdfs:comment "Law: the instant crossings are counted from. next = anchor + ceil((now - anchor)/period) * period — computable by a THIRD PARTY from sealed law alone, without asking the kernel. The clock is not windable by the tick: the anchor moves only by governed apply." .
+ckp:tauImplicitMillis a owl:DatatypeProperty ;
+  rdfs:range xsd:integer ;
+  rdfs:comment "Law: the dwell time constant for implicit signals — w = weightImplicit * (1 - e^(-dwell/tau)). Declared because the ALGORITHM's formula named a tau nobody had declared, and an undeclared constant in the arithmetic is exactly the unexamined value the seven-constants block exists to prevent. Substrate default 60000." .
+
 ckp:germinatedAtEpoch a owl:DatatypeProperty ;
   rdfs:range xsd:integer ;
   rdfs:comment "The epoch at which germination sealed this kernel. IMMUTABLE BY MEANING and named so a reader cannot mistake it for the live position — that is the entire reason it exists (C-13): its predecessor, ckp:epoch on the sealed Kernel, was a mutable counter frozen at seal time. Not minCount 1: every Kernel sealed before the rename lacks it, and absence means 'germinated before this term existed', which is a real answer." .
@@ -722,7 +756,21 @@ ckp:KernelShape a sh:NodeShape ;
   # with both values individually legal. The only cross-property invariant of
   # the seven, and the only one no per-property constraint can catch.
   sh:property [ sh:path ckp:thresholdDiscard ; sh:maxCount 1 ; sh:datatype xsd:decimal ;
-                sh:lessThan ckp:thresholdPromote ] .
+                sh:lessThan ckp:thresholdPromote ] ;
+
+  # ── THE ORBIT (wave-3.12-pass-3, C-10) — the kernel's own clock as LAW ────
+  # Same doctrine as the seven constants: no minCount (absence = no orbit, a
+  # real answer), every bound declared here so the ground refuses a wrong
+  # value and no projector ever carries a copy.
+  sh:property [ sh:path ckp:orbitPeriodSeconds ; sh:maxCount 1 ; sh:datatype xsd:integer ;
+                sh:minExclusive 0 ] ;
+  sh:property [ sh:path ckp:orbitLeadSeconds   ; sh:maxCount 1 ; sh:datatype xsd:integer ;
+                sh:minInclusive 0 ; sh:lessThan ckp:orbitPeriodSeconds ] ;
+  sh:property [ sh:path ckp:orbitSeat          ; sh:maxCount 1 ; sh:datatype xsd:integer ;
+                sh:minInclusive 0 ] ;
+  sh:property [ sh:path ckp:orbitAnchor        ; sh:maxCount 1 ; sh:datatype xsd:dateTime ] ;
+  sh:property [ sh:path ckp:tauImplicitMillis  ; sh:maxCount 1 ; sh:datatype xsd:integer ;
+                sh:minExclusive 0 ] .
 
 ckp:OrganShape a sh:NodeShape ;
   sh:targetClass ckp:Organ ;
@@ -848,8 +896,14 @@ ckp:ProofShape a sh:NodeShape ;
 ckp:ProposalShape a sh:NodeShape ;
   sh:targetClass ckp:Proposal ;
   sh:property [ sh:path ckp:about          ; sh:minCount 1 ; sh:nodeKind sh:IRI ] ;
+  # wave-3.12-pass-3: "draft" joins the closed set — the state a Score
+  # crossing thresholdPromote produces. The tick may DRAFT only (the
+  # constitutional limit): a draft carries no votes, meets no quorum, and a
+  # party PROMOTES it to pending by their own sealed act. A closed set that
+  # cannot name the tick's one permitted act would force the tick to mint
+  # pending proposals nobody asked for — the opposite of the limit.
   sh:property [ sh:path ckp:proposalState  ; sh:minCount 1 ; sh:maxCount 1 ;
-                sh:in ( "pending" "applied" "rejected" ) ] ;
+                sh:in ( "draft" "pending" "applied" "rejected" ) ] ;
   sh:property [ sh:path ckp:proposalOp     ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
   sh:property [ sh:path ckp:requiresQuorum ; sh:maxCount 1 ; sh:datatype xsd:integer ] .
 
@@ -893,6 +947,12 @@ ckp:RoleShape a sh:NodeShape ;
   sh:targetClass ckp:Role ;
   sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
   sh:property [ sh:path ckp:grant  ; sh:minCount 1 ; sh:nodeKind sh:IRI ] .
+
+ckp:ScopeShape a sh:NodeShape ;
+  sh:targetClass ckp:Scope ;
+  sh:property [ sh:path rdfs:label       ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path ckp:includesKernel ; sh:minCount 1 ; sh:nodeKind sh:IRI ;
+                sh:message "a Scope with no members binds nobody and means nothing — one kernel minimum, or do not seal it." ] .
 
 ckp:GrantShape a sh:NodeShape ;
   sh:targetClass ckp:Grant ;

@@ -327,6 +327,9 @@ INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane) VALUES
   -- and sealed as a ckp:Affordance on the bench so it is declared as well as
   -- dispatchable, rather than growing the gap B1 measured (pgCK#56).
   ('pgck','surface.check',       'input.kernel.pgck.action.surface.check',       'instance'),
+  -- 0.4.108 (C-10): the orbit read. Routed here, declared by the boot
+  -- backfill (C-14) — both halves in the same act, or the gap regrows.
+  ('pgck','orbit.next',          'input.kernel.pgck.action.orbit.next',          'instance'),
   ('pgck','integrity.check',     'input.kernel.pgck.action.integrity.check',     'instance'),
   ('pgck','authority.mine',      'input.kernel.pgck.action.authority.mine',      'instance'),
   -- 0.4.51 — the checker surface. Seeded here so they are DISPATCHABLE, and
@@ -4766,6 +4769,52 @@ COMMENT ON FUNCTION ckp._dispatch_safe(text, jsonb) IS
   'terminates the worker — taking the auth-callout responder with it and closing '
   'the door for every client (measured 2026-08-11, pgck-bridge exit code 1).';
 
+CREATE OR REPLACE FUNCTION ckp.next_crossing(p_kernel text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_body jsonb; v_period int; v_lead int; v_anchor timestamptz; v_next timestamptz; v_n bigint;
+BEGIN
+  -- 0.4.108 (C-10) — THE NEXT CROSSING, COMPUTABLE BY A THIRD PARTY. Reads
+  -- ONLY the sealed Kernel's declared law (period/lead/anchor — the gears the
+  -- kernel governs; the tick underneath stays the operator's escapement) and
+  -- the shared clock. next = anchor + ceil((now - anchor)/period) * period.
+  -- Anyone can recompute it from instance.get plus arithmetic — that is the
+  -- claim, and the probe does exactly that. A kernel with no declared orbit
+  -- has no crossing: a real answer, refused by name, never a zero that looks
+  -- like a time.
+  SELECT i.body INTO v_body FROM ckp.instances i
+   WHERE i.body->>'@id' = 'urn:ckp:'||p_kernel||'/kernel' AND i.body->>'type' = C||'Kernel'
+   ORDER BY i.ts_created DESC LIMIT 1;
+  IF v_body IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'unknown_instance', 'sqlstate', '42704',
+      'hint', format('no sealed ckp:Kernel at urn:ckp:%s/kernel — germinate it first', p_kernel));
+  END IF;
+  v_period := (v_body->>(C||'orbitPeriodSeconds'))::int;
+  v_lead   := COALESCE((v_body->>(C||'orbitLeadSeconds'))::int, 0);
+  v_anchor := (v_body->>(C||'orbitAnchor'))::timestamptz;
+  IF v_period IS NULL OR v_anchor IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'refused', true, 'sqlstate', '42704',
+      'error', 'no_orbit_declared', 'kernel', p_kernel,
+      'hint', 'this kernel declares no orbitPeriodSeconds/orbitAnchor — no orbit is a real answer, not a zero. Declare the law through propose→vote→apply (set_kernel_policy).');
+  END IF;
+  v_n := GREATEST(ceil(EXTRACT(epoch FROM (now() - v_anchor)) / v_period), 1)::bigint;
+  v_next := v_anchor + (v_n * v_period) * interval '1 second';
+  RETURN jsonb_build_object('ok', true, 'kernel', p_kernel,
+    'periodSeconds', v_period, 'leadSeconds', v_lead,
+    'anchor', to_char(v_anchor AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    'rotation', v_n,
+    'nextCrossing', to_char(v_next AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    'prepareOpensAt', to_char((v_next - v_lead * interval '1 second') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    'method', 'anchor + ceil((now-anchor)/period)*period — re-derivable from the sealed law alone');
+END;
+$function$
+;
+
 CREATE OR REPLACE FUNCTION ckp._role_permits(p_project text, p_participant text, p_action text)
  RETURNS boolean
  LANGUAGE plpgsql
@@ -5148,6 +5197,8 @@ BEGIN
   -- B4: the surface in force, checked against the digests its epoch sealed.
   -- A READ, never a gate — a false positive here would take the substrate down,
   -- and legitimate drift exists. Findings name what was measured; empty = pass.
+  WHEN 'orbit.next' THEN
+    res := ckp.next_crossing(COALESCE(p_payload->>'kernel', v_proj));
   WHEN 'surface.check' THEN
     res := ckp.surface_check(v_proj);
 
@@ -5610,7 +5661,8 @@ INSERT INTO ckp.refusal_registry (code, sqlstate, teaches) VALUES
   -- committed by the same hands that then built the gate. The gate works.
   ('not_owner',                  '42501', 'the acting identity is not the declared owner of the target project; quorum answers whether enough parties AGREED, ownership answers whether THIS party may enact — ask the owner'),
   ('ownership_not_patchable',    '42501', 'ckp:ownedBy is server-derived at germination and no transfer verb exists; both the germinate guard and the apply gate read it, so a patchable owner would void both'),
-  ('role_required',              '42501', 'this project seals Memberships (Tier-2 roles) and the acting participant holds no Role whose Grant carries the needed permAction; roles NARROW — a project with no Memberships imposes nothing, and the owner is never narrowed by roles they set')
+  ('role_required',              '42501', 'this project seals Memberships (Tier-2 roles) and the acting participant holds no Role whose Grant carries the needed permAction; roles NARROW — a project with no Memberships imposes nothing, and the owner is never narrowed by roles they set'),
+  ('no_orbit_declared',          '42704', 'the kernel declares no orbitPeriodSeconds/orbitAnchor — no orbit is a real answer, not a zero; declare the law through propose→vote→apply')
 ON CONFLICT (code) DO UPDATE SET sqlstate = EXCLUDED.sqlstate, teaches = EXCLUDED.teaches;
 
 -- 0.4.90 (Q-3) — THE PLANE, ASSIGNED BY RULE, NEVER BY HAND.
@@ -6917,8 +6969,25 @@ DECLARE
   v_fail text;
   v_sat  jsonb := '[]'::jsonb;
 BEGIN
-  FOR r IN SELECT obligation, check_name FROM ckp.proof_obligations
-           WHERE active AND project = p_project AND target_type = p_type
+  -- 0.4.108 (C-5) — A RULE SCOPED TO A NAMED SET. An obligation row whose
+  -- project is a sealed ckp:Scope @id binds every MEMBER kernel of that scope
+  -- and does not bind others. Membership is read HERE, at seal time, from the
+  -- sealed Scope — so editing the scope rebinds immediately, and a scope that
+  -- does not resolve binds nobody (a phantom set is not a set). This is
+  -- SUBSTRATE-SCOPE §6's missing middle, delivered where validation already
+  -- lives rather than as a second enforcement plane.
+  FOR r IN SELECT obligation, check_name FROM ckp.proof_obligations po
+           WHERE active AND target_type = p_type
+             AND (project = p_project
+                  OR (project LIKE 'ckp://Scope#%' AND EXISTS (
+                        SELECT 1 FROM ckp.instances sc,
+                               LATERAL jsonb_array_elements_text(
+                                 CASE WHEN jsonb_typeof(sc.body->'https://conceptkernel.org/ontology/v3.11/core#includesKernel') = 'array'
+                                      THEN sc.body->'https://conceptkernel.org/ontology/v3.11/core#includesKernel'
+                                      ELSE jsonb_build_array(sc.body->'https://conceptkernel.org/ontology/v3.11/core#includesKernel') END) mk(iri)
+                         WHERE sc.body->>'@id' = po.project
+                           AND sc.body->>'type' = 'https://conceptkernel.org/ontology/v3.11/core#Scope'
+                           AND mk.iri = 'urn:ckp:'||p_project||'/kernel')))
            ORDER BY obligation
   LOOP
     CASE r.check_name
