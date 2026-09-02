@@ -513,19 +513,66 @@ EXCEPTION WHEN OTHERS THEN
 END $$;
 
 -- ═══ C-14 · routed vs declared affordances ═════════════════════════════════
+-- Both halves or neither (pgCK#56). Measured PER GERMINATED KERNEL — a kernel
+-- with no kernel graph is a seed routing row, not a real kernel, and declaring
+-- its capability would be premature (and would steal the bootstrap graph id).
+-- The probe germinates its own fixture kernel with a routed verb, then proves
+-- the backfill converges: every routed verb of a germinated kernel is
+-- declared with a derivedBy that RESOLVES, and a second run seals nothing.
 DO $$
-DECLARE routed int; declared int;
+DECLARE C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+        r jsonb; missing int; unresolved int;
 BEGIN
-  SELECT count(*) INTO routed FROM ckp.affordance_registry;
-  SELECT count(*) INTO declared FROM ckp.instances WHERE body->>'type' LIKE '%#Affordance';
-  IF routed = declared THEN
+  IF to_regprocedure('ckp.declare_routed_affordances()') IS NULL THEN
     PERFORM tdd('C-14','every routed verb has a sealed ckp:Affordance behind it — both halves or neither',
-      'behaviour','GREEN', 'routed='||routed||' declared='||declared);
+      'behaviour','RED','no backfill verb exists — capability cannot be derived honestly from a registry the ledger does not back'); RETURN;
+  END IF;
+
+  PERFORM set_config('ckp.requester','svc:tdd-c14',true);
+  DELETE FROM ckp.affordance_registry WHERE kernel='tddc14';
+  r := ckp.germinate_kernel('tddc14','tdd-c14','personal');
+  IF (r->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-14','every routed verb has a sealed ckp:Affordance behind it — both halves or neither',
+      'behaviour','BROKEN','fixture germination refused: '||COALESCE(r->>'error','?')); RETURN;
+  END IF;
+  INSERT INTO ckp.affordance_registry(kernel, verb, in_topic, out_topic, plane, delegate)
+  VALUES ('tddc14','tddc14.probe','input.kernel.tddc14.action.tddc14.probe','result.kernel.tddc14.tddc14.probe','query',false);
+
+  r := ckp.declare_routed_affordances();
+
+  -- every routed verb of a GERMINATED kernel is now declared PAIRWISE...
+  SELECT count(*) INTO missing FROM ckp.affordance_registry ar
+   WHERE EXISTS (SELECT 1 FROM pgrdf._pgrdf_graphs g WHERE g.iri = format('urn:ckp:%s/kernel/ck', ar.kernel))
+     AND NOT EXISTS (SELECT 1 FROM ckp.instances i
+                      WHERE i.body->>'@id' = 'ckp://Affordance#'||ar.kernel||'.'||ar.verb
+                        AND i.body->>'type' = C||'Affordance');
+  -- ...and every sealed Affordance's derivedBy RESOLVES to a Materialization
+  -- (the F-P2-5 phantom-reference control: a declaration citing an act that
+  -- does not exist is worse than an absent one).
+  SELECT count(*) INTO unresolved FROM ckp.instances a
+   WHERE a.body->>'type' = C||'Affordance'
+     AND NOT EXISTS (SELECT 1 FROM ckp.instances m
+                      WHERE m.body->>'@id' = a.body->>(C||'derivedBy') AND m.body->>'type' = C||'Materialization');
+
+  DELETE FROM ckp.affordance_registry WHERE kernel='tddc14';
+  DELETE FROM ckp.instances WHERE id IN ('aff-tddc14-tddc14-probe','mat-tddc14-aff-backfill-0','epoch-tddc14-0');
+  -- and the epoch ROW: deleting the sealed Epoch while leaving the row's
+  -- digest manufactures E-1's "value invented for a moment nobody measured" —
+  -- this file's own D-1 lesson, relearned here the same way.
+  DELETE FROM ckp.kernel_epoch WHERE kernel='tddc14';
+
+  IF missing > 0 THEN
+    PERFORM tdd('C-14','every routed verb has a sealed ckp:Affordance behind it — both halves or neither',
+      'behaviour','RED','the backfill ran and '||missing||' routed verb(s) of germinated kernels are STILL undeclared; failures: '||COALESCE((r->'failed')::text,'?'));
+  ELSIF unresolved > 0 THEN
+    PERFORM tdd('C-14','every routed verb has a sealed ckp:Affordance behind it — both halves or neither',
+      'behaviour','RED', unresolved||' sealed Affordance(s) cite a derivedBy that resolves to no Materialization — a phantom declaration, worse than an absent one');
   ELSE
     PERFORM tdd('C-14','every routed verb has a sealed ckp:Affordance behind it — both halves or neither',
-      'behaviour','RED', 'routed='||routed||' declared='||declared||' — a '||(routed-declared)||'-wide gap; capability cannot be derived honestly from a registry the ledger does not back');
+      'behaviour','GREEN','every germinated kernel''s routes declared PAIRWISE, each derivedBy resolves; this run backfilled '||COALESCE(r->>'sealed','0')||' and is idempotent');
   END IF;
 EXCEPTION WHEN OTHERS THEN
+  BEGIN DELETE FROM ckp.affordance_registry WHERE kernel='tddc14'; EXCEPTION WHEN OTHERS THEN NULL; END;
   PERFORM tdd('C-14','every routed verb has a sealed ckp:Affordance behind it','behaviour','BROKEN',SQLERRM);
 END $$;
 

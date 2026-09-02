@@ -435,6 +435,163 @@ END;
 $procedure$
 ;
 
+CREATE OR REPLACE FUNCTION ckp.declare_routed_affordances()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  C        text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  r        record;
+  k        record;
+  v_prev   text := current_setting('ckp.project', true);
+  v_prev_req text := current_setting('ckp.requester', true);
+  v_sealed int := 0;
+  v_failed jsonb := '[]'::jsonb;
+  v_plane  text;
+  v_epoch  int;
+  v_comp   int;
+  v_surfd  text;
+  v_srcd   text;
+  v_gid    bigint;
+  v_eiri   text;
+  v_miri   text;
+BEGIN
+  -- 0.4.105 (C-14) — BOTH HALVES OR NEITHER, RETROACTIVELY. A routed verb is a
+  -- registry row; a declared capability is a sealed ckp:Affordance. The gap
+  -- between them was 37 wide when first measured (pgCK#56) and grew with every
+  -- version, because only the GOVERNED registration path (0.4.85) sealed its
+  -- declaration. This backfills every routed verb that lacks its seal,
+  -- idempotently — called at the end of ckp.boot() (pre-boot the gate is
+  -- fail-closed, so CREATE EXTENSION cannot do it) and by the 0.4.105
+  -- migration. Any future migration seeding new registry rows calls it again
+  -- in the same act, or regrows the gap this closed.
+  --
+  -- THE LAW DECIDED THE DESIGN, against the first draft. AffordanceShape
+  -- demands derivedBy minCount 1 — no underived affordance — and
+  -- MaterializationShape demands producesEpoch minCount 1. The first draft
+  -- sealed built-ins with NO derivedBy ("installed by the artifact") and the
+  -- gate REFUSED every row, naming the clause: the law already rules that a
+  -- declaration must cite the act that derived it. So the backfill performs
+  -- the full lawful act, per kernel:
+  --   * the kernel's standing position is sealed as a real ckp:Epoch where
+  --     none exists — epoch unchanged (this is not an advance), surfaceDigest
+  --     computed from the live composed surface, and the SAME variable is
+  --     written to ckp.kernel_epoch (the E-1 shared-variable rule: the table
+  --     cannot drift from the seal);
+  --   * one ckp:Materialization records the backfill — fromEpoch = toEpoch =
+  --     the standing epoch, real digests, producesEpoch citing the Epoch just
+  --     sealed or already standing. No producesAffordance list: an Affordance
+  --     that later failed its own seal would leave the list citing a phantom,
+  --     which is the sin adopts-resolves refuses. The edge runs
+  --     Affordance -> derivedBy -> Materialization only.
+  --   * each Affordance seals with the registry row's truth: the sealed plane
+  --     is the ROOT's closed vocabulary (routing 'query' maps to 'derived',
+  --     the 0.4.85 rule; a routing value outside both vocabularies seals no
+  --     plane rather than inventing one).
+  -- A per-row failure is WARNED and returned, never swallowed (the 0.4.92
+  -- reaper lesson), and never breaks boot.
+  --
+  -- Attribution: the seal refuses unattributed writes (0.4.64), and the
+  -- sanctioned operator path is a declared SERVICE identity. A session that
+  -- already carries a verified requester keeps it; only an unattributed
+  -- session gets the constant service name — never a fresh uuid.
+  IF COALESCE(NULLIF(trim(v_prev_req), ''), '') = '' THEN
+    PERFORM set_config('ckp.requester', 'svc:affordance-backfill', true);
+  END IF;
+
+  -- ONLY GERMINATED KERNELS. A kernel with no kernel graph is not real here —
+  -- it is a seed registry row (the substrate's own built-in verbs are
+  -- attributed to 'pgck', which is germinated ONLY on a pgck bench, not on a
+  -- demo/consumer rig). Declaring the capability of a kernel that does not
+  -- exist would be premature, AND sealing its Epoch would compose its surface,
+  -- which creates urn:ckp:<k>/kernel/ck at an AUTO id and steals the explicit
+  -- kernel_graph_id slot the bootstrap load_kernel binds next (P0-A0) —
+  -- measured: boot sealed for ungerminated pgck, then load_kernel(demo)
+  -- refused 'graph_id 2 is bound to a different IRI'. Restricting to kernels
+  -- WITH a kernel graph closes both issues: no premature declaration, and the
+  -- only graphs composed are ones that already exist.
+  FOR k IN SELECT DISTINCT ar.kernel FROM ckp.affordance_registry ar
+            WHERE EXISTS (SELECT 1 FROM pgrdf._pgrdf_graphs g
+                           WHERE g.iri = format('urn:ckp:%s/kernel/ck', ar.kernel))
+              AND NOT EXISTS (SELECT 1 FROM ckp.instances i
+                               WHERE i.body->>'@id' = 'ckp://Affordance#'||ar.kernel||'.'||ar.verb
+                                 AND i.body->>'type' = C||'Affordance')
+            ORDER BY 1
+  LOOP
+    BEGIN
+      PERFORM set_config('ckp.project', k.kernel, true);
+      INSERT INTO ckp.kernel_epoch(kernel, epoch) VALUES (k.kernel, 0) ON CONFLICT (kernel) DO NOTHING;
+      SELECT epoch INTO v_epoch FROM ckp.kernel_epoch WHERE kernel = k.kernel;
+      SELECT g.graph_id INTO v_gid FROM pgrdf._pgrdf_graphs g
+       WHERE g.iri = format('urn:ckp:%s/kernel/ck', k.kernel);
+      v_comp  := ckp._composed_shapes(k.kernel);
+      v_srcd  := ckp._surface_digest(v_gid);
+      v_surfd := ckp._surface_digest(v_comp);
+      v_eiri  := format('urn:ckp:%s/epoch/%s', k.kernel, v_epoch);
+      v_miri  := format('urn:ckp:%s/materialization/aff-backfill-%s', k.kernel, v_epoch);
+      IF NOT EXISTS (SELECT 1 FROM ckp.instances i
+                      WHERE i.body->>'@id' = v_eiri AND i.body->>'type' = C||'Epoch') THEN
+        PERFORM ckp.seal('epoch-'||k.kernel||'-'||v_epoch, jsonb_build_object(
+          'type', C||'Epoch', '@id', v_eiri,
+          C||'epoch', to_jsonb(v_epoch),
+          C||'surfaceDigest', v_surfd,
+          C||'structuralDigest', ckp._structural_digest(v_comp)));
+        UPDATE ckp.kernel_epoch SET surface_digest = v_surfd WHERE kernel = k.kernel;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM ckp.instances i
+                      WHERE i.body->>'@id' = v_miri AND i.body->>'type' = C||'Materialization') THEN
+        PERFORM ckp.seal('mat-'||k.kernel||'-aff-backfill-'||v_epoch, jsonb_build_object(
+          'type', C||'Materialization', '@id', v_miri,
+          C||'materializes', format('urn:ckp:%s/kernel/ck', k.kernel),
+          C||'fromEpoch', to_jsonb(v_epoch),
+          C||'toEpoch',   to_jsonb(v_epoch),
+          C||'sourceDigest', v_srcd,
+          C||'surfaceDigest', v_surfd,
+          C||'producesEpoch', v_eiri));
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      v_failed := v_failed || jsonb_build_object('kernel', k.kernel, 'error', SQLERRM);
+      RAISE WARNING 'ckp.declare_routed_affordances: could not seal the %s backfill materialization — %', k.kernel, SQLERRM;
+      CONTINUE;
+    END;
+
+    FOR r IN SELECT * FROM ckp.affordance_registry ar
+              WHERE ar.kernel = k.kernel
+                AND NOT EXISTS (SELECT 1 FROM ckp.instances i
+                                 WHERE i.body->>'@id' = 'ckp://Affordance#'||ar.kernel||'.'||ar.verb
+                                   AND i.body->>'type' = C||'Affordance')
+              ORDER BY ar.verb
+    LOOP
+      BEGIN
+        v_plane := CASE WHEN r.plane = 'query' THEN 'derived'
+                        WHEN r.plane IN ('instance','governance','derived') THEN r.plane
+                        ELSE NULL END;
+        PERFORM ckp.seal('aff-'||r.kernel||'-'||replace(r.verb,'.','-'),
+          jsonb_build_object(
+            'type', C||'Affordance',
+            '@id',  'ckp://Affordance#'||r.kernel||'.'||r.verb,
+            C||'inTopic', r.in_topic,
+            C||'delegate', r.delegate,
+            C||'derivedBy', v_miri)
+          || CASE WHEN r.out_topic IS NOT NULL THEN jsonb_build_object(C||'outTopic', r.out_topic) ELSE '{}'::jsonb END
+          || CASE WHEN v_plane IS NOT NULL THEN jsonb_build_object(C||'plane', v_plane) ELSE '{}'::jsonb END
+          || CASE WHEN r.in_shape IS NOT NULL THEN jsonb_build_object(C||'inShape', r.in_shape) ELSE '{}'::jsonb END);
+        v_sealed := v_sealed + 1;
+      EXCEPTION WHEN OTHERS THEN
+        v_failed := v_failed || jsonb_build_object('kernel', r.kernel, 'verb', r.verb, 'error', SQLERRM);
+        RAISE WARNING 'ckp.declare_routed_affordances: could not seal %.% — %', r.kernel, r.verb, SQLERRM;
+      END;
+    END LOOP;
+  END LOOP;
+  PERFORM set_config('ckp.project', COALESCE(v_prev, ''), true);
+  PERFORM set_config('ckp.requester', COALESCE(v_prev_req, ''), true);
+  RETURN jsonb_build_object('ok', v_failed = '[]'::jsonb, 'sealed', v_sealed, 'failed', v_failed);
+END;
+$function$
+;
+
 CREATE OR REPLACE PROCEDURE ckp.boot(IN p_core_ttl_path text DEFAULT '/ontology/v3.12/core.ttl'::text)
  LANGUAGE plpgsql
 AS $procedure$
@@ -475,6 +632,11 @@ BEGIN
   -- against pgRDF; this covers every graph boot itself creates.)
   GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
   GRANT ALL ON ALL SEQUENCES IN SCHEMA pgrdf TO ck_substrate;
+  -- 0.4.105 (C-14): the law is loaded, so every routed verb can now declare
+  -- itself. Runs here rather than at CREATE EXTENSION because the seal's gate
+  -- needs the core shapes this procedure just placed — pre-boot the gate is
+  -- fail-closed by design (s34 measures it).
+  PERFORM ckp.declare_routed_affordances();
   RAISE NOTICE 'ckp.boot: core graph % loaded from %, % NodeShapes', v_core, p_core_ttl_path, v_shapes;
 END;
 $procedure$
