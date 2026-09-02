@@ -102,7 +102,11 @@ the clause named instead of relying on every client to spell it correctly.""" .
 
 ckp:epoch a owl:DatatypeProperty ;
   rdfs:range xsd:integer ;
-  rdfs:comment "The ordinal of a version of meaning. Carried by a kernel as its current position, and by an Epoch as the position it names. No rdfs:domain: both bear it. Advanced only by a sealed Materialization." .
+  rdfs:comment "The ordinal of a version of meaning, carried by an Epoch as the position it NAMES — a position is immutable, so on an Epoch this value is honest forever. A Kernel no longer bears it (v0.4.104, C-13): a sealed fact carrying a mutable counter was read as live on every board that drew it — every sun rendered e0 — and a sealed instance must carry no value a reader can mistake for a live one. The kernel's CURRENT position lives in the epoch ledger and its sealed Epochs; the germination moment is ckp:germinatedAtEpoch, whose name says it does not track." .
+
+ckp:germinatedAtEpoch a owl:DatatypeProperty ;
+  rdfs:range xsd:integer ;
+  rdfs:comment "The epoch at which germination sealed this kernel. IMMUTABLE BY MEANING and named so a reader cannot mistake it for the live position — that is the entire reason it exists (C-13): its predecessor, ckp:epoch on the sealed Kernel, was a mutable counter frozen at seal time. Not minCount 1: every Kernel sealed before the rename lacks it, and absence means 'germinated before this term existed', which is a real answer." .
 
 # declaresType carries no rdfs:domain deliberately: a Kernel and a
 # Module both declare types, and §12's admitted-set query binds it to a
@@ -662,7 +666,12 @@ ckp:KernelShape a sh:NodeShape ;
   sh:property [ sh:path ckp:transportSegment ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
                 sh:pattern "^[a-z0-9]+(-[a-z0-9]+)*$" ;
                 sh:message "kernel id is ONE lowercase transport segment, dashes optional — 'pgck', never 'pgCK'. NATS subject tokens have no case folding, so an uppercase twin is a separate kernel nothing can seal into." ] ;
-  sh:property [ sh:path ckp:epoch     ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ] ;
+  # v0.4.104 (C-13): ckp:epoch is GONE from this shape. minCount 1 here forced
+  # germination to stamp a counter that went stale on the first apply, and every
+  # reader of the sealed Kernel drew it as live. The germination moment survives
+  # as germinatedAtEpoch — immutable by meaning, honest by name. No minCount:
+  # requiring it would refuse every Kernel sealed before the rename.
+  sh:property [ sh:path ckp:germinatedAtEpoch ; sh:maxCount 1 ; sh:datatype xsd:integer ] ;
   sh:property [ sh:path ckp:hasOrgan  ; sh:minCount 3 ; sh:maxCount 3 ; sh:nodeKind sh:IRI ] ;
   sh:property [ sh:path ckp:declaresType       ; sh:nodeKind sh:IRI ] ;
   sh:property [ sh:path ckp:declaresPredicate  ; sh:nodeKind sh:IRI ] ;

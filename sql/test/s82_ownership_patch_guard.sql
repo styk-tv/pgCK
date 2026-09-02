@@ -108,9 +108,9 @@ BEGIN
        C||'epoch',0, C||'inProject','urn:ckp:project:s82plain', C||'transportSegment','s82plain',
        C||'hasOrgan', jsonb_build_array('urn:ckp:s82plain/organ/ck','urn:ckp:s82plain/organ/tool','urn:ckp:s82plain/organ/data')));
   r := ckp.update_typed(jsonb_build_object('id','urn:ckp:s82plain/kernel',
-        'patch', jsonb_build_object(C||'epoch',1)));
-  SELECT body->>(C||'epoch') INTO v_after FROM ckp.instances WHERE id='s82-plain';
-  IF (r->>'ok')::boolean IS NOT TRUE OR v_after <> '1' THEN
+        'patch', jsonb_build_object('http://www.w3.org/2000/01/rdf-schema#label','s82-atid')));
+  SELECT body->>'http://www.w3.org/2000/01/rdf-schema#label' INTO v_after FROM ckp.instances WHERE id='s82-plain';
+  IF (r->>'ok')::boolean IS NOT TRUE OR v_after <> 's82-atid' THEN
     RAISE EXCEPTION 's82 (f) FAIL — the @id form does not patch (%): read and write disagree about the id vocabulary', COALESCE(r->>'error','?');
   END IF;
   RAISE NOTICE 's82 (f) PASS — the stamped @id form patches identically to the bare form';

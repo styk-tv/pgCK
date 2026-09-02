@@ -448,45 +448,67 @@ EXCEPTION WHEN OTHERS THEN
 END $$;
 
 -- ═══ C-13 · ckp:epoch on the sealed Kernel ═════════════════════════════════
+-- The claim: a sealed instance carries no value a reader can mistake for a
+-- live one — either it tracks, or its NAME says it does not. The defect was
+-- the LAW itself: KernelShape demanded ckp:epoch minCount 1, so germination
+-- HAD to stamp a counter that went stale on the first apply, and every board
+-- drew it as live (every sun rendered e0). The cure (0.4.104) renames the
+-- germination moment to germinatedAtEpoch — immutable by meaning, honest by
+-- name — and the emitter follows the LOADED law, because stamping against the
+-- other law is a MinCount refusal (the 0.4.88 G-1 class). Kernels sealed
+-- before the rename still carry the old stamp: fenced history, reported and
+-- never judged, exactly like the anon-applied proposals.
 DO $$
-DECLARE stale int; ambient int;
+DECLARE C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+        law_forces int; declared int; r jsonb; body jsonb; legacy int;
 BEGIN
-  -- FIXTURE, not ambient data. This probe first came back GREEN on a rig whose
-  -- kernels had never advanced past epoch 0 — the claim was not false, it was
-  -- UNEXERCISED, and an unexercised behaviour probe reporting GREEN is the same
-  -- defect as an existence probe reporting GREEN. So construct the condition:
-  -- a sealed Kernel carrying ckp:epoch, and a live epoch that has moved past it.
-  INSERT INTO ckp.instances(id, body) VALUES
-    ('tdd-c13-kernel', jsonb_build_object(
-       '@id','urn:ckp:tddc13/kernel',
-       'type','https://conceptkernel.org/ontology/v3.11/core#Kernel',
-       'https://conceptkernel.org/ontology/v3.11/core#epoch', 0))
-    ON CONFLICT (id) DO NOTHING;
-  INSERT INTO ckp.kernel_epoch(kernel, epoch) VALUES ('tddc13', 4)
-    ON CONFLICT (kernel) DO UPDATE SET epoch = 4;
+  -- law control, measured off the LOADED core graph, not the tracked file
+  SELECT count(*) INTO law_forces FROM pgrdf.sparql(
+    'PREFIX sh: <http://www.w3.org/ns/shacl#>
+     PREFIX ckp: <'||C||'>
+     SELECT ?b WHERE { GRAPH <urn:ckp:core> {
+       ckp:KernelShape sh:property ?b . ?b sh:path ckp:epoch } }');
+  SELECT count(*) INTO declared FROM pgrdf.sparql(
+    'PREFIX ckp: <'||C||'>
+     SELECT ?o WHERE { GRAPH <urn:ckp:core> { ckp:germinatedAtEpoch ?p ?o } }');
 
-  SELECT count(*) INTO stale FROM ckp.instances i
-   WHERE i.body->>'type'='https://conceptkernel.org/ontology/v3.11/core#Kernel'
-     AND i.body ? 'https://conceptkernel.org/ontology/v3.11/core#epoch'
-     AND COALESCE((i.body->>'https://conceptkernel.org/ontology/v3.11/core#epoch')::int,-1)
-         IS DISTINCT FROM COALESCE((SELECT e.epoch FROM ckp.kernel_epoch e
-                                     WHERE e.kernel = substring(i.body->>'@id' from '^urn:ckp:([a-z0-9-]+)/kernel$')), 0);
-  ambient := stale;
-  DELETE FROM ckp.instances   WHERE id = 'tdd-c13-kernel';
-  DELETE FROM ckp.kernel_epoch WHERE kernel = 'tddc13';
-
-  IF stale > 0 THEN
+  IF law_forces > 0 THEN
     PERFORM tdd('C-13','a sealed instance carries no value a reader can mistake for a live one — either it tracks, or its NAME says it does not',
-      'behaviour','RED', stale||' sealed Kernel(s) carry ckp:epoch disagreeing with the live epoch (fixture included) — a sealed fact holding a mutable value; this is why every sun renders e0 on the board. ⚠ CURE CORRECTED: ckp:epoch is minCount 1 on KernelShape, so REMOVING it from the germination template would violate the law. The options are a governed rename to germinatedAtEpoch (an ontology change, proposable now that set_kernel_policy exists as precedent) or fixing every reader — not a deletion');
+      'behaviour','RED','the LOADED KernelShape still carries a ckp:epoch path — the law forces the stamp, and the emitter rightly follows the loaded law'); RETURN;
+  END IF;
+  IF declared = 0 THEN
+    PERFORM tdd('C-13','a sealed instance carries no value a reader can mistake for a live one — either it tracks, or its NAME says it does not',
+      'behaviour','RED','the law dropped the stamp but germinatedAtEpoch is undeclared — the name that says it does not track is missing'); RETURN;
+  END IF;
+
+  -- FIXTURE: a REAL germination, through the governed emitter — the only
+  -- honest way to measure what germination stamps. Re-runs re-germinate the
+  -- same owner's kernel, which the guard permits.
+  PERFORM set_config('ckp.requester','svc:tdd-c13',true);
+  r := ckp.germinate_kernel('tddc13','tdd-c13','personal');
+  IF (r->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-13','a sealed instance carries no value a reader can mistake for a live one — either it tracks, or its NAME says it does not',
+      'behaviour','BROKEN','fixture germination refused: '||COALESCE(r->>'error','?')); RETURN;
+  END IF;
+  SELECT i.body INTO body FROM ckp.instances i
+   WHERE i.body->>'@id' = 'urn:ckp:tddc13/kernel'
+     AND i.body->>'type' = C||'Kernel'
+   ORDER BY i.ts_created DESC LIMIT 1;
+  SELECT count(*) INTO legacy FROM ckp.instances i
+   WHERE i.body->>'type' = C||'Kernel' AND i.body ? (C||'epoch')
+     AND i.body->>'@id' IS DISTINCT FROM 'urn:ckp:tddc13/kernel';
+
+  IF body ? (C||'epoch') THEN
+    PERFORM tdd('C-13','a sealed instance carries no value a reader can mistake for a live one — either it tracks, or its NAME says it does not',
+      'behaviour','RED','the law no longer forces it and germination STILL stamps mutable ckp:epoch on the sealed Kernel');
+  ELSIF NOT (body ? (C||'germinatedAtEpoch')) THEN
+    PERFORM tdd('C-13','a sealed instance carries no value a reader can mistake for a live one — either it tracks, or its NAME says it does not',
+      'behaviour','RED','neither stamp — the germination moment is unrecorded, which trades a misleading value for a missing fact');
   ELSE
-    -- The fixture GUARANTEES one stale row while the defect exists, so reaching
-    -- here means germination no longer stamps a mutable ckp:epoch. That is the
-    -- only way this claim can honestly be GREEN.
     PERFORM tdd('C-13','a sealed instance carries no value a reader can mistake for a live one — either it tracks, or its NAME says it does not',
-      'behaviour','GREEN','even the constructed stale fixture did not register — no sealed Kernel carries a mutable epoch');
+      'behaviour','GREEN','germination stamps germinatedAtEpoch (immutable by name); the loaded law no longer forces ckp:epoch; '||legacy||' pre-rename Kernel(s) carry the retired stamp as fenced history');
   END IF;
 EXCEPTION WHEN OTHERS THEN
-  BEGIN DELETE FROM ckp.instances WHERE id='tdd-c13-kernel'; DELETE FROM ckp.kernel_epoch WHERE kernel='tddc13'; EXCEPTION WHEN OTHERS THEN NULL; END;
   PERFORM tdd('C-13','a sealed instance carries no value a reader can mistake for a live one — either it tracks, or its NAME says it does not','behaviour','BROKEN',SQLERRM);
 END $$;
 
@@ -913,8 +935,11 @@ BEGIN
         C||'epoch',0, C||'inProject','urn:ckp:project:tdde5', C||'transportSegment','tdde5',
         C||'hasOrgan', jsonb_build_array('urn:ckp:tdde5/organ/ck','urn:ckp:tdde5/organ/tool','urn:ckp:tdde5/organ/data')))
     ON CONFLICT (id) DO NOTHING;
-  r_bare := ckp.update_typed(jsonb_build_object('id','tdd-e5-k','patch',jsonb_build_object(C||'epoch',0)));
-  r_atid := ckp.update_typed(jsonb_build_object('id','urn:ckp:tdde5/kernel','patch',jsonb_build_object(C||'epoch',0)));
+  -- patch rdfs:label — declared on KernelShape in every law revision. The first
+  -- draft patched ckp:epoch, which 0.4.104 (C-13) retires from the shape: a
+  -- probe keyed on a retiring term measures the rename, not the id vocabulary.
+  r_bare := ckp.update_typed(jsonb_build_object('id','tdd-e5-k','patch',jsonb_build_object('http://www.w3.org/2000/01/rdf-schema#label','e5-bare')));
+  r_atid := ckp.update_typed(jsonb_build_object('id','urn:ckp:tdde5/kernel','patch',jsonb_build_object('http://www.w3.org/2000/01/rdf-schema#label','e5-atid')));
   DELETE FROM ckp.instances WHERE id='tdd-e5-k';
   IF (r_bare->>'ok')::boolean IS NOT TRUE THEN
     PERFORM tdd('E-5','every verb accepts every id form the substrate emits — read and write alike',

@@ -4571,6 +4571,37 @@ COMMENT ON FUNCTION ckp._dispatch_safe(text, jsonb) IS
   'terminates the worker — taking the auth-callout responder with it and closing '
   'the door for every client (measured 2026-08-11, pgck-bridge exit code 1).';
 
+CREATE OR REPLACE FUNCTION ckp._law_forces_kernel_epoch()
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE n int;
+BEGIN
+  -- 0.4.104 (C-13) — THE EMITTER FOLLOWS THE LOADED LAW. The revised core
+  -- retires ckp:epoch from KernelShape in favour of germinatedAtEpoch, but an
+  -- UPGRADED door keeps its previously loaded core until that graph is
+  -- re-placed — and an emitter that stopped stamping ckp:epoch under the old
+  -- law would refuse germination on MinCount, which is exactly the 0.4.88 G-1
+  -- defect (the shape and its emitter must move in one act, and here the act
+  -- is completed by whichever law is actually loaded). One rule, two callers:
+  -- germination emits by this answer, and the C-13 probe measures the same
+  -- boundary from outside.
+  SELECT count(*) INTO n FROM pgrdf.sparql(
+    'PREFIX sh: <http://www.w3.org/ns/shacl#>
+     PREFIX ckp: <https://conceptkernel.org/ontology/v3.11/core#>
+     SELECT ?b WHERE { GRAPH <urn:ckp:core> {
+       ckp:KernelShape sh:property ?b . ?b sh:path ckp:epoch } }');
+  RETURN n > 0;
+EXCEPTION WHEN OTHERS THEN
+  RETURN true;   -- an unreadable law is treated as the OLD law: emitting the
+                 -- legacy stamp under the new law is an extra property the open
+                 -- shape tolerates; omitting it under the old law is a refusal.
+END;
+$function$
+;
+
 CREATE OR REPLACE FUNCTION ckp.germinate_kernel(p_project text, p_label text DEFAULT NULL,
                                                 -- 0.4.81: DEFAULT NULL, not
                                                 -- 'personal'. NULL is the ABSENCE
@@ -4585,6 +4616,7 @@ CREATE OR REPLACE FUNCTION ckp.germinate_kernel(p_project text, p_label text DEF
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
+  v_law_epoch boolean;
   v_sub   text := NULLIF(current_setting('ckp.requester', true), '');
   v_owner text;
   v_label text := COALESCE(p_label, p_project);
@@ -4658,13 +4690,18 @@ BEGIN
                       p_project, COALESCE(v_prior, 'an owner this ledger cannot name')));
   END IF;
 
-  -- 1. the structure — Kernel + three organs, counted dependencies, gated authorities
+  -- 1. the structure — Kernel + three organs, counted dependencies, gated authorities.
+  -- 0.4.104 (C-13): the epoch stamp follows the LOADED law — ckp:epoch where the
+  -- loaded KernelShape still forces it (an upgraded door whose core predates the
+  -- rename), germinatedAtEpoch where the revised law is loaded. Emitting against
+  -- the other door's law is a MinCount refusal — the 0.4.88 G-1 defect class.
+  v_law_epoch := ckp._law_forces_kernel_epoch();
   v_g := pgrdf.add_graph(v_iri);
   PERFORM pgrdf.clear_graph(v_g);
   v_ttl := format($ttl$
 @prefix ckp:  <https://conceptkernel.org/ontology/v3.11/core#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-<%1$s/kernel> a ckp:Kernel ; rdfs:label %2$L ; ckp:epoch 0 ;
+<%1$s/kernel> a ckp:Kernel ; rdfs:label %2$L ; %4$s 0 ;
   ckp:inProject <%3$s> ;
   ckp:hasOrgan <%1$s/organ/ck> , <%1$s/organ/tool> , <%1$s/organ/data> .
 <%1$s/organ/ck>   a ckp:Organ , ckp:CK   ; ckp:organKind "ck"   ; ckp:writeAuthority "governed-only" .
@@ -4672,7 +4709,8 @@ BEGIN
   ckp:dependsOn <%1$s/organ/ck> .
 <%1$s/organ/data> a ckp:Organ , ckp:DATA ; ckp:organKind "data" ; ckp:writeAuthority "readwrite" ;
   ckp:dependsOn <%1$s/organ/ck> , <%1$s/organ/tool> .
-$ttl$, v_base, v_label, v_pid);
+$ttl$, v_base, v_label, v_pid,
+    CASE WHEN v_law_epoch THEN 'ckp:epoch' ELSE 'ckp:germinatedAtEpoch' END);
   PERFORM pgrdf.parse_turtle(v_ttl, v_g, v_iri || '#');
   PERFORM pgrdf.materialize(v_g);
   GRANT ALL ON ALL TABLES    IN SCHEMA pgrdf TO ck_substrate;
@@ -4699,7 +4737,8 @@ $ttl$, v_base, v_label, v_pid);
     'type', 'https://conceptkernel.org/ontology/v3.11/core#Kernel',
     '@id',  v_kid,
     'http://www.w3.org/2000/01/rdf-schema#label', v_label,
-    'https://conceptkernel.org/ontology/v3.11/core#epoch', 0,
+    CASE WHEN v_law_epoch THEN 'https://conceptkernel.org/ontology/v3.11/core#epoch'
+         ELSE 'https://conceptkernel.org/ontology/v3.11/core#germinatedAtEpoch' END, 0,
     'https://conceptkernel.org/ontology/v3.11/core#inProject', v_pid,
     -- 0.4.88 (G-1): the wire form is the SUBSTRATE's, derived from the id the caller
     -- already named and this function already validated at the canonical guard above.
