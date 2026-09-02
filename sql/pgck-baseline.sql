@@ -3087,6 +3087,46 @@ BEGIN
   IF v_prop->>(C||'proposalState') <> 'pending' THEN
     RETURN jsonb_build_object('ok', false, 'error', 'proposal_not_pending', 'state', v_prop->>(C||'proposalState'));
   END IF;
+  -- 0.4.102 (C-2, SECOND HALF) — THE GATE MUST SIT ON THE PATH THE LIVE VERB
+  -- TAKES. The 0.4.99 ownership check above parses the CALLER'S `about` for a
+  -- urn:ckp:<proj>/ prefix — but a real apply's `about` is the Proposal @id
+  -- (ckp://Proposal#…), which that regex never matches, so the live path was
+  -- ungated: any party could apply a quorum-met proposal against an owned
+  -- project by addressing the proposal, which is the only way anyone ever
+  -- addresses one. Found by the TDD E-1 exercise — the FIRST full
+  -- propose→vote→apply the ledger ever ran — not by C-2's probe, which asked
+  -- the question in the one spelling the gate could hear. A check that cannot
+  -- fail the thing it claims is not a check.
+  --
+  -- Re-derive the target project from the SEALED proposal's own `about` —
+  -- written at propose from server state, never the applier's word — and ask
+  -- the same question the pre-lookup gate asks, with the same rule: a declared
+  -- owner binds, an undeclared one imposes nothing.
+  DECLARE
+    v_tgt_proj  text := substring(v_prop->>(C||'about') from '^urn:ckp:([a-z0-9-]+)/');
+    v_tgt_owner text;
+    v_applier   text := NULLIF(trim(COALESCE(current_setting('ckp.requester', true), '')), '');
+  BEGIN
+    IF v_tgt_proj IS NOT NULL THEN
+      SELECT i.body->>(C||'ownedBy') INTO v_tgt_owner FROM ckp.instances i
+       WHERE i.body->>'@id' = 'urn:ckp:project:'||v_tgt_proj
+         AND i.body->>'type' = C||'Project'
+       ORDER BY i.ts_created DESC LIMIT 1;
+      IF v_tgt_owner IS NOT NULL THEN
+        v_applier := CASE WHEN v_applier IS NULL THEN NULL
+                          ELSE 'urn:ckp:participant:'||ckp._slug(v_applier) END;
+        IF v_applier IS DISTINCT FROM v_tgt_owner THEN
+          RETURN jsonb_build_object('ok', false, 'refused', true, 'sqlstate', '42501',
+            'error', 'not_owner',
+            'about', v_prop->>(C||'about'), 'owner', v_tgt_owner,
+            'hint', format('this proposal targets %s, which is owned by %s. Quorum answers '
+                           'whether enough parties AGREED; it does not answer whether THIS '
+                           'party may enact the change. Ask the owner to apply.',
+                           v_prop->>(C||'about'), v_tgt_owner));
+        END IF;
+      END IF;
+    END IF;
+  END;
   -- 0.4.98 (C-1 / L-8): the floor binds at APPLY as well, so a proposal sealed
   -- at quorum 1 before the project declared `shared` — or before this shipped —
   -- cannot still be self-applied. GREATEST, never replacement: a proposal that
@@ -7343,9 +7383,19 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'error', 'id_required'); END IF;
   IF v_patch IS NULL OR jsonb_typeof(v_patch) <> 'object' THEN
     RETURN jsonb_build_object('ok', false, 'error', 'invalid_patch', 'hint', 'instance.update generic form needs a {patch:{…}} object'); END IF;
+  -- 0.4.102 (E-5) — ONE ID VOCABULARY, READ AND WRITE ALIKE. instance.get has
+  -- resolved bare, ckp://Type#id and urn:ckp:instance:<id> forms since 0.4.90;
+  -- this verb kept looking up ckp.instances.id directly, so a caller could READ
+  -- a fact by the @id a create reply stamped and could not PATCH it with the
+  -- same string — and the refusal said unknown_instance, which points at
+  -- existence when the defect was spelling. Same resolver, second caller: a
+  -- verb that re-implements the resolver forks the id vocabulary, exactly as a
+  -- probe that re-implements the gate tests the probe.
+  v_id := ckp._resolve_id(v_id);
   SELECT body INTO v_cur FROM ckp.instances WHERE id = v_id;
   IF v_cur IS NULL THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'unknown_instance', 'id', v_id); END IF;
+    RETURN jsonb_build_object('ok', false, 'error', 'unknown_instance', 'id', v_id,
+      'hint', 'accepted id forms: the bare instance id, the stamped @id (ckp://Type#id), and urn:ckp:instance:<id>'); END IF;
 
   v_type := v_cur->>'type';
   v_ns   := CASE WHEN v_type ~ '[/#]' THEN regexp_replace(v_type, '[^/#]*$', '') ELSE '' END;
@@ -7398,6 +7448,45 @@ BEGIN
       END IF;
     ELSE
       v_keyiri := v_ns || v_key;                            -- unshaped: namespace under the type's NS
+    END IF;
+    -- 0.4.102 (E-4) — "THE TRIPLE A CLIENT CANNOT WRITE", MADE TRUE. The
+    -- germinate guard (0.4.89) says who may re-germinate by reading ownedBy;
+    -- the apply gate (0.4.99) says who may enact by reading ownedBy. But
+    -- ownedBy itself was an ordinary declared property, so ANY party could
+    -- rewrite it through this verb and void both gates in one step — measured
+    -- on a virgin 0.4.101: a non-owner moved a Project from tdd-e4-owner to
+    -- tdd-e4-attacker with a plain instance.update. Ownership is server-derived
+    -- at germination and there is NO transfer verb; that absence is a filed
+    -- finding, not a licence to patch. The guard sits AFTER key resolution so
+    -- every spelling — bare, CURIE, full IRI — meets it (the E-3 lesson).
+    IF v_keyiri = 'https://conceptkernel.org/ontology/v3.11/core#ownedBy' THEN
+      RETURN jsonb_build_object('ok', false, 'refused', true, 'sqlstate', '42501',
+        'error', 'ownership_not_patchable', 'key', v_keyiri, 'id', v_id,
+        'hint', 'ckp:ownedBy is server-derived at germination and no transfer verb exists — '
+                'both the germinate guard and the apply gate read this triple, so a patchable '
+                'owner voids both. Ownership moves only when a governed transfer verb ships.');
+    END IF;
+    -- projectKind is the quorum floor (C-1/L-8): a stranger flipping a shared
+    -- project to personal drops the floor to 1 and self-approves — the same
+    -- takeover as rewriting the owner, one link over. Bind only what declared
+    -- itself, exactly as apply's gate does: a declared owner gates the field,
+    -- an unowned instance imposes nothing.
+    IF v_keyiri = 'https://conceptkernel.org/ontology/v3.11/core#projectKind' THEN
+      DECLARE
+        v_owner text := v_cur->>'https://conceptkernel.org/ontology/v3.11/core#ownedBy';
+        v_me    text := NULLIF(trim(COALESCE(current_setting('ckp.requester', true), '')), '');
+      BEGIN
+        IF v_owner IS NOT NULL THEN
+          v_me := CASE WHEN v_me IS NULL THEN NULL
+                       ELSE 'urn:ckp:participant:'||ckp._slug(v_me) END;
+          IF v_me IS DISTINCT FROM v_owner THEN
+            RETURN jsonb_build_object('ok', false, 'refused', true, 'sqlstate', '42501',
+              'error', 'not_owner', 'key', v_keyiri, 'owner', v_owner,
+              'hint', 'ckp:projectKind is the quorum floor: only the declared owner may move '
+                      'it. An unowned instance imposes nothing — the 0.4.81 rule.');
+          END IF;
+        END IF;
+      END;
     END IF;
     v_cur := v_cur || jsonb_build_object(v_keyiri, v_val);  -- `->` value: preserves number/bool/object
   END LOOP;

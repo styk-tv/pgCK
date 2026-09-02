@@ -120,6 +120,7 @@ END $$;
 DO $$
 DECLARE C text := 'https://conceptkernel.org/ontology/v3.11/core#'; d text;
         proj text; r_stranger jsonb; r_owner jsonb; r_undeclared jsonb; pid text;
+        r_p jsonb; r_v jsonb; r_es jsonb; r_eo jsonb;
 BEGIN
   SELECT pg_get_functiondef(p.oid) INTO d FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
    WHERE n.nspname='ckp' AND p.proname='apply' LIMIT 1;
@@ -141,6 +142,24 @@ BEGIN
   -- must not be what stops them.)
   PERFORM set_config('ckp.requester','tdd-c2-someone-else',true);
   r_owner := ckp.apply(jsonb_build_object('about','urn:ckp:'||proj||'/kernel/ck'));
+  -- END-TO-END (0.4.102, the second half). The gate above hears
+  -- about=urn:ckp:<proj>/… — but a LIVE apply addresses the Proposal @id
+  -- (ckp://Proposal#…), a spelling the 0.4.99 regex never matches, so the path
+  -- real applies take was ungated and this probe was GREEN against an input
+  -- class the live verb never carries. Run the whole cycle while the fixture
+  -- owner stands: propose (floor 1 — the fixture declares no kind), approve,
+  -- apply as the STRANGER by the proposal's @id — must refuse not_owner — then
+  -- as the OWNER — must land. The landed apply is also the ledger's first REAL
+  -- epoch advance, which is exactly the moment E-1 below needs to measure.
+  PERFORM set_config('ckp.requester','tdd-c2-not-the-owner',true);
+  r_p := ckp.propose_change(proj, jsonb_build_object('op','add_class',
+           'detail', jsonb_build_object('class','urn:ckp:'||proj||'/type/TddC2Exercise')));
+  IF (r_p->>'ok')::boolean IS TRUE THEN
+    r_v  := ckp.vote(jsonb_build_object('about', r_p->>'proposal_iri', 'value','approve'));
+    r_es := ckp.apply(jsonb_build_object('about', r_p->>'proposal_iri'));
+    PERFORM set_config('ckp.requester','tdd-c2-someone-else',true);
+    r_eo := ckp.apply(jsonb_build_object('about', r_p->>'proposal_iri'));
+  END IF;
   -- CONTROL 2: an UNDECLARED owner imposes nothing.
   DELETE FROM ckp.instances WHERE id='tdd-c2-proj';
   PERFORM set_config('ckp.requester','tdd-c2-anyone',true);
@@ -155,9 +174,21 @@ BEGIN
   ELSIF r_undeclared->>'error' = 'not_owner' THEN
     PERFORM tdd('C-2','a non-owner applying a quorum-met proposal is REFUSED; the owner is not; an unowned project imposes NOTHING',
       'behaviour','RED','a project with NO declared owner still refused — an owner invented for a declaration nobody made');
+  ELSIF (r_p->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-2','a non-owner applying a quorum-met proposal is REFUSED; the owner is not; an unowned project imposes NOTHING',
+      'behaviour','BROKEN','e2e propose failed: '||COALESCE(r_p->>'error','?'));
+  ELSIF (r_v->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-2','a non-owner applying a quorum-met proposal is REFUSED; the owner is not; an unowned project imposes NOTHING',
+      'behaviour','BROKEN','e2e vote failed: '||COALESCE(r_v->>'error','?'));
+  ELSIF r_es->>'error' IS DISTINCT FROM 'not_owner' THEN
+    PERFORM tdd('C-2','a non-owner applying a quorum-met proposal is REFUSED; the owner is not; an unowned project imposes NOTHING',
+      'behaviour','RED','the LIVE path is ungated: a stranger applying the proposal BY ITS @id got '||COALESCE(r_es->>'error','ok')||' — the 0.4.99 gate hears a spelling real applies never carry');
+  ELSIF (r_eo->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-2','a non-owner applying a quorum-met proposal is REFUSED; the owner is not; an unowned project imposes NOTHING',
+      'behaviour','RED','the OWNER''s live apply did not land — got '||COALESCE(r_eo->>'error','?')||' — a wall, not a gate');
   ELSE
     PERFORM tdd('C-2','a non-owner applying a quorum-met proposal is REFUSED; the owner is not; an unowned project imposes NOTHING',
-      'behaviour','GREEN','stranger refused not_owner; owner not refused for ownership; undeclared owner imposes nothing');
+      'behaviour','GREEN','stranger refused not_owner on BOTH spellings (direct urn and the live proposal path); the owner''s live apply landed; undeclared owner imposes nothing');
   END IF;
 EXCEPTION WHEN OTHERS THEN
   BEGIN DELETE FROM ckp.instances WHERE id='tdd-c2-proj'; EXCEPTION WHEN OTHERS THEN NULL; END;
@@ -750,9 +781,15 @@ BEGIN
     -- broken test — and a probe that cannot run on a clean database can only ever
     -- report on databases somebody else prepared. Same lesson as C-13 and D-1.
     INSERT INTO ckp.instances(id, body) VALUES
-      ('tdd-e3-kernel', jsonb_build_object('@id','urn:ckp:tdde3/kernel','type',C||'Kernel'))
+      ('tdd-e3-kernel', jsonb_build_object('@id','urn:ckp:tdde3/kernel','type',C||'Kernel',
+        'http://www.w3.org/2000/01/rdf-schema#label','e3',
+        C||'epoch',0, C||'inProject','urn:ckp:project:tdde3', C||'transportSegment','tdde3',
+        C||'hasOrgan', jsonb_build_array('urn:ckp:tdde3/organ/ck','urn:ckp:tdde3/organ/tool','urn:ckp:tdde3/organ/data')))
       ON CONFLICT (id) DO NOTHING;
-    kid := 'urn:ckp:tdde3/kernel';
+    -- the BARE id, because update_typed looks up ckp.instances.id and does NOT
+    -- resolve id forms — unlike instance.get after E-3's own fix. That asymmetry
+    -- is filed as E-5; here we simply use the form this verb accepts.
+    kid := 'tdd-e3-kernel';
   END IF;
   r_bare := ckp.update_typed(jsonb_build_object('id',kid,'patch',jsonb_build_object('e3NonsenseBare',0.5)));
   r_iri  := ckp.update_typed(jsonb_build_object('id',kid,'patch',jsonb_build_object(C||'e3NonsenseIri',0.5)));
@@ -778,4 +815,74 @@ BEGIN
   END IF;
 EXCEPTION WHEN OTHERS THEN
   PERFORM tdd('E-3','an undeclared property is refused in EVERY key form','behaviour','BROKEN',SQLERRM);
+END $$;
+
+-- ═══ E-4 · ownership cannot be taken by a non-owner ════════════════════════
+-- Found while answering whether a kernel can be handed to another party. It
+-- cannot — and worse, it can be TAKEN. ckp:ownedBy is an ordinary declared
+-- property of ckp:Project, so instance.update patches it like any other. Both
+-- guards that read it are therefore bypassable in one step: re-own the Project,
+-- then apply (C-2) or re-germinate (0.4.89) freely. germinate's own comment
+-- calls ownedBy "the triple a client cannot write". A client can.
+DO $$
+DECLARE C text := 'https://conceptkernel.org/ontology/v3.11/core#'; r jsonb; before text; after text;
+BEGIN
+  PERFORM set_config('ckp.requester','svc:tdd-e4-attacker',true);
+  INSERT INTO ckp.instances(id, body) VALUES
+    ('tdd-e4-proj', jsonb_build_object('@id','urn:ckp:project:tdde4','type',C||'Project',
+       'http://www.w3.org/2000/01/rdf-schema#label','E4','urn:x','x',
+       C||'projectKind','shared', C||'ownedBy','urn:ckp:participant:tdd-e4-owner'))
+    ON CONFLICT (id) DO NOTHING;
+  SELECT body->>(C||'ownedBy') INTO before FROM ckp.instances WHERE id='tdd-e4-proj';
+  r := ckp.update_typed(jsonb_build_object('id','tdd-e4-proj',
+         'patch', jsonb_build_object(C||'ownedBy','urn:ckp:participant:tdd-e4-attacker')));
+  SELECT body->>(C||'ownedBy') INTO after FROM ckp.instances WHERE id='tdd-e4-proj';
+  DELETE FROM ckp.instances WHERE id='tdd-e4-proj';
+  IF before IS NULL THEN
+    PERFORM tdd('E-4','ckp:ownedBy cannot be rewritten by a party who is not the owner',
+      'behaviour','BROKEN','fixture did not seal an owner');
+  ELSIF after IS DISTINCT FROM before THEN
+    PERFORM tdd('E-4','ckp:ownedBy cannot be rewritten by a party who is not the owner',
+      'behaviour','RED','a NON-OWNER rewrote ownedBy through instance.update ('||before||' -> '||after||'). Both the germinate guard and the apply gate read this field, so both are bypassable in one step');
+  ELSE
+    PERFORM tdd('E-4','ckp:ownedBy cannot be rewritten by a party who is not the owner',
+      'behaviour','GREEN','a non-owner could not rewrite ownedBy');
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  BEGIN DELETE FROM ckp.instances WHERE id='tdd-e4-proj'; EXCEPTION WHEN OTHERS THEN NULL; END;
+  PERFORM tdd('E-4','ckp:ownedBy cannot be rewritten by a party who is not the owner','behaviour','BROKEN',SQLERRM);
+END $$;
+
+-- ═══ E-5 · one id vocabulary across the verbs ══════════════════════════════
+-- instance.get resolves bare, ckp://Type#id and urn: forms since 0.4.90 (E-3's
+-- sibling fix). update_typed resolves NONE of them — it looks up ckp.instances.id
+-- directly. So a caller who takes the @id from a create reply can READ with it
+-- and cannot PATCH with it, and the refusal is `unknown_instance`, which says the
+-- thing does not exist rather than that the spelling is wrong.
+DO $$
+DECLARE C text := 'https://conceptkernel.org/ontology/v3.11/core#'; r_bare jsonb; r_atid jsonb;
+BEGIN
+  PERFORM set_config('ckp.requester','svc:tdd-e5',true);
+  INSERT INTO ckp.instances(id, body) VALUES
+    ('tdd-e5-k', jsonb_build_object('@id','urn:ckp:tdde5/kernel','type',C||'Kernel',
+        'http://www.w3.org/2000/01/rdf-schema#label','e5',
+        C||'epoch',0, C||'inProject','urn:ckp:project:tdde5', C||'transportSegment','tdde5',
+        C||'hasOrgan', jsonb_build_array('urn:ckp:tdde5/organ/ck','urn:ckp:tdde5/organ/tool','urn:ckp:tdde5/organ/data')))
+    ON CONFLICT (id) DO NOTHING;
+  r_bare := ckp.update_typed(jsonb_build_object('id','tdd-e5-k','patch',jsonb_build_object(C||'epoch',0)));
+  r_atid := ckp.update_typed(jsonb_build_object('id','urn:ckp:tdde5/kernel','patch',jsonb_build_object(C||'epoch',0)));
+  DELETE FROM ckp.instances WHERE id='tdd-e5-k';
+  IF (r_bare->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('E-5','every verb accepts every id form the substrate emits — read and write alike',
+      'behaviour','BROKEN','the BARE form failed too: '||COALESCE(r_bare->>'error','?'));
+  ELSIF (r_atid->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('E-5','every verb accepts every id form the substrate emits — read and write alike',
+      'behaviour','RED','instance.get resolves the @id form and update_typed does not — got '||COALESCE(r_atid->>'error','?')||'. A caller can READ with the id a reply gave them and cannot PATCH with it');
+  ELSE
+    PERFORM tdd('E-5','every verb accepts every id form the substrate emits — read and write alike',
+      'behaviour','GREEN','bare and @id forms both patch');
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  BEGIN DELETE FROM ckp.instances WHERE id='tdd-e5-k'; EXCEPTION WHEN OTHERS THEN NULL; END;
+  PERFORM tdd('E-5','every verb accepts every id form the substrate emits','behaviour','BROKEN',SQLERRM);
 END $$;
