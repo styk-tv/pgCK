@@ -414,19 +414,34 @@ END $$;
 
 -- ═══ C-12 · per-kernel resource accounting ═════════════════════════════════
 DO $$
-DECLARE s jsonb;
+DECLARE s jsonb; g bigint;
 BEGIN
   IF to_regprocedure('ckp.storage()') IS NULL THEN
-    PERFORM tdd('C-12','storage is reported PER KERNEL, so a busy kernel is distinguishable from a bad one','existence','RED','ckp.storage() absent');
+    PERFORM tdd('C-12','storage is reported PER KERNEL, so a busy kernel is distinguishable from a bad one','existence','RED','ckp.storage() absent'); RETURN;
+  END IF;
+  s := ckp.storage();
+  IF NOT (s ? 'perKernel') THEN
+    PERFORM tdd('C-12','storage is reported PER KERNEL, so a busy kernel is distinguishable from a bad one',
+      'existence','RED','ckp.storage() reports the WHOLE database. Graphs are prefixed by kernel so the data is already attributable — the gap is a report, not a mechanism'); RETURN;
+  END IF;
+  -- FIXTURE: a graph under a kernel prefix nobody else uses, so attribution is
+  -- proven against a KNOWN row and not read off ambient data (the C-13 lesson).
+  g := pgrdf.add_graph('urn:ckp:tddc12/probe');
+  s := ckp.storage();
+  PERFORM pgrdf.drop_graph(g, false);
+  IF COALESCE((s->'perKernel'->'tddc12'->>'graphs')::int, 0) < 1 THEN
+    PERFORM tdd('C-12','storage is reported PER KERNEL, so a busy kernel is distinguishable from a bad one',
+      'behaviour','RED','perKernel present but a graph created under urn:ckp:tddc12/ was NOT attributed to tddc12 — the report exists and the attribution is wrong');
+  ELSIF s->'perKernel'->'substrate' IS NULL
+        OR (s->'perKernel' ? substring('urn:ckp:core' from '^urn:ckp:([a-z0-9-]+)$')) THEN
+    -- the trap this control exists for: shared weight (core, modules, scratch)
+    -- silently landing in somebody's column manufactures busy-vs-bad confusion.
+    PERFORM tdd('C-12','storage is reported PER KERNEL, so a busy kernel is distinguishable from a bad one',
+      'behaviour','RED','no substrate bucket — shared graphs (core, modules, scratch) are being attributed to kernels or dropped');
   ELSE
-    s := ckp.storage();
-    IF s ? 'perKernel' THEN
-      PERFORM tdd('C-12','storage is reported PER KERNEL, so a busy kernel is distinguishable from a bad one',
-        'existence','RED','perKernel key present — now prove the attribution is correct against a known fixture');
-    ELSE
-      PERFORM tdd('C-12','storage is reported PER KERNEL, so a busy kernel is distinguishable from a bad one',
-        'existence','RED','ckp.storage() reports the WHOLE database. Graphs are prefixed by kernel so the data is already attributable — the gap is a report, not a mechanism');
-    END IF;
+    PERFORM tdd('C-12','storage is reported PER KERNEL, so a busy kernel is distinguishable from a bad one',
+      'behaviour','GREEN','a fixture graph under urn:ckp:tddc12/ was attributed to tddc12 ('||
+        (s->'perKernel'->'tddc12')::text||'); shared graphs land in the named substrate bucket');
   END IF;
 EXCEPTION WHEN OTHERS THEN
   PERFORM tdd('C-12','storage is reported PER KERNEL','existence','BROKEN',SQLERRM);
@@ -569,8 +584,37 @@ BEGIN
     PERFORM tdd('C-17','a verb reports version/build_id/extversion together and REFUSES agreement it cannot show',
       'existence','RED', format('no verb reports the triple. Measured by hand now: version=%s extversion=%s build_id=%s. pgRDF: a stale .so and a pre-tag artifact have both been caught ONLY by this triple', v, e, b));
   ELSE
-    PERFORM tdd('C-17','a verb reports version/build_id/extversion together and REFUSES agreement it cannot show',
-      'existence','RED','verb exists — now prove it DETECTS a mismatch, not merely reports three strings');
+    -- Prove DETECTION, not reporting: the comparator is pure, so feed it a
+    -- mismatched pair and a missing plane. The live verb must use the SAME
+    -- comparator (one rule, two callers) or the proof would be about a copy.
+    DECLARE t jsonb; mis jsonb; unm jsonb; d text;
+    BEGIN
+      t   := ckp.identity_triple();
+      mis := ckp._identity_agreement('0.0.1','0.0.2','tdd');
+      unm := ckp._identity_agreement(NULL, e, b);
+      SELECT pg_get_functiondef(p.oid) INTO d FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+       WHERE n.nspname='ckp' AND p.proname='identity_triple' LIMIT 1;
+      IF (mis->>'agreement')::boolean IS NOT FALSE OR mis->'divergence' IS NULL THEN
+        PERFORM tdd('C-17','a verb reports version/build_id/extversion together and REFUSES agreement it cannot show',
+          'behaviour','RED','a mismatched pair did not report agreement:false with the divergence named — it reports, it does not detect');
+      ELSIF unm->>'agreement' IS NOT NULL THEN
+        PERFORM tdd('C-17','a verb reports version/build_id/extversion together and REFUSES agreement it cannot show',
+          'behaviour','RED','an unreadable plane did not refuse agreement — it fabricated a verdict it cannot show');
+      ELSIF d NOT LIKE '%_identity_agreement%' THEN
+        PERFORM tdd('C-17','a verb reports version/build_id/extversion together and REFUSES agreement it cannot show',
+          'behaviour','RED','the live verb does not call the comparator the proof exercised — a probe of a copy proves the copy');
+      ELSIF NOT (t ? 'version' AND t ? 'extversion' AND t ? 'build_id' AND t ? 'agreement') THEN
+        PERFORM tdd('C-17','a verb reports version/build_id/extversion together and REFUSES agreement it cannot show',
+          'behaviour','RED','the triple is incomplete: '||t::text);
+      ELSIF (t->>'agreement')::boolean IS DISTINCT FROM (v = e) THEN
+        PERFORM tdd('C-17','a verb reports version/build_id/extversion together and REFUSES agreement it cannot show',
+          'behaviour','RED','the live verdict disagrees with a hand comparison of the same planes: '||t::text);
+      ELSE
+        PERFORM tdd('C-17','a verb reports version/build_id/extversion together and REFUSES agreement it cannot show',
+          'behaviour','GREEN', format('triple complete (%s/%s/%s), live verdict %s matches hand comparison; a forced mismatch reports false naming both planes; a missing plane refuses a verdict',
+            t->>'version', t->>'extversion', t->>'build_id', t->>'state'));
+      END IF;
+    END;
   END IF;
 EXCEPTION WHEN OTHERS THEN
   PERFORM tdd('C-17','a verb reports version/build_id/extversion together','existence','BROKEN',SQLERRM);

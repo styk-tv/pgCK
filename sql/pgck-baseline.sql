@@ -3995,7 +3995,7 @@ CREATE OR REPLACE FUNCTION ckp.storage()
  STABLE SECURITY DEFINER
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
-DECLARE v_fresh jsonb; v_orph int; v_scratch int; v_graphs int;
+DECLARE v_fresh jsonb; v_orph int; v_scratch int; v_graphs int; v_perk jsonb;
 BEGIN
   IF to_regprocedure('pgrdf.graph_inventory()') IS NULL THEN
     RETURN jsonb_build_object(
@@ -4009,18 +4009,94 @@ BEGIN
   SELECT count(*) INTO v_orph FROM pgrdf.orphan_partitions();
   SELECT count(*) INTO v_scratch FROM pgrdf.graph_inventory() WHERE iri LIKE 'urn:ckp:validate-scratch%';
 
+  -- 0.4.103 (C-12) — STORAGE IS REPORTED PER KERNEL, so a busy kernel is
+  -- distinguishable from a bad one. The data was always attributable — every
+  -- kernel-owned graph is prefixed urn:ckp:<kernel>/ — the gap was a report,
+  -- not a mechanism. Graphs with no kernel prefix (core, modules, the empty
+  -- default, validation scratch) land in the 'substrate' bucket BY NAME, never
+  -- silently in somebody's column: mis-attributing shared weight to a kernel
+  -- would manufacture exactly the busy-vs-bad confusion this closes. Bytes are
+  -- the engine's per-graph partitions where present (pg_total_relation_size of
+  -- _pgrdf_quads_g<id>), and absence of a partition is 0, not an error.
+  SELECT jsonb_object_agg(k, jsonb_build_object('graphs', gs, 'asserted', a, 'bytes', b))
+    INTO v_perk
+    FROM (SELECT COALESCE(substring(g.iri from '^urn:ckp:([a-z0-9-]+)/'), 'substrate') k,
+                 count(*) gs,
+                 COALESCE(sum(inv.asserted),0) a,
+                 COALESCE(sum(CASE WHEN to_regclass('pgrdf._pgrdf_quads_g'||g.graph_id) IS NOT NULL
+                                   THEN pg_total_relation_size('pgrdf._pgrdf_quads_g'||g.graph_id)
+                                   ELSE 0 END),0) b
+            FROM pgrdf._pgrdf_graphs g
+            LEFT JOIN pgrdf.graph_inventory() inv ON inv.iri = g.iri
+           GROUP BY 1) t;
+
   RETURN jsonb_build_object(
     'available', true,
     'bytes', pg_database_size(current_database()),
     'pretty', pg_size_pretty(pg_database_size(current_database())),
     'graphs', COALESCE(v_graphs,0),
     'materialization', COALESCE(v_fresh,'{}'::jsonb),
+    'perKernel', COALESCE(v_perk,'{}'::jsonb),
     'orphanPartitions', v_orph,
     'scratchGraphs', v_scratch,
     'note', 'materialization states are pgRDF''s vocabulary, adopted rather than re-minted: '
             '`never` and `unknown` are STATES, only `stale` is a warning, and orphanPartitions '
             'warns only when non-zero. scratchGraphs counts validation leftovers — if that '
             'number grows without validations being run, a schedule is leaking, not a user.');
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp._identity_agreement(p_version text, p_extversion text, p_build_id text)
+ RETURNS jsonb
+ LANGUAGE sql
+ IMMUTABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+  -- 0.4.103 (C-17) — the comparator, PURE, so the probe that proves detection
+  -- feeds it a mismatched pair and the live verb cannot have a private copy:
+  -- one rule, two callers (§2 — a probe that re-implements the gate tests the
+  -- probe). Agreement is NEVER fabricated: a NULL input yields agreement NULL
+  -- ('unmeasurable'), not true — the verb refuses agreement it cannot show.
+  SELECT CASE
+    WHEN p_version IS NULL OR p_extversion IS NULL THEN
+      jsonb_build_object('agreement', NULL, 'state', 'unmeasurable',
+        'hint', 'one plane is unreadable — refusing to claim agreement that cannot be shown')
+    WHEN p_version = p_extversion THEN
+      jsonb_build_object('agreement', true, 'state', 'agree')
+    ELSE
+      jsonb_build_object('agreement', false, 'state', 'diverged',
+        'divergence', jsonb_build_object('version', p_version, 'extversion', p_extversion,
+                                         'build_id', p_build_id),
+        'hint', 'version() is the LOADED .so and extversion is the SQL catalog: they diverge '
+                'when a new .so awaits a postmaster restart, or when ALTER EXTENSION UPDATE '
+                'ran ahead of the artifact. Report the divergence; never restart to hide it.')
+  END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp.identity_triple()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE v_ver text; v_ext text; v_bld text;
+BEGIN
+  -- 0.4.103 (C-17) — THE IDENTITY TRIPLE, AS A VERB. pgRDF's own statement: a
+  -- stale .so and a pre-tag artifact have both been caught ONLY by
+  -- version() == build_id() == extversion — and this fleet measured the pgCK
+  -- version of that failure: two live benches reporting one identical build
+  -- identifier while running two different binaries. The neighbouring layer
+  -- named the defect class and shipped the instrument; now this layer has it.
+  -- Each plane is read defensively: an unreadable plane reports NULL and the
+  -- comparator refuses agreement — three strings and a shrug would be worse
+  -- than no verb at all.
+  BEGIN v_ver := ckp.version();  EXCEPTION WHEN OTHERS THEN v_ver := NULL; END;
+  BEGIN v_bld := ckp.build_id(); EXCEPTION WHEN OTHERS THEN v_bld := NULL; END;
+  SELECT extversion INTO v_ext FROM pg_extension WHERE extname = 'pgck';
+  RETURN jsonb_build_object('version', v_ver, 'extversion', v_ext, 'build_id', v_bld)
+         || ckp._identity_agreement(v_ver, v_ext, v_bld);
 END;
 $function$
 ;
@@ -4069,6 +4145,7 @@ BEGIN
       'modules', '[]'::jsonb,
       'roster', ckp.roster(),          -- 0.4.90 Q-1
       'storage', ckp.storage(),        -- 0.4.91
+      'engineIdentity', ckp.identity_triple(),   -- 0.4.103 C-17
       'findings', '[]'::jsonb,
       'note', 'no kernel named: the law is loaded and readable (surface.declared, surface.typecheck, instance.validate all answer), and sealing refuses on M2. A complete state, not a fault.',
       'healthy', true);
@@ -4214,6 +4291,7 @@ BEGIN
     'modules', v_mods,
     'roster', ckp.roster(),            -- 0.4.90 Q-1
     'storage', ckp.storage(),          -- 0.4.91
+    'engineIdentity', ckp.identity_triple(),     -- 0.4.103 C-17
     'findings', v_find,
     'note', CASE v_state
       WHEN 'core-only'  THEN 'no kernel named: the law is loaded and readable, sealing refuses on M2. A complete state, not a fault.'
