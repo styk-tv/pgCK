@@ -98,20 +98,25 @@ BEGIN
   END IF;
   RAISE NOTICE 's82 (e) PASS — the owner''s projectKind patch lands: their project, their declaration';
 
-  -- (f) E-5: the stamped @id form patches identically to the bare form.
+  -- (f) E-5: the stamped @id form patches identically to the bare form. The
+  -- fixture is a full KernelShape-satisfying Kernel — an admitted type — so the
+  -- re-seal gate is not what this control measures (the first draft used an
+  -- unadmitted type and failed on admission: the E-3 fixture trap, again).
   INSERT INTO ckp.instances(id, body) VALUES
-    ('s82-plain', jsonb_build_object('@id','ckp://Thing#s82-plain','type','urn:ckp:s82/type/Thing',
-       'urn:ckp:s82/type/note','bare'));
-  r := ckp.update_typed(jsonb_build_object('id','ckp://Thing#s82-plain',
-        'patch', jsonb_build_object('urn:ckp:s82/type/note','via-atid')));
-  SELECT body->>'urn:ckp:s82/type/note' INTO v_after FROM ckp.instances WHERE id='s82-plain';
-  IF (r->>'ok')::boolean IS NOT TRUE OR v_after <> 'via-atid' THEN
+    ('s82-plain', jsonb_build_object('@id','urn:ckp:s82plain/kernel','type',C||'Kernel',
+       'http://www.w3.org/2000/01/rdf-schema#label','s82-plain',
+       C||'epoch',0, C||'inProject','urn:ckp:project:s82plain', C||'transportSegment','s82plain',
+       C||'hasOrgan', jsonb_build_array('urn:ckp:s82plain/organ/ck','urn:ckp:s82plain/organ/tool','urn:ckp:s82plain/organ/data')));
+  r := ckp.update_typed(jsonb_build_object('id','urn:ckp:s82plain/kernel',
+        'patch', jsonb_build_object(C||'epoch',1)));
+  SELECT body->>(C||'epoch') INTO v_after FROM ckp.instances WHERE id='s82-plain';
+  IF (r->>'ok')::boolean IS NOT TRUE OR v_after <> '1' THEN
     RAISE EXCEPTION 's82 (f) FAIL — the @id form does not patch (%): read and write disagree about the id vocabulary', COALESCE(r->>'error','?');
   END IF;
   RAISE NOTICE 's82 (f) PASS — the stamped @id form patches identically to the bare form';
 
   -- (g) an unknown id still refuses, naming the accepted forms.
-  r := ckp.update_typed(jsonb_build_object('id','ckp://Thing#s82-never-existed',
+  r := ckp.update_typed(jsonb_build_object('id','ckp://Kernel#s82-never-existed',
         'patch', jsonb_build_object('urn:ckp:s82/type/note','x')));
   IF r->>'error' IS DISTINCT FROM 'unknown_instance' OR r->>'hint' IS NULL THEN
     RAISE EXCEPTION 's82 (g) FAIL — unknown id must refuse unknown_instance WITH the accepted forms named: %', r;
