@@ -1836,7 +1836,7 @@ DECLARE
   v_in_comp bool := false; v_in_board bool := false;
 BEGIN
   IF v_type IS NULL OR btrim(v_type) = '' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'type_required',
+    RETURN jsonb_build_object('ok', false, 'error', 'type_required', 'sqlstate', '22004',
       'hint', 'surface.typecheck {"type": "<class IRI>"} — answers whether THIS kernel admits it, and by which graph');
   END IF;
   -- 0.4.81 — REFUSE A CURIE INSTEAD OF ANSWERING VACUOUSLY. `ckp:Project` is a
@@ -1847,7 +1847,7 @@ BEGIN
   -- absence. An absolute IRI here carries :// or begins urn: ; anything else is
   -- a prefix this substrate never expands.
   IF v_type IS NOT NULL AND v_type NOT LIKE '%://%' AND v_type NOT LIKE 'urn:%' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'type_is_a_curie', 'type', v_type,
+    RETURN jsonb_build_object('ok', false, 'error', 'type_is_a_curie', 'sqlstate', '22023', 'type', v_type,
       'hint', 'this looks like a prefixed name (CURIE), not an IRI. Nothing expands prefixes here — pass the absolute IRI, e.g. https://conceptkernel.org/ontology/v3.11/core#Project rather than ckp:Project.');
   END IF;
   v_comp := ckp._composed_shapes(v_proj);
@@ -1951,7 +1951,7 @@ DECLARE
   v_type text := COALESCE(p_payload->>'type', p_payload->>'@type');
 BEGIN
   IF v_type IS NULL OR btrim(v_type) = '' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'type_required',
+    RETURN jsonb_build_object('ok', false, 'error', 'type_required', 'sqlstate', '22004',
       'hint', 'surface.declared {"type": "<class IRI>"} — the property contract, so a caller can learn it WITHOUT writing');
   END IF;
   -- 0.4.81 — REFUSE A CURIE INSTEAD OF ANSWERING VACUOUSLY. `ckp:Project` is a
@@ -1962,7 +1962,7 @@ BEGIN
   -- absence. An absolute IRI here carries :// or begins urn: ; anything else is
   -- a prefix this substrate never expands.
   IF v_type IS NOT NULL AND v_type NOT LIKE '%://%' AND v_type NOT LIKE 'urn:%' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'type_is_a_curie', 'type', v_type,
+    RETURN jsonb_build_object('ok', false, 'error', 'type_is_a_curie', 'sqlstate', '22023', 'type', v_type,
       'hint', 'this looks like a prefixed name (CURIE), not an IRI. Nothing expands prefixes here — pass the absolute IRI, e.g. https://conceptkernel.org/ontology/v3.11/core#Project rather than ckp:Project.');
   END IF;
   -- The same map create and validate resolve keys through. A caller reading this
@@ -2281,7 +2281,7 @@ DECLARE
   v_props jsonb;
 BEGIN
   IF v_type IS NULL OR btrim(v_type) = '' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'type_required',
+    RETURN jsonb_build_object('ok', false, 'error', 'type_required', 'sqlstate', '22004',
       'hint', 'surface.explain {"type": "<class IRI>"} — the declared contract WITH its teaching prose');
   END IF;
   -- 0.4.81 — REFUSE A CURIE INSTEAD OF ANSWERING VACUOUSLY. `ckp:Project` is a
@@ -2292,7 +2292,7 @@ BEGIN
   -- absence. An absolute IRI here carries :// or begins urn: ; anything else is
   -- a prefix this substrate never expands.
   IF v_type IS NOT NULL AND v_type NOT LIKE '%://%' AND v_type NOT LIKE 'urn:%' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'type_is_a_curie', 'type', v_type,
+    RETURN jsonb_build_object('ok', false, 'error', 'type_is_a_curie', 'sqlstate', '22023', 'type', v_type,
       'hint', 'this looks like a prefixed name (CURIE), not an IRI. Nothing expands prefixes here — pass the absolute IRI, e.g. https://conceptkernel.org/ontology/v3.11/core#Project rather than ckp:Project.');
   END IF;
   v_comp := ckp._composed_shapes(v_proj);
@@ -3150,7 +3150,7 @@ DECLARE
   v_quads bigint;
 BEGIN
   IF p_ttl IS NULL OR btrim(p_ttl) = '' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'ttl_required');
+    RETURN jsonb_build_object('ok', false, 'error', 'ttl_required', 'sqlstate', '22004');
   END IF;
   -- get-or-create the project's CK-loop graph (after ckp.boot has claimed the reserved
   -- core/kernel ids, so the IRI-variant add_graph never steals id 1/2 — the s34 lesson).
@@ -3158,7 +3158,7 @@ BEGIN
   BEGIN
     v_quads := pgrdf.parse_turtle(p_ttl, v_g, v_iri || '#');
   EXCEPTION WHEN OTHERS THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'parse_error', 'detail', SQLERRM);
+    RETURN jsonb_build_object('ok', false, 'error', 'parse_error', 'sqlstate', '42601', 'detail', SQLERRM);
   END;
   PERFORM pgrdf.materialize(v_g);
   RETURN jsonb_build_object('ok', true, 'project', p_project, 'ck_iri', v_iri,
@@ -3189,7 +3189,7 @@ DECLARE
   v_applied   jsonb := jsonb_build_object('graph_changed', false);
 BEGIN
   IF v_about IS NULL OR v_about !~ '^[A-Za-z][A-Za-z0-9+.:#/_-]*$' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'invalid_about', 'about', v_about);
+    RETURN jsonb_build_object('ok', false, 'error', 'invalid_about', 'sqlstate', '22023', 'about', v_about);
   END IF;
   -- 0.4.99 (C-2) — OWNERSHIP ON APPLY, IN THE SUBSTRATE.
   --
@@ -3244,10 +3244,10 @@ BEGIN
   SELECT id, body INTO v_pid, v_prop FROM ckp.instances
     WHERE body->>'@id' = v_about AND body->>'type' = C||'Proposal';
   IF v_prop IS NULL THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'unknown_proposal', 'about', v_about);
+    RETURN jsonb_build_object('ok', false, 'error', 'unknown_proposal', 'sqlstate', '42704', 'about', v_about);
   END IF;
   IF v_prop->>(C||'proposalState') <> 'pending' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'proposal_not_pending', 'state', v_prop->>(C||'proposalState'));
+    RETURN jsonb_build_object('ok', false, 'error', 'proposal_not_pending', 'sqlstate', '55000', 'state', v_prop->>(C||'proposalState'));
   END IF;
   -- 0.4.102 (C-2, SECOND HALF) — THE GATE MUST SIT ON THE PATH THE LIVE VERB
   -- TAKES. The 0.4.99 ownership check above parses the CALLER'S `about` for a
@@ -3307,7 +3307,7 @@ BEGIN
     WHERE body->>'type' = C||'Vote' AND body->>(C||'about') = v_about AND body->>(C||'voteValue') = 'approve'
       AND COALESCE(body->>(C||'createdBy'),'') NOT LIKE 'urn:ckp:participant:anon:%';
   IF v_approvals < v_quorum THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'quorum_not_met', 'approvals', v_approvals, 'quorum', v_quorum);
+    RETURN jsonb_build_object('ok', false, 'error', 'quorum_not_met', 'sqlstate', '55000', 'approvals', v_approvals, 'quorum', v_quorum);
   END IF;
 
   v_op := v_prop->>(C||'proposalOp');
@@ -3316,12 +3316,12 @@ BEGIN
   BEGIN
     v_ttl := ckp._op_to_ttl(v_prop);
   EXCEPTION WHEN OTHERS THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'op_translate_failed', 'detail', SQLERRM);
+    RETURN jsonb_build_object('ok', false, 'error', 'op_translate_failed', 'sqlstate', '22023', 'detail', SQLERRM);
   END;
   IF v_ttl IS NOT NULL THEN
     v_ga := ckp.apply_shape_ttl(v_ttl, v_proj);
     IF (v_ga->>'ok') IS DISTINCT FROM 'true' THEN
-      RETURN jsonb_build_object('ok', false, 'error', 'graph_apply_failed', 'detail', v_ga);
+      RETURN jsonb_build_object('ok', false, 'error', 'graph_apply_failed', 'sqlstate', '55000', 'detail', v_ga);
     END IF;
     v_applied := jsonb_build_object('graph_changed', true, 'applied_quads', v_ga->'applied_quads');
   END IF;
@@ -3358,7 +3358,7 @@ BEGIN
       v_upd   jsonb;
     BEGIN
       IF v_field IS NULL OR v_val IS NULL THEN
-        RETURN jsonb_build_object('ok', false, 'error', 'invalid_patch',
+        RETURN jsonb_build_object('ok', false, 'error', 'invalid_patch', 'sqlstate', '22023',
           'hint', 'set_kernel_policy needs {field, value}');
       END IF;
       v_upd := ckp.update_typed(jsonb_build_object(
@@ -3367,7 +3367,7 @@ BEGIN
       IF (v_upd->>'ok') IS DISTINCT FROM 'true' THEN
         -- the refusal travels VERBATIM. A policy refused by the shape gate must
         -- say which clause refused it, not be flattened into "apply failed".
-        RETURN jsonb_build_object('ok', false, 'error', 'policy_apply_refused',
+        RETURN jsonb_build_object('ok', false, 'error', 'policy_apply_refused', 'sqlstate', '55000',
           'field', v_field, 'detail', v_upd);
       END IF;
       v_applied := v_applied || jsonb_build_object('policy', jsonb_build_object('field', v_field, 'value', v_val));
@@ -3443,7 +3443,7 @@ BEGIN
       PERFORM ckp.register_query_affordance(v_prop, v_proj, v_epoch);
       v_applied := v_applied || jsonb_build_object('query_affordance', v_prop->'proposalDetail'->>'verb');
     EXCEPTION WHEN OTHERS THEN
-      RETURN jsonb_build_object('ok', false, 'error', 'affordance_register_failed', 'detail', SQLERRM);
+      RETURN jsonb_build_object('ok', false, 'error', 'affordance_register_failed', 'sqlstate', '55000', 'detail', SQLERRM);
     END;
   END IF;
 
@@ -3458,7 +3458,7 @@ BEGIN
       v_applied := v_applied || jsonb_build_object('proof_obligation', v_prop->'proposalDetail'->>'obligation',
                                                    'obligation_active', COALESCE(v_prop->'proposalDetail'->>'active','true'));
     EXCEPTION WHEN OTHERS THEN
-      RETURN jsonb_build_object('ok', false, 'error', 'obligation_register_failed', 'detail', SQLERRM);
+      RETURN jsonb_build_object('ok', false, 'error', 'obligation_register_failed', 'sqlstate', '55000', 'detail', SQLERRM);
     END;
   END IF;
 
@@ -3506,7 +3506,7 @@ BEGIN
     v_quads := pgrdf.parse_turtle(p_ttl, v_scratch, 'urn:ckp:apply#');
   EXCEPTION WHEN OTHERS THEN
     PERFORM pgrdf.clear_graph(v_scratch);
-    RETURN jsonb_build_object('ok', false, 'error', 'parse_error', 'detail', SQLERRM);
+    RETURN jsonb_build_object('ok', false, 'error', 'parse_error', 'sqlstate', '42601', 'detail', SQLERRM);
   END;
 
   -- META-FENCE — admit ontology-meta predicates (rdf/rdfs/owl/sh) PLUS the three sealed
@@ -3526,7 +3526,7 @@ BEGIN
   $q$, v_scratch_iri, C, C, C)) j;
   IF v_forbidden IS NOT NULL THEN
     PERFORM pgrdf.clear_graph(v_scratch);
-    RETURN jsonb_build_object('ok', false, 'error', 'fence_violation', 'forbidden_predicates', v_forbidden);
+    RETURN jsonb_build_object('ok', false, 'error', 'fence_violation', 'sqlstate', '42501', 'forbidden_predicates', v_forbidden);
   END IF;
 
   v_kernel := pgrdf.add_graph(format('urn:ckp:%s/kernel/ck', p_project));
@@ -3639,7 +3639,7 @@ DECLARE
   v_rows   jsonb;
 BEGIN
   IF v_term IS NULL OR length(v_term) < 1 THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'invalid_term', 'term', v_term);
+    RETURN jsonb_build_object('ok', false, 'error', 'invalid_term', 'sqlstate', '22023', 'term', v_term);
   END IF;
 
   -- the GOVERNED query: latest-epoch concept.match plan.
@@ -3746,14 +3746,14 @@ BEGIN
     -- (F9) before reading the spec. Name the shape instead of the field.
     IF p_payload ? '@type' OR (jsonb_typeof(p_payload->'body') = 'object'
                                AND ((p_payload->'body') ? '@type')) THEN
-      RETURN jsonb_build_object('ok', false, 'error', 'type_not_readable_here',
+      RETURN jsonb_build_object('ok', false, 'error', 'type_not_readable_here', 'sqlstate', '42704',
         'hint', 'a type WAS supplied, in a position this verb does not read. Accepted: FLAT {"type": "<class IRI>", "<prop>": …}, or nested {"body": {"type": …, "<prop>": …}} — the same two shapes instance.validate reads. NOT accepted: @type, which is never read.');
     END IF;
-    RETURN jsonb_build_object('ok', false, 'error', 'type_required',
+    RETURN jsonb_build_object('ok', false, 'error', 'type_required', 'sqlstate', '22004',
       'hint', 'the payload is flat: {"type": "<class IRI>", "<prop>": …}');
   END IF;
   IF position(':' in v_type) = 0 THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'type_must_be_iri',
+    RETURN jsonb_build_object('ok', false, 'error', 'type_must_be_iri', 'sqlstate', '22023',
       'hint', 'instance.create {type} must be the full class IRI the kernel declares (sh:targetClass), e.g. urn:ckp:<project>/type/Ship');
   END IF;
 
@@ -3807,7 +3807,7 @@ BEGIN
             THEN jsonb_build_object('warnings', current_setting('ckp.last_warnings', true)::jsonb)
             ELSE '{}'::jsonb END;
 EXCEPTION WHEN OTHERS THEN
-  RETURN jsonb_build_object('ok', false, 'error', SQLERRM);
+  RETURN jsonb_build_object('ok', false, 'error', SQLERRM, 'sqlstate', SQLSTATE);
 END;
 $function$
 ;
@@ -3933,7 +3933,7 @@ BEGIN
     ELSE
       -- unknown verb -> the delegation seam (becomes a sealed-delegation fact in CI-B-4).
       res := jsonb_build_object('ok', false, 'delegate', true,
-                                'error', 'verb not governed yet (CI-B): ' || p_verb);
+                                'sqlstate', '0A000', 'error', 'verb not governed yet (CI-B): ' || p_verb);
   END CASE;
   RETURN res || jsonb_build_object('kernel', p_kernel_urn);
 END;
@@ -4792,7 +4792,7 @@ DECLARE
   v_seeded boolean;
 BEGIN
   IF p_project IS NULL OR btrim(p_project) = '' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'project required');
+    RETURN jsonb_build_object('ok', false, 'error', 'project required', 'sqlstate', '22004');
   END IF;
   -- The transport segment is one NATS token. A dotted name can never be granted
   -- (configured_kernels drops it), so germinating one would build a kernel nobody
@@ -4806,19 +4806,19 @@ BEGIN
   -- message because the slug is actionable there.
   IF p_project ~ '[.*> \t\r\n]' THEN
     RETURN jsonb_build_object('ok', false, 'refused', true,
-      'error', format('kernel id %L carries a NATS subject metacharacter, so it can never be granted. Use %L.',
+      'sqlstate', '22023', 'error', format('kernel id %L carries a NATS subject metacharacter, so it can never be granted. Use %L.',
                       p_project, ckp._slug(p_project)));
   END IF;
   IF p_project !~ '^[a-z0-9]+(-[a-z0-9]+)*$' THEN
     RETURN jsonb_build_object('ok', false, 'refused', true,
-      'error', format('kernel id %L is not canonical. A project name is lowercase, dashes optional, one transport segment -- use %L.',
+      'sqlstate', '22023', 'error', format('kernel id %L is not canonical. A project name is lowercase, dashes optional, one transport segment -- use %L.',
                       p_project, ckp._slug(regexp_replace(p_project, '^.*[:/]', ''))));
   END IF;
   -- IDENTITY IS SERVER-DERIVED. No verified connection, no owner, no germination —
   -- fail closed rather than mint an unowned project or invent an owner.
   IF v_sub IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'refused', true,
-      'error', 'germination requires a verified identity: ckp.ownedBy is stamped from the connection, never supplied. Anonymous callers cannot own a project.');
+      'sqlstate', '42501', 'error', 'germination requires a verified identity: ckp.ownedBy is stamped from the connection, never supplied. Anonymous callers cannot own a project.');
   END IF;
   v_owner := 'urn:ckp:participant:' || ckp._slug(v_sub);
 
@@ -4975,11 +4975,11 @@ BEGIN
   -- resolved under 'pgck'.)
   v_aff   := ckp.registry_lookup(v_proj, v_canon);
   IF v_aff IS NULL THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'unknown_affordance', 'verb', p_verb)
+    RETURN jsonb_build_object('ok', false, 'error', 'unknown_affordance', 'sqlstate', '42704', 'verb', p_verb)
       || jsonb_build_object('req', req);
   ELSIF COALESCE((v_aff->>'delegate')::boolean, false) THEN
     RETURN jsonb_build_object('ok', false, 'delegate', true, 'verb', p_verb,
-      'error', 'verb delegated to tool tier: '||p_verb) || jsonb_build_object('req', req);
+      'sqlstate', '0A000', 'error', 'verb delegated to tool tier: '||p_verb) || jsonb_build_object('req', req);
   ELSIF v_aff->>'plane' = 'governance' THEN
     -- CI-D: the governance plane routes to the sealed type-change verbs (propose/vote/apply).
     IF v_canon = 'kernel.propose_change' THEN
@@ -4989,7 +4989,7 @@ BEGIN
     ELSIF v_canon = 'kernel.apply' THEN
       RETURN ckp.apply(p_payload) || jsonb_build_object('req', req);
     END IF;
-    RETURN jsonb_build_object('ok', false, 'error', 'governance_plane_unavailable',
+    RETURN jsonb_build_object('ok', false, 'error', 'governance_plane_unavailable', 'sqlstate', '55000',
       'plane', 'governance', 'verb', p_verb, 'canonical', v_canon)
       || jsonb_build_object('req', req);
   -- Tier 2 (3/3b): a governed query affordance (SPARQL text sealed via the governance plane,
@@ -5391,7 +5391,7 @@ BEGIN
   -- ---- unknown verb = the Tier-2 tool-delegation seam ------------------
   ELSE
     res := jsonb_build_object('ok', false, 'delegate', true,
-      'error', 'verb not governed in-kernel: '||p_verb);
+      'sqlstate', '0A000', 'error', 'verb not governed in-kernel: '||p_verb);
   END CASE;
 
   RETURN res || jsonb_build_object('req', req);
@@ -5499,6 +5499,30 @@ INSERT INTO ckp.refusal_registry (code, sqlstate, teaches) VALUES
   ('parse_error',              '42601', NULL)
 ON CONFLICT (code) DO UPDATE SET sqlstate = EXCLUDED.sqlstate, teaches = EXCLUDED.teaches;
 
+-- 0.4.106 (C-15) — THE SWEEP'S OWN CODES. Typing every refusal site surfaced
+-- eight codes the registry never carried: the apply-stage projector wrappers
+-- (55000 — the governed change could not be projected, and the nested detail
+-- travels VERBATIM), the delegate seam (0A000 — not refused-by-law but
+-- not-served-at-THIS-tier: the tool tier answers on the declared topics), and
+-- the kernel-resolution wrapper (42704). Registered in the same act as the
+-- sites that return them — a code returned but not registered is exactly the
+-- unregistered prose C-15 exists to retire.
+INSERT INTO ckp.refusal_registry (code, sqlstate, teaches) VALUES
+  ('affordance_register_failed', '55000', 'a governed add_affordance could not compile/register its plan; the nested detail is the engine''s own message, verbatim'),
+  ('obligation_register_failed', '55000', 'a governed add_proof_obligation could not register; the nested detail names the strict-parse clause that refused'),
+  ('graph_apply_failed',         '55000', 'the op translated but the kernel graph refused the quads; the nested detail is the graph layer''s refusal, verbatim'),
+  ('policy_apply_refused',       '55000', 'set_kernel_policy''s patch was refused downstream — the nested detail says WHICH clause (shape bound or undeclared key); never flattened into "apply failed"'),
+  ('op_translate_failed',        '22023', 'the proposal''s detail could not project a change (malformed targetClass/path/properties); fix the detail and re-propose'),
+  ('governance_plane_unavailable','55000', NULL),
+  ('project_error',              '42704', 'the kernel named by the transport could not be resolved to a sealed ckp:Kernel or rostered segment; ckp._project_explain carries the clause'),
+  ('verb_delegated',             '0A000', 'delegate marker, not a gate refusal: dispatch names the tool tier and the declared inTopic/outTopic carry the call; 0A000 = not served at THIS tier'),
+  -- and the two this very gate caught on its first run: returned since
+  -- 0.4.102/0.4.99 and never registered — the exact defect class C-15 retires,
+  -- committed by the same hands that then built the gate. The gate works.
+  ('not_owner',                  '42501', 'the acting identity is not the declared owner of the target project; quorum answers whether enough parties AGREED, ownership answers whether THIS party may enact — ask the owner'),
+  ('ownership_not_patchable',    '42501', 'ckp:ownedBy is server-derived at germination and no transfer verb exists; both the germinate guard and the apply gate read it, so a patchable owner would void both')
+ON CONFLICT (code) DO UPDATE SET sqlstate = EXCLUDED.sqlstate, teaches = EXCLUDED.teaches;
+
 -- 0.4.90 (Q-3) — THE PLANE, ASSIGNED BY RULE, NEVER BY HAND.
 -- Two predicates, applied in order; anything neither matches stays NULL and the
 -- reply says so. Re-runnable: the rule is the documentation.
@@ -5536,7 +5560,7 @@ BEGIN
   IF p_project IS NOT NULL AND p_module = ANY(ckp._adopted_graphs(p_project)) THEN
     RETURN NULL;
   END IF;
-  RETURN jsonb_build_object('ok', false, 'error', 'module_not_adopted',
+  RETURN jsonb_build_object('ok', false, 'error', 'module_not_adopted', 'sqlstate', '55000',
     'module', p_module, 'verb', p_verb, 'kernel', p_project);
 END;
 $function$;
@@ -5654,7 +5678,7 @@ DECLARE
 BEGIN
   SELECT body INTO v_body FROM ckp.instances WHERE id = v_id;
   IF v_body IS NULL THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'unknown_instance', 'id', v_id);
+    RETURN jsonb_build_object('ok', false, 'error', 'unknown_instance', 'sqlstate', '42704', 'id', v_id);
   END IF;
   -- direct-vs-inferred from the engine is_inferred column (graph-wide summary for the alpha;
   -- the per-node derivation chain is deferred — engine ask #1).
@@ -5808,7 +5832,7 @@ BEGIN
     SELECT plan INTO v_plan FROM ckp.plans WHERE kernel = p_kernel AND verb = p_verb AND epoch = v_epoch;
   END IF;
   IF v_plan IS NULL THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'no_plan', 'verb', p_verb, 'epoch', v_epoch);
+    RETURN jsonb_build_object('ok', false, 'error', 'no_plan', 'sqlstate', '42704', 'verb', p_verb, 'epoch', v_epoch);
   END IF;
   v_stmt := v_plan->>'statement';
   v_wrap := format('SELECT jsonb_agg(t) FROM (%s) t', v_stmt);
@@ -6082,7 +6106,7 @@ BEGIN
   IF v_op = 'add_affordance' THEN
     v_detail := COALESCE(p_payload->'detail', p_payload->'proposalDetail', '{}'::jsonb);
     IF NOT (v_detail ? 'verb') OR NOT (v_detail ? 'query') THEN
-      RETURN jsonb_build_object('ok', false, 'error', 'detail_projects_nothing', 'op', v_op,
+      RETURN jsonb_build_object('ok', false, 'error', 'detail_projects_nothing', 'sqlstate', '22023', 'op', v_op,
         'hint', 'add_affordance needs detail.verb and detail.query; without them apply bumps the epoch and registers nothing (P0-E)',
         'got', v_detail);
     END IF;
@@ -6098,23 +6122,23 @@ BEGIN
     IF NOT (v_detail ? 'obligation')
        OR (COALESCE(v_detail->>'active','true') <> 'false'
            AND (NOT (v_detail ? 'targetType') OR NOT (v_detail ? 'check'))) THEN
-      RETURN jsonb_build_object('ok', false, 'error', 'detail_projects_nothing', 'op', v_op,
+      RETURN jsonb_build_object('ok', false, 'error', 'detail_projects_nothing', 'sqlstate', '22023', 'op', v_op,
         'hint', 'add_proof_obligation needs detail.obligation + detail.targetType + detail.check (or detail.obligation + active:false to deactivate); without them apply bumps the epoch and registers nothing (P0-E)',
         'got', v_detail);
     END IF;
   END IF;
   IF v_op IS NULL OR NOT (v_op = ANY(v_ops)) THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'op_has_no_projector', 'op', v_op,
+    RETURN jsonb_build_object('ok', false, 'error', 'op_has_no_projector', 'sqlstate', '22023', 'op', v_op,
                               'hint', 'a governed op is refused at propose unless it can project a change (P0-E, pgCK#28)',
                               'allowed', to_jsonb(v_ops));
   END IF;
   IF v_about IS NULL OR v_about !~ '^[A-Za-z][A-Za-z0-9+.:#/_-]*$' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'invalid_about', 'about', v_about);
+    RETURN jsonb_build_object('ok', false, 'error', 'invalid_about', 'sqlstate', '22023', 'about', v_about);
   END IF;
   BEGIN
     v_quorum := COALESCE((p_payload->>'requires_quorum')::int, 1);
   EXCEPTION WHEN OTHERS THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'invalid_requires_quorum',
+    RETURN jsonb_build_object('ok', false, 'error', 'invalid_requires_quorum', 'sqlstate', '22023',
                               'value', p_payload->>'requires_quorum');
   END;
   -- 0.4.98 (C-1 / L-8): a project that declared `shared` cannot then propose a
@@ -6132,7 +6156,7 @@ BEGIN
                      'which is the point.', v_quorum, ckp._quorum_floor(p_kernel_urn)));
   END IF;
   IF v_quorum < 1 THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'invalid_requires_quorum', 'value', v_quorum);
+    RETURN jsonb_build_object('ok', false, 'error', 'invalid_requires_quorum', 'sqlstate', '22023', 'value', v_quorum);
   END IF;
 
   v_pid := 'proposal-'||(extract(epoch from clock_timestamp())*1e9)::bigint::text;
@@ -6146,7 +6170,7 @@ BEGIN
            'ckp:proposalOp "'||v_op||'" .';
   v_report := ckp.validate_report(v_ttl, v_core);
   IF (v_report->>'conforms') IS DISTINCT FROM 'true' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'shape_violation', 'violations', v_report->'violations');
+    RETURN jsonb_build_object('ok', false, 'error', 'shape_violation', 'sqlstate', '23514', 'violations', v_report->'violations');
   END IF;
 
   -- 3. SEAL the Proposal{pending} — DATA about the type, not yet the type. ckp.seal writes the
@@ -6192,7 +6216,7 @@ DECLARE
   v_sql text; v_result jsonb;
 BEGIN
   IF v_type IS NULL OR v_type !~ '^[A-Za-z]' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'invalid_type', 'type', v_type);
+    RETURN jsonb_build_object('ok', false, 'error', 'invalid_type', 'sqlstate', '22023', 'type', v_type);
   END IF;
 
   -- Derive the type's declared property map. 0.4.51: one definition
@@ -6209,7 +6233,7 @@ BEGIN
   FOR f IN SELECT jsonb_array_elements(COALESCE(p_payload->'filter', '[]'::jsonb)) LOOP
     v_op := f->>'op'; v_key_in := f->>'key'; v_val := f->>'value';
     IF NOT (v_ops ? v_op) THEN
-      RETURN jsonb_build_object('ok', false, 'error', 'invalid_operator', 'op', v_op,
+      RETURN jsonb_build_object('ok', false, 'error', 'invalid_operator', 'sqlstate', '22023', 'op', v_op,
                                 'allowed', (SELECT jsonb_agg(k) FROM jsonb_object_keys(v_ops) k));
     END IF;
 
@@ -6222,7 +6246,7 @@ BEGIN
             AND EXISTS (SELECT 1 FROM jsonb_each_text(v_propmap) e WHERE e.value = v_key_in) THEN
         v_key := v_key_in;                                              -- already a declared full IRI
       ELSE
-        RETURN jsonb_build_object('ok', false, 'error', 'undeclared_filter_key',
+        RETURN jsonb_build_object('ok', false, 'error', 'undeclared_filter_key', 'sqlstate', '42704',
                                   'key', v_key_in, 'type', v_type,
                                   'declared', (SELECT jsonb_agg(k) FROM jsonb_object_keys(v_propmap) k));
       END IF;
@@ -6233,7 +6257,7 @@ BEGIN
       -- independent of the shape/project read (pgCK#6). Bare-key bodies (localname == key) resolve
       -- to themselves, so s29 back-compat holds.
       IF v_key_in IS NULL OR v_key_in !~ v_key_re THEN
-        RETURN jsonb_build_object('ok', false, 'error', 'invalid_filter_key', 'key', v_key_in);
+        RETURN jsonb_build_object('ok', false, 'error', 'invalid_filter_key', 'sqlstate', '22023', 'key', v_key_in);
       END IF;
       SELECT bk INTO v_key
       FROM ckp.instances i
@@ -6244,7 +6268,7 @@ BEGIN
       IF v_key IS NULL THEN
         -- NEVER a silent [] (pgCK#6): the key maps to no stored property on this type.
         IF EXISTS (SELECT 1 FROM ckp.instances WHERE body->>'type' = v_type) THEN
-          RETURN jsonb_build_object('ok', false, 'error', 'unresolved_shape',
+          RETURN jsonb_build_object('ok', false, 'error', 'unresolved_shape', 'sqlstate', '42704',
                                     'key', v_key_in, 'type', v_type,
                                     'hint', 'no shape for this type in the session project and no instance carries this property key');
         END IF;
@@ -6257,7 +6281,7 @@ BEGIN
       v_where := v_where || format(' AND (body->>%L) LIKE %L', v_key, '%'||COALESCE(v_val,'')||'%');
     ELSIF v_op IN ('lt','lte','gt','gte') THEN
       IF v_val IS NULL OR v_val !~ '^-?[0-9.]+$' THEN
-        RETURN jsonb_build_object('ok', false, 'error', 'invalid_numeric_value', 'op', v_op, 'value', v_val);
+        RETURN jsonb_build_object('ok', false, 'error', 'invalid_numeric_value', 'sqlstate', '22023', 'op', v_op, 'value', v_val);
       END IF;
       v_where := v_where || format(' AND (body->>%L) ~ ''^-?[0-9.]+$'' AND (body->>%L)::numeric %s %s',
                                    v_key, v_key, v_ops->>v_op, v_val);
@@ -6296,7 +6320,7 @@ DECLARE
   v_reached  jsonb;
 BEGIN
   IF v_from IS NULL OR btrim(v_from) = '' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'invalid_from', 'from', v_from);
+    RETURN jsonb_build_object('ok', false, 'error', 'invalid_from', 'sqlstate', '22023', 'from', v_from);
   END IF;
   -- id-form: a bare instance id resolves to its @id IRI (the form link/materialize_edge wrote);
   -- an absolute IRI passes through. An unresolvable bare id has nothing to reach FROM.
@@ -6306,21 +6330,21 @@ BEGIN
                               'max_depth', v_max, 'reached', '[]'::jsonb);
   END IF;
   IF v_from_iri !~ v_iri_re THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'invalid_from', 'from', v_from, 'resolved', v_from_iri);
+    RETURN jsonb_build_object('ok', false, 'error', 'invalid_from', 'sqlstate', '22023', 'from', v_from, 'resolved', v_from_iri);
   END IF;
   -- injection-safe IRI gate on `via` (always).
   IF v_via IS NULL OR v_via !~ v_iri_re THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'undeclared_predicate', 'via', v_via);
+    RETURN jsonb_build_object('ok', false, 'error', 'undeclared_predicate', 'sqlstate', '42704', 'via', v_via);
   END IF;
   -- T2: `via` MUST be in the kernel's DECLARED predicate set; a kernel that declares none falls
   -- back to the namespace allowlist (back-compat).
   v_declared := ckp.declared_predicates(v_proj);
   IF jsonb_array_length(v_declared) > 0 THEN
     IF NOT (v_declared @> to_jsonb(v_via)) THEN
-      RETURN jsonb_build_object('ok', false, 'error', 'undeclared_predicate', 'via', v_via, 'declared', v_declared);
+      RETURN jsonb_build_object('ok', false, 'error', 'undeclared_predicate', 'sqlstate', '42704', 'via', v_via, 'declared', v_declared);
     END IF;
   ELSIF NOT (v_via LIKE 'https://conceptkernel.org/%' OR v_via LIKE 'urn:ckp:%') THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'undeclared_predicate', 'via', v_via);
+    RETURN jsonb_build_object('ok', false, 'error', 'undeclared_predicate', 'sqlstate', '42704', 'via', v_via);
   END IF;
   -- bounded transitive traversal over the materialized link quads — `+` engine-capped.
   SELECT jsonb_agg(DISTINCT j->>'r') INTO v_reached
@@ -6928,11 +6952,11 @@ DECLARE
   v_type   text;
 BEGIN
   IF v_reason IS NULL OR length(btrim(v_reason)) < 1 THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'reason_required', 'id', v_id);
+    RETURN jsonb_build_object('ok', false, 'error', 'reason_required', 'sqlstate', '22004', 'id', v_id);
   END IF;
   SELECT body INTO v_body FROM ckp.instances WHERE id = v_id;
   IF v_body IS NULL THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'unknown_instance', 'id', v_id);
+    RETURN jsonb_build_object('ok', false, 'error', 'unknown_instance', 'sqlstate', '42704', 'id', v_id);
   END IF;
   -- Only a DECLARED retirement blocks a second one. A row carrying the bare
   -- pre-0.4.55 `retired` key and no ckp:retiredAtEpoch was never retired in any
@@ -6942,7 +6966,7 @@ BEGIN
   -- it was. This is what lets F15's two observed rows close instead of standing
   -- as scars that every reader has to be told about.
   IF v_body ? (C||'retiredAtEpoch') THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'already_retired', 'id', v_id,
+    RETURN jsonb_build_object('ok', false, 'error', 'already_retired', 'sqlstate', '55000', 'id', v_id,
       'reason', COALESCE(v_body->>(C||'reason'), v_body->>'retired_reason'));
   END IF;
   -- 0.4.55 — RETIREMENT NOW MOVES THE DECLARED PROPERTY, AND STOPS MINTING KEYS.
@@ -7011,11 +7035,11 @@ BEGIN
     WHERE kernel IN (v_proj, 'pgck') AND verb = p_verb
    ORDER BY (kernel = v_proj) DESC, epoch DESC LIMIT 1;
   IF v_plan IS NULL OR v_plan->>'kind' <> 'derived' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'unknown_derived_affordance', 'verb', p_verb); END IF;
+    RETURN jsonb_build_object('ok', false, 'error', 'unknown_derived_affordance', 'sqlstate', '42704', 'verb', p_verb); END IF;
   IF v_concept IS NULL THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'missing_param', 'param', 'concept'); END IF;
+    RETURN jsonb_build_object('ok', false, 'error', 'missing_param', 'sqlstate', '22004', 'param', 'concept'); END IF;
   IF v_concept !~ v_val_re THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'invalid_param', 'param', 'concept'); END IF;
+    RETURN jsonb_build_object('ok', false, 'error', 'invalid_param', 'sqlstate', '22023', 'param', 'concept'); END IF;
 
   v_formula := v_plan->>'formula';
   v_scope   := (v_plan->'scope') || jsonb_build_object('about', v_concept);   -- bind the concept
@@ -7031,7 +7055,7 @@ BEGIN
     'freshness', jsonb_build_object('watermark', wm_ph, 'current', wm_now,
                                     'fresh', COALESCE(wm_ph >= wm_now, false)));
 EXCEPTION WHEN OTHERS THEN
-  RETURN jsonb_build_object('ok', false, 'error', SQLERRM);
+  RETURN jsonb_build_object('ok', false, 'error', SQLERRM, 'sqlstate', SQLSTATE);
 END;
 $function$
 ;
@@ -7068,7 +7092,7 @@ BEGIN
    WHERE kernel IN (v_proj, 'pgck') AND verb = p_verb
    ORDER BY (kernel = v_proj) DESC, epoch DESC LIMIT 1;
   IF v_plan IS NULL OR v_plan->>'kind' <> 'sparql' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'unknown_query_affordance', 'verb', p_verb); END IF;
+    RETURN jsonb_build_object('ok', false, 'error', 'unknown_query_affordance', 'sqlstate', '42704', 'verb', p_verb); END IF;
 
   v_stmt   := v_plan->>'statement';
   v_params := COALESCE(v_plan->'params', '[]'::jsonb);
@@ -7078,9 +7102,9 @@ BEGIN
   FOR v_name IN SELECT jsonb_array_elements_text(v_params) LOOP
     v_val := p_payload->>v_name;
     IF v_val IS NULL THEN
-      RETURN jsonb_build_object('ok', false, 'error', 'missing_param', 'param', v_name); END IF;
+      RETURN jsonb_build_object('ok', false, 'error', 'missing_param', 'sqlstate', '22004', 'param', v_name); END IF;
     IF v_val !~ v_val_re THEN
-      RETURN jsonb_build_object('ok', false, 'error', 'invalid_param', 'param', v_name); END IF;
+      RETURN jsonb_build_object('ok', false, 'error', 'invalid_param', 'sqlstate', '22023', 'param', v_name); END IF;
     v_stmt := replace(v_stmt, '$' || v_name || '$', v_val);
   END LOOP;
 
@@ -7090,7 +7114,7 @@ BEGIN
                             'count', COALESCE(jsonb_array_length(v_rows), 0),
                             'rows', COALESCE(v_rows, '[]'::jsonb));
 EXCEPTION WHEN OTHERS THEN
-  RETURN jsonb_build_object('ok', false, 'error', SQLERRM);
+  RETURN jsonb_build_object('ok', false, 'error', SQLERRM, 'sqlstate', SQLSTATE);
 END;
 $function$
 ;
@@ -7438,10 +7462,10 @@ DECLARE
   v_profile text := p_payload->>'profile';
 BEGIN
   IF v_trigger IS NULL OR v_trigger NOT IN ('batch','on_seal','governance-manual') THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'invalid_trigger', 'trigger', v_trigger);
+    RETURN jsonb_build_object('ok', false, 'error', 'invalid_trigger', 'sqlstate', '22023', 'trigger', v_trigger);
   END IF;
   IF v_profile IS NULL OR v_profile NOT IN ('rdfs','owl-rl') THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'invalid_profile', 'profile', v_profile);
+    RETURN jsonb_build_object('ok', false, 'error', 'invalid_profile', 'sqlstate', '22023', 'profile', v_profile);
   END IF;
   INSERT INTO ckp.config(k,v) VALUES ('materialize_trigger', v_trigger) ON CONFLICT (k) DO UPDATE SET v=EXCLUDED.v;
   INSERT INTO ckp.config(k,v) VALUES ('materialize_profile', v_profile) ON CONFLICT (k) DO UPDATE SET v=EXCLUDED.v;
@@ -7501,7 +7525,7 @@ DECLARE v_req text := p_payload->>'requester'; v_rows jsonb;
 BEGIN
   -- F-E: a bulk replay requires an explicit grant on the requester.
   IF v_req IS NULL OR NOT ckp.has_grant(v_req, 'snapshot') THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'snapshot_not_granted', 'requester', v_req);
+    RETURN jsonb_build_object('ok', false, 'error', 'snapshot_not_granted', 'sqlstate', '42501', 'requester', v_req);
   END IF;
   SELECT jsonb_agg(jsonb_build_object('id', id, 'type', body->>'type') ORDER BY id) INTO v_rows FROM ckp.instances;
   RETURN jsonb_build_object('ok', true, 'requester', v_req,
@@ -7531,7 +7555,7 @@ BEGIN
     v_quads := pgrdf.parse_turtle(p_ttl, v_scratch, 'urn:ckp:stage#');
   EXCEPTION WHEN OTHERS THEN
     PERFORM pgrdf.clear_graph(v_scratch);
-    RETURN jsonb_build_object('ok', false, 'error', 'parse_error', 'detail', SQLERRM);
+    RETURN jsonb_build_object('ok', false, 'error', 'parse_error', 'sqlstate', '42601', 'detail', SQLERRM);
   END;
 
   -- 2. META-FENCE — admit only ontology-meta predicates (rdf/rdfs/owl/sh). Any other predicate
@@ -7549,7 +7573,7 @@ BEGIN
   PERFORM pgrdf.clear_graph(v_scratch);
 
   IF v_forbidden IS NOT NULL THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'fence_violation',
+    RETURN jsonb_build_object('ok', false, 'error', 'fence_violation', 'sqlstate', '42501',
                               'forbidden_predicates', v_forbidden, 'staged_quads', v_quads);
   END IF;
   RETURN jsonb_build_object('ok', true, 'staged_quads', v_quads, 'fenced', 'ontology-meta-only');
@@ -7572,11 +7596,11 @@ DECLARE
   v_body   jsonb; v_from text; v_type text; v_allowed jsonb; v_has_map boolean; v_src text;
 BEGIN
   IF v_to IS NULL OR v_to !~ v_state_re THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'invalid_to_state', 'to_state', v_to);
+    RETURN jsonb_build_object('ok', false, 'error', 'invalid_to_state', 'sqlstate', '22023', 'to_state', v_to);
   END IF;
   SELECT body INTO v_body FROM ckp.instances WHERE id = v_id;
   IF v_body IS NULL THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'unknown_instance', 'id', v_id);
+    RETURN jsonb_build_object('ok', false, 'error', 'unknown_instance', 'sqlstate', '42704', 'id', v_id);
   END IF;
   v_type := v_body->>'type';
   v_from := COALESCE(v_body->>(N||'lifecycle_state'), v_body->>'state', v_body->>(C||'lifecycle_state'), 'planned');
@@ -7598,7 +7622,7 @@ BEGIN
         SELECT ?t WHERE { GRAPH ?g {
           <%s> ckp:allowsTransition ?t . ?t ckp:fromState "%s" ; ckp:toState "%s" } }
       $q$, C, v_type, v_from, v_to)) j) THEN
-      RETURN jsonb_build_object('ok', false, 'error', 'invalid_transition',
+      RETURN jsonb_build_object('ok', false, 'error', 'invalid_transition', 'sqlstate', '55000',
                                 'from', v_from, 'to', v_to, 'source', v_src);
     END IF;
   ELSE
@@ -7606,7 +7630,7 @@ BEGIN
     v_src := 'config';
     v_allowed := (SELECT v::jsonb FROM ckp.config WHERE k='transition_map')->v_from;
     IF v_allowed IS NULL OR NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(v_allowed) e WHERE e = v_to) THEN
-      RETURN jsonb_build_object('ok', false, 'error', 'invalid_transition',
+      RETURN jsonb_build_object('ok', false, 'error', 'invalid_transition', 'sqlstate', '55000',
                                 'from', v_from, 'to', v_to, 'allowed', v_allowed, 'source', v_src);
     END IF;
   END IF;
@@ -7659,9 +7683,9 @@ DECLARE
   v_keyiri  text;
 BEGIN
   IF v_id IS NULL OR btrim(v_id) = '' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'id_required'); END IF;
+    RETURN jsonb_build_object('ok', false, 'error', 'id_required', 'sqlstate', '22004'); END IF;
   IF v_patch IS NULL OR jsonb_typeof(v_patch) <> 'object' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'invalid_patch', 'hint', 'instance.update generic form needs a {patch:{…}} object'); END IF;
+    RETURN jsonb_build_object('ok', false, 'error', 'invalid_patch', 'sqlstate', '22023', 'hint', 'instance.update generic form needs a {patch:{…}} object'); END IF;
   -- 0.4.102 (E-5) — ONE ID VOCABULARY, READ AND WRITE ALIKE. instance.get has
   -- resolved bare, ckp://Type#id and urn:ckp:instance:<id> forms since 0.4.90;
   -- this verb kept looking up ckp.instances.id directly, so a caller could READ
@@ -7673,7 +7697,7 @@ BEGIN
   v_id := ckp._resolve_id(v_id);
   SELECT body INTO v_cur FROM ckp.instances WHERE id = v_id;
   IF v_cur IS NULL THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'unknown_instance', 'id', v_id,
+    RETURN jsonb_build_object('ok', false, 'error', 'unknown_instance', 'sqlstate', '42704', 'id', v_id,
       'hint', 'accepted id forms: the bare instance id, the stamped @id (ckp://Type#id), and urn:ckp:instance:<id>'); END IF;
 
   v_type := v_cur->>'type';
@@ -7710,7 +7734,7 @@ BEGIN
       -- to check against, and refusing would invent one the surface never made.
       IF v_shaped AND NOT EXISTS (
            SELECT 1 FROM jsonb_each_text(v_propmap) m WHERE m.value = v_key) THEN
-        RETURN jsonb_build_object('ok', false, 'error', 'undeclared_patch_key',
+        RETURN jsonb_build_object('ok', false, 'error', 'undeclared_patch_key', 'sqlstate', '42704',
                                   'key', v_key, 'type', v_type, 'form', 'absolute-iri',
                                   'hint', 'spelling the namespace out does not declare a property',
                                   'declared', (SELECT jsonb_agg(m.value ORDER BY m.value)
@@ -7721,7 +7745,7 @@ BEGIN
       IF v_propmap ? v_key THEN
         v_keyiri := v_propmap->>v_key;                      -- declared localname -> IRI
       ELSE
-        RETURN jsonb_build_object('ok', false, 'error', 'undeclared_patch_key',
+        RETURN jsonb_build_object('ok', false, 'error', 'undeclared_patch_key', 'sqlstate', '42704',
                                   'key', v_key, 'type', v_type,
                                   'declared', (SELECT jsonb_agg(k) FROM jsonb_object_keys(v_propmap) k));
       END IF;
@@ -7779,7 +7803,7 @@ BEGIN
             THEN jsonb_build_object('warnings', current_setting('ckp.last_warnings', true)::jsonb)
             ELSE '{}'::jsonb END;
 EXCEPTION WHEN OTHERS THEN
-  RETURN jsonb_build_object('ok', false, 'error', SQLERRM);
+  RETURN jsonb_build_object('ok', false, 'error', SQLERRM, 'sqlstate', SQLSTATE);
 END;
 $function$
 ;
@@ -7928,10 +7952,10 @@ BEGIN
     -- field the caller DID supply, and the caller re-sends it. Distinguish.
     IF p_payload ? '@type' OR p_payload ? 'type'
        OR (jsonb_typeof(p_payload->'body') = 'object' AND ((p_payload->'body') ? '@type')) THEN
-      RETURN jsonb_build_object('ok', false, 'error', 'type_not_readable_here',
+      RETURN jsonb_build_object('ok', false, 'error', 'type_not_readable_here', 'sqlstate', '42704',
         'hint', 'a type WAS supplied, in a position this verb does not read. Accepted: FLAT {"type": "<class IRI>", "<prop>": …}, or nested {"body": {"type": …, "<prop>": …}}. NOT accepted: @type (never read), or {"type": …, "body": {…}} — that puts the type outside the body this verb descends into.');
     END IF;
-    RETURN jsonb_build_object('ok', false, 'error', 'type_required',
+    RETURN jsonb_build_object('ok', false, 'error', 'type_required', 'sqlstate', '22004',
       'hint', 'the payload is flat: {"type": "<class IRI>", "<prop>": …}');
   END IF;
 
@@ -7987,7 +8011,7 @@ BEGIN
     PERFORM pgrdf.parse_turtle(v_ttl, v_scratch, 'urn:ckp:validate#');
   EXCEPTION WHEN OTHERS THEN
     PERFORM pgrdf.clear_graph(v_scratch);
-    RETURN jsonb_build_object('ok', false, 'error', 'project_error', 'detail', SQLERRM);
+    RETURN jsonb_build_object('ok', false, 'error', 'project_error', 'sqlstate', '42704', 'detail', SQLERRM);
   END;
 
   -- Full native W3C SHACL Core report against the COMPOSED SURFACE -- the graph
@@ -8223,20 +8247,20 @@ DECLARE
 BEGIN
   -- 1. injection-safe field gate (mirrors VoteShape).
   IF v_value IS NULL OR v_value NOT IN ('approve','reject') THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'invalid_vote_value', 'value', v_value);
+    RETURN jsonb_build_object('ok', false, 'error', 'invalid_vote_value', 'sqlstate', '22023', 'value', v_value);
   END IF;
   IF v_about IS NULL OR v_about !~ '^[A-Za-z][A-Za-z0-9+.:#/_-]*$' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'invalid_about', 'about', v_about);
+    RETURN jsonb_build_object('ok', false, 'error', 'invalid_about', 'sqlstate', '22023', 'about', v_about);
   END IF;
 
   -- 2. the Proposal must exist and still be pending.
   SELECT body INTO v_prop FROM ckp.instances
     WHERE body->>'@id' = v_about AND body->>'type' = C||'Proposal';
   IF v_prop IS NULL THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'unknown_proposal', 'about', v_about);
+    RETURN jsonb_build_object('ok', false, 'error', 'unknown_proposal', 'sqlstate', '42704', 'about', v_about);
   END IF;
   IF v_prop->>(C||'proposalState') <> 'pending' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'proposal_not_pending',
+    RETURN jsonb_build_object('ok', false, 'error', 'proposal_not_pending', 'sqlstate', '55000',
                               'state', v_prop->>(C||'proposalState'));
   END IF;
   v_quorum := COALESCE((v_prop->>(C||'requiresQuorum'))::int, 1);
@@ -8249,7 +8273,7 @@ BEGIN
            'ckp:voteValue "'||v_value||'" .';
   v_report := ckp.validate_report(v_ttl, v_core);
   IF (v_report->>'conforms') IS DISTINCT FROM 'true' THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'shape_violation', 'violations', v_report->'violations');
+    RETURN jsonb_build_object('ok', false, 'error', 'shape_violation', 'sqlstate', '23514', 'violations', v_report->'violations');
   END IF;
 
   -- 4. seal the Vote (sealed by the session identity — a human approval is indistinguishable).

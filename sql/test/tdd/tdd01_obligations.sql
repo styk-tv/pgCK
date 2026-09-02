@@ -577,18 +577,55 @@ EXCEPTION WHEN OTHERS THEN
 END $$;
 
 -- ═══ C-15 · every refusal-shaped prose is typed ════════════════════════════
+-- The first draft counted FUNCTIONS lacking 'sqlstate' anywhere — a function
+-- with ten refusals and one typed passed. The honest unit is the SITE: every
+-- jsonb_build_object('ok', false …) either carries 'sqlstate' within its own
+-- construction, or it is a fault the exception block stamps with the REAL
+-- SQLSTATE. And the code must be REGISTERED — a sqlstate nobody can look up
+-- teaches nothing.
 DO $$
-DECLARE untyped int;
+DECLARE untyped int; unregistered int; ex text; r jsonb; reg text;
 BEGIN
-  -- same fence, same reason
   WITH f AS MATERIALIZED (
     SELECT p.oid, p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-     WHERE n.nspname='ckp' AND p.prokind='f')
-  SELECT count(*) INTO untyped FROM f
-   WHERE pg_get_functiondef(f.oid) ~ 'ok.., false, .error'
-     AND pg_get_functiondef(f.oid) NOT LIKE '%sqlstate%';
-  PERFORM tdd('C-15','every refusal carries a registered code and sqlstate; an ok:false with neither is fault-shaped',
-    'behaviour','RED', untyped||' ckp function(s) return ok:false with an error and NO sqlstate — untyped refusals a classifier cannot key on');
+     WHERE n.nspname='ckp' AND p.prokind='f'),
+  sites AS (
+    SELECT f.proname, s.chunk FROM f,
+           LATERAL regexp_split_to_table(pg_get_functiondef(f.oid),
+                   'jsonb_build_object\(''ok'', false') WITH ORDINALITY AS s(chunk, ord)
+     WHERE s.ord > 1)
+  SELECT count(*) FILTER (WHERE left(chunk,300) NOT LIKE '%sqlstate%'),
+         string_agg(DISTINCT proname, ', ') FILTER (WHERE left(chunk,300) NOT LIKE '%sqlstate%')
+    INTO untyped, ex FROM sites;
+
+  WITH f AS MATERIALIZED (
+    SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+     WHERE n.nspname='ckp' AND p.prokind='f'),
+  codes AS (
+    SELECT DISTINCT m[1] AS code FROM f,
+           LATERAL regexp_matches(pg_get_functiondef(f.oid), '''error'', ''([a-z0-9_]+)''', 'g') m)
+  SELECT count(*), string_agg(code, ', ') INTO unregistered, reg
+    FROM codes WHERE NOT EXISTS (SELECT 1 FROM ckp.refusal_registry rr WHERE rr.code = codes.code);
+
+  IF untyped > 0 THEN
+    PERFORM tdd('C-15','every refusal carries a registered code and sqlstate; an ok:false with neither is fault-shaped',
+      'behaviour','RED', untyped||' refusal site(s) carry no sqlstate in their own construction (in: '||COALESCE(ex,'?')||')');
+  ELSIF unregistered > 0 THEN
+    PERFORM tdd('C-15','every refusal carries a registered code and sqlstate; an ok:false with neither is fault-shaped',
+      'behaviour','RED', unregistered||' returned error code(s) are NOT in ckp.refusal_registry: '||COALESCE(reg,'?')||' — a code nobody can look up teaches nothing');
+  ELSE
+    -- CONTROL: a LIVE refusal's sqlstate must equal the registered one, or the
+    -- registry documents something the wire does not say.
+    r := ckp.update_typed(jsonb_build_object('id','tdd-c15-never-existed','patch',jsonb_build_object('x',1)));
+    IF r->>'error' IS DISTINCT FROM 'unknown_instance'
+       OR r->>'sqlstate' IS DISTINCT FROM (SELECT rr.sqlstate FROM ckp.refusal_registry rr WHERE rr.code='unknown_instance') THEN
+      PERFORM tdd('C-15','every refusal carries a registered code and sqlstate; an ok:false with neither is fault-shaped',
+        'behaviour','RED','a live unknown_instance refusal does not match its registered sqlstate — got '||COALESCE(r->>'sqlstate','none'));
+    ELSE
+      PERFORM tdd('C-15','every refusal carries a registered code and sqlstate; an ok:false with neither is fault-shaped',
+        'behaviour','GREEN','every refusal site types itself, every returned code is registered, and a live refusal matches its registered sqlstate ('||(r->>'sqlstate')||')');
+    END IF;
+  END IF;
 EXCEPTION WHEN OTHERS THEN
   PERFORM tdd('C-15','every refusal carries a registered code and sqlstate','behaviour','BROKEN',SQLERRM);
 END $$;
