@@ -2792,6 +2792,28 @@ BEGIN
     v_out := v_out || jsonb_build_object(N||'createdBy', p_participant);
   END IF;
 
+  -- 0.4.107 (C-7) — onBehalfOf, SERVER-DERIVED, ABSENCE IS THE SIGNAL. When an
+  -- agent's verified connection acts for a participant, the trusted ingress
+  -- sets ckp.on_behalf_of beside ckp.requester (exactly as it sets requester:
+  -- from the verified connection, never the payload — a body carrying its own
+  -- claim had it stripped before this ran). Present ⇒ an Agent sealed on that
+  -- participant's behalf; absent ⇒ the participant acted directly. The two
+  -- must stay distinguishable, so a value equal to the actor itself is NOT
+  -- stamped — "on behalf of myself" is acting directly, and stamping it would
+  -- erase the distinction the property exists to carry.
+  DECLARE v_obo text := NULLIF(trim(COALESCE(current_setting('ckp.on_behalf_of', true), '')), '');
+  BEGIN
+    IF v_obo IS NOT NULL THEN
+      -- urn_normalise, matching createdBy's own derivation two lines up — one
+      -- normaliser for both identity stamps, or the same person diverges into
+      -- two IRIs the moment their name carries an edge character.
+      v_obo := 'urn:ckp:participant:'||ckp.urn_normalise(v_obo);
+      IF v_obo IS DISTINCT FROM p_participant THEN
+        v_out := v_out || jsonb_build_object(N||'onBehalfOf', v_obo);
+      END IF;
+    END IF;
+  END;
+
   -- sealedAtEpoch — the producing kernel's epoch at seal. Carried as a JSON
   -- number so a re-projection of the stored body yields xsd:integer, which is
   -- what InstanceShape declares.
@@ -3286,6 +3308,17 @@ BEGIN
                            'party may enact the change. Ask the owner to apply.',
                            v_prop->>(C||'about'), v_tgt_owner));
         END IF;
+      END IF;
+      -- 0.4.107 (C-6): role narrowing on the apply, same target derivation.
+      -- Sits AFTER the ownership gate: an owner is never narrowed by the roles
+      -- they set, and a non-owner who somehow reaches here (unowned project)
+      -- still needs the apply grant where Memberships exist.
+      IF NOT ckp._role_permits(v_tgt_proj,
+              'urn:ckp:participant:'||ckp.urn_normalise(COALESCE(NULLIF(trim(COALESCE(current_setting('ckp.requester', true), '')), ''), '')),
+              'apply') THEN
+        RETURN jsonb_build_object('ok', false, 'refused', true, 'sqlstate', '42501',
+          'error', 'role_required', 'action', 'apply', 'project', v_tgt_proj,
+          'hint', 'this project seals Memberships, and yours (if any) holds no Role whose Grant carries permAction ''apply''.');
       END IF;
     END IF;
   END;
@@ -4733,6 +4766,62 @@ COMMENT ON FUNCTION ckp._dispatch_safe(text, jsonb) IS
   'terminates the worker — taking the auth-callout responder with it and closing '
   'the door for every client (measured 2026-08-11, pgck-bridge exit code 1).';
 
+CREATE OR REPLACE FUNCTION ckp._role_permits(p_project text, p_participant text, p_action text)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_piri text := 'urn:ckp:project:'||p_project;
+  v_owner text;
+BEGIN
+  -- 0.4.107 (C-6) — TIER-2 ROLES, ENFORCED. Role/Grant/Membership have been
+  -- declared law since the root shipped, read by NOTHING — the recurring
+  -- pathology (declaration outruns projection), here at the authority layer.
+  -- The rule, from TICK-ROSTER PASS-3 §5: in-kernel roles NARROW what a
+  -- participant may do inside one kernel and never widen the Tier-1 floor.
+  -- Three clauses, in order:
+  --   * a project with NO sealed Memberships imposes nothing (the 0.4.81
+  --     bind-only-what-declared-itself rule — same as ownership, same as the
+  --     quorum floor);
+  --   * the declared OWNER is never narrowed by roles — they set them, and a
+  --     lock the keyholder can close on themselves is a foot-gun, not a floor;
+  --   * everyone else needs a Membership in THIS project holding a Role whose
+  --     Grant carries permAction = the act. Roles only ADD refusals: nothing
+  --     here can grant what Tier-1 denied, because this function is consulted
+  --     by verbs the caller could already reach.
+  IF NOT EXISTS (SELECT 1 FROM ckp.instances i
+                  WHERE i.body->>'type' = C||'Membership'
+                    AND i.body->>(C||'memberOf') = v_piri) THEN
+    RETURN true;
+  END IF;
+  SELECT i.body->>(C||'ownedBy') INTO v_owner FROM ckp.instances i
+   WHERE i.body->>'@id' = v_piri AND i.body->>'type' = C||'Project'
+   ORDER BY i.ts_created DESC LIMIT 1;
+  IF v_owner IS NOT NULL AND v_owner = p_participant THEN
+    RETURN true;
+  END IF;
+  RETURN EXISTS (
+    SELECT 1
+      FROM ckp.instances m
+      JOIN ckp.instances r ON r.body->>'@id' = m.body->>(C||'holdsRole')
+                          AND r.body->>'type' = C||'Role'
+      JOIN LATERAL jsonb_array_elements_text(
+             CASE WHEN jsonb_typeof(r.body->(C||'grant')) = 'array'
+                  THEN r.body->(C||'grant')
+                  ELSE jsonb_build_array(r.body->(C||'grant')) END) g(iri) ON true
+      JOIN ckp.instances gr ON gr.body->>'@id' = g.iri
+                           AND gr.body->>'type' = C||'Grant'
+     WHERE m.body->>'type' = C||'Membership'
+       AND m.body->>(C||'memberOf') = v_piri
+       AND m.body->>(C||'memberIs') = p_participant
+       AND gr.body->>(C||'permAction') = p_action);
+END;
+$function$
+;
+
 CREATE OR REPLACE FUNCTION ckp._law_forces_kernel_epoch()
  RETURNS boolean
  LANGUAGE plpgsql
@@ -5520,7 +5609,8 @@ INSERT INTO ckp.refusal_registry (code, sqlstate, teaches) VALUES
   -- 0.4.102/0.4.99 and never registered — the exact defect class C-15 retires,
   -- committed by the same hands that then built the gate. The gate works.
   ('not_owner',                  '42501', 'the acting identity is not the declared owner of the target project; quorum answers whether enough parties AGREED, ownership answers whether THIS party may enact — ask the owner'),
-  ('ownership_not_patchable',    '42501', 'ckp:ownedBy is server-derived at germination and no transfer verb exists; both the germinate guard and the apply gate read it, so a patchable owner would void both')
+  ('ownership_not_patchable',    '42501', 'ckp:ownedBy is server-derived at germination and no transfer verb exists; both the germinate guard and the apply gate read it, so a patchable owner would void both'),
+  ('role_required',              '42501', 'this project seals Memberships (Tier-2 roles) and the acting participant holds no Role whose Grant carries the needed permAction; roles NARROW — a project with no Memberships imposes nothing, and the owner is never narrowed by roles they set')
 ON CONFLICT (code) DO UPDATE SET sqlstate = EXCLUDED.sqlstate, teaches = EXCLUDED.teaches;
 
 -- 0.4.90 (Q-3) — THE PLANE, ASSIGNED BY RULE, NEVER BY HAND.
@@ -6158,6 +6248,17 @@ BEGIN
   IF v_quorum < 1 THEN
     RETURN jsonb_build_object('ok', false, 'error', 'invalid_requires_quorum', 'sqlstate', '22023', 'value', v_quorum);
   END IF;
+  -- 0.4.107 (C-6): a project that sealed Memberships narrows who may propose.
+  DECLARE
+    v_tgt text := substring(v_about from '^urn:ckp:([a-z0-9-]+)/');
+    v_me  text := NULLIF(trim(COALESCE(current_setting('ckp.requester', true), '')), '');
+  BEGIN
+    IF v_tgt IS NOT NULL AND NOT ckp._role_permits(v_tgt, 'urn:ckp:participant:'||ckp.urn_normalise(COALESCE(v_me,'')), 'propose') THEN
+      RETURN jsonb_build_object('ok', false, 'refused', true, 'sqlstate', '42501',
+        'error', 'role_required', 'action', 'propose', 'project', v_tgt,
+        'hint', 'this project seals Memberships, and yours (if any) holds no Role whose Grant carries permAction ''propose''. Roles narrow: ask the owner for a Membership, or propose against a project that has not narrowed itself.');
+    END IF;
+  END;
 
   v_pid := 'proposal-'||(extract(epoch from clock_timestamp())*1e9)::bigint::text;
 
@@ -7219,8 +7320,36 @@ BEGIN
   -- rejected claim. §4.3 says these are server-derived and claim-ignoring;
   -- removing them here is what makes that structural instead of conventional.
   p_body := p_body - ARRAY[
-    N||'producedBy', N||'createdBy', N||'sealedAtEpoch', N||'conformsToShape'
+    N||'producedBy', N||'createdBy', N||'sealedAtEpoch', N||'conformsToShape',
+    -- 0.4.107 (C-7): onBehalfOf joins the strip — it is the FIFTH server-derived
+    -- stamp, and a client that could assert it would forge the agent/direct
+    -- distinction the property exists to carry. Absence is the signal, so a
+    -- stripped claim leaves exactly the honest state: acted directly.
+    N||'onBehalfOf'
   ];
+
+  -- 0.4.107 (C-6) — MEMBERSHIPS ARE OWNER-SETTABLE. A Membership is the
+  -- binding that makes a Role bite (Role and Grant instances bind nothing by
+  -- themselves), so whoever can seal one legislates who may act in the
+  -- project. That is the owner's pen: where the target project declares an
+  -- owner, only the owner writes Memberships — the E-4 rule at the authority
+  -- layer. An unowned project imposes nothing, as everywhere else.
+  IF p_body->>'type' = N||'Membership' THEN
+    DECLARE
+      v_mo    text := p_body->>(N||'memberOf');
+      v_mown  text;
+    BEGIN
+      IF v_mo IS NOT NULL THEN
+        SELECT i.body->>(N||'ownedBy') INTO v_mown FROM ckp.instances i
+         WHERE i.body->>'@id' = v_mo AND i.body->>'type' = N||'Project'
+         ORDER BY i.ts_created DESC LIMIT 1;
+        IF v_mown IS NOT NULL AND v_mown IS DISTINCT FROM v_participant THEN
+          RAISE EXCEPTION USING ERRCODE = '42501',
+            MESSAGE = format('ckp.seal: not_owner — a Membership in %s is the owner''s to seal (owner: %s). Roles narrow a project on its owner''s declaration; a stranger who could bind roles could bind themselves in.', v_mo, v_mown);
+        END IF;
+      END IF;
+    END;
+  END IF;
 
   -- 1. VALIDATE the payload against the COMPOSED shapes graph (P0-B, pgCK#25).
   --
@@ -8263,6 +8392,19 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'error', 'proposal_not_pending', 'sqlstate', '55000',
                               'state', v_prop->>(C||'proposalState'));
   END IF;
+  -- 0.4.107 (C-6): role narrowing on the vote, derived from the SEALED
+  -- proposal's target project (never the caller's word) — same derivation as
+  -- apply's ownership gate.
+  DECLARE
+    v_tgt text := substring(v_prop->>(C||'about') from '^urn:ckp:([a-z0-9-]+)/');
+    v_me  text := NULLIF(trim(COALESCE(current_setting('ckp.requester', true), '')), '');
+  BEGIN
+    IF v_tgt IS NOT NULL AND NOT ckp._role_permits(v_tgt, 'urn:ckp:participant:'||ckp.urn_normalise(COALESCE(v_me,'')), 'vote') THEN
+      RETURN jsonb_build_object('ok', false, 'refused', true, 'sqlstate', '42501',
+        'error', 'role_required', 'action', 'vote', 'project', v_tgt,
+        'hint', 'this project seals Memberships, and yours (if any) holds no Role whose Grant carries permAction ''vote''.');
+    END IF;
+  END;
   v_quorum := COALESCE((v_prop->>(C||'requiresQuorum'))::int, 1);
 
   v_vid := 'vote-'||(extract(epoch from clock_timestamp())*1e9)::bigint::text;

@@ -341,27 +341,143 @@ BEGIN
     'existence','RED','no scope between core (everyone) and one kernel. proof_obligations PK is (project,obligation); adoption is per project; core is global. The middle has no home');
 END $$;
 
--- ═══ C-6 · Tier-2 in-kernel roles ══════════════════════════════════════════
+-- ═══ C-6 · in-kernel roles (Tier 2) ════════════════════════════════════════
+-- Role, Grant and Membership have been declared law since the root shipped —
+-- read by NOTHING. Now they narrow: a project that seals Memberships requires
+-- the acting participant to hold a Role whose Grant carries the verb's
+-- permAction; a project with none imposes nothing; the OWNER is never
+-- narrowed by roles they set; and Memberships are the owner's to seal. Roles
+-- only ADD refusals — nothing here widens the Tier-1 floor, because these
+-- guards live inside verbs the caller could already reach.
 DO $$
+DECLARE C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+        r_stranger jsonb; r_member jsonb; r_owner jsonb; r_open jsonb; r_wrongact jsonb;
+        seal_refused boolean := false; seal_msg text;
 BEGIN
-  PERFORM tdd('C-6','an in-kernel role NARROWS what a participant may do inside one kernel and can never widen the Tier-1 floor',
-    'existence','RED','ckp.grants has 0 rows and is (grantee,permission) — 3 declared dimensions flattened to 1. No role is read anywhere');
+  -- FIXTURE: project tddc6 owned by tdd-c6-owner; member tdd-c6-member holds a
+  -- Role granting ONLY 'propose'. Direct INSERT is the artifact ritual — the
+  -- guards under test are what the fixtures must exist BEFORE.
+  DELETE FROM ckp.instances WHERE id LIKE 'tdd-c6-%';
+  INSERT INTO ckp.instances(id, body) VALUES
+    ('tdd-c6-proj', jsonb_build_object('@id','urn:ckp:project:tddc6','type',C||'Project',
+       'http://www.w3.org/2000/01/rdf-schema#label','c6',
+       C||'ownedBy','urn:ckp:participant:tdd-c6-owner')),
+    ('tdd-c6-grant', jsonb_build_object('@id','ckp://Grant#tdd-c6-propose','type',C||'Grant',
+       C||'permDomain','governance', C||'permAction','propose', C||'permTarget','urn:ckp:tddc6/organ/ck')),
+    ('tdd-c6-role', jsonb_build_object('@id','ckp://Role#tdd-c6-proposer','type',C||'Role',
+       'http://www.w3.org/2000/01/rdf-schema#label','proposer',
+       C||'grant','ckp://Grant#tdd-c6-propose')),
+    ('tdd-c6-mem', jsonb_build_object('@id','ckp://Membership#tdd-c6-m1','type',C||'Membership',
+       C||'memberIs','urn:ckp:participant:tdd-c6-member',
+       C||'memberOf','urn:ckp:project:tddc6',
+       C||'holdsRole','ckp://Role#tdd-c6-proposer'));
+
+  -- (a) a STRANGER proposing into the narrowed project: refused role_required.
+  PERFORM set_config('ckp.requester','tdd-c6-stranger',true);
+  r_stranger := ckp.propose_change('tddc6', jsonb_build_object('op','add_class',
+                  'detail', jsonb_build_object('class','urn:ckp:tddc6/type/C6')));
+  -- (b) the MEMBER with the propose grant: not refused for roles.
+  PERFORM set_config('ckp.requester','tdd-c6-member',true);
+  r_member := ckp.propose_change('tddc6', jsonb_build_object('op','add_class',
+                  'detail', jsonb_build_object('class','urn:ckp:tddc6/type/C6')));
+  -- (c) narrowing is PER ACTION: the same member holds no 'vote' grant.
+  IF (r_member->>'ok')::boolean IS TRUE THEN
+    r_wrongact := ckp.vote(jsonb_build_object('about', r_member->>'proposal_iri', 'value','approve'));
+  END IF;
+  -- (d) the OWNER, holding no Membership at all: never narrowed.
+  PERFORM set_config('ckp.requester','tdd-c6-owner',true);
+  r_owner := ckp.propose_change('tddc6', jsonb_build_object('op','add_class',
+                  'detail', jsonb_build_object('class','urn:ckp:tddc6/type/C6b')));
+  -- (e) a project with NO memberships imposes nothing.
+  PERFORM set_config('ckp.requester','tdd-c6-stranger',true);
+  r_open := ckp.propose_change('tddc6open', jsonb_build_object('op','add_class',
+                  'detail', jsonb_build_object('class','urn:ckp:tddc6open/type/C6')));
+  -- (f) OWNER-SETTABLE: a stranger sealing a Membership into tddc6 is refused.
+  BEGIN
+    PERFORM ckp.seal('tdd-c6-evil', jsonb_build_object('@id','ckp://Membership#tdd-c6-evil','type',C||'Membership',
+       C||'memberIs','urn:ckp:participant:tdd-c6-stranger',
+       C||'memberOf','urn:ckp:project:tddc6',
+       C||'holdsRole','ckp://Role#tdd-c6-proposer'));
+  EXCEPTION WHEN OTHERS THEN
+    seal_refused := true; seal_msg := SQLERRM;
+  END;
+
+  DELETE FROM ckp.instances WHERE id LIKE 'tdd-c6-%'
+     OR body->>(C||'about') LIKE '%tddc6%' OR body->>'@id' LIKE '%tddc6%';
+
+  IF r_stranger->>'error' IS DISTINCT FROM 'role_required' THEN
+    PERFORM tdd('C-6','an in-kernel role NARROWS what a participant may do inside one kernel and can never widen the Tier-1 floor',
+      'behaviour','RED','a stranger was not refused role_required in a narrowed project — got '||COALESCE(r_stranger->>'error','ok'));
+  ELSIF (r_member->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-6','an in-kernel role NARROWS what a participant may do inside one kernel and can never widen the Tier-1 floor',
+      'behaviour','RED','the member WITH the propose grant was refused ('||COALESCE(r_member->>'error','?')||') — a wall, not a gate');
+  ELSIF r_wrongact->>'error' IS DISTINCT FROM 'role_required' THEN
+    PERFORM tdd('C-6','an in-kernel role NARROWS what a participant may do inside one kernel and can never widen the Tier-1 floor',
+      'behaviour','RED','a propose-only member could VOTE — narrowing is not per-action, got '||COALESCE(r_wrongact->>'error','ok'));
+  ELSIF (r_owner->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-6','an in-kernel role NARROWS what a participant may do inside one kernel and can never widen the Tier-1 floor',
+      'behaviour','RED','the OWNER was narrowed by roles they set — got '||COALESCE(r_owner->>'error','?'));
+  ELSIF (r_open->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-6','an in-kernel role NARROWS what a participant may do inside one kernel and can never widen the Tier-1 floor',
+      'behaviour','RED','a project with NO memberships refused — roles imposed where nothing was declared: '||COALESCE(r_open->>'error','?'));
+  ELSIF NOT seal_refused OR position('not_owner' in COALESCE(seal_msg,'')) = 0 THEN
+    PERFORM tdd('C-6','an in-kernel role NARROWS what a participant may do inside one kernel and can never widen the Tier-1 floor',
+      'behaviour','RED','a STRANGER sealed a Membership into an owned project — whoever binds roles binds themselves in: '||COALESCE(left(seal_msg,80),'sealed clean'));
+  ELSE
+    PERFORM tdd('C-6','an in-kernel role NARROWS what a participant may do inside one kernel and can never widen the Tier-1 floor',
+      'behaviour','GREEN','stranger refused role_required; member passes their granted action and ONLY that action; owner never narrowed; unmembered project imposes nothing; Memberships are the owner''s to seal');
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  BEGIN DELETE FROM ckp.instances WHERE id LIKE 'tdd-c6-%'; EXCEPTION WHEN OTHERS THEN NULL; END;
+  PERFORM tdd('C-6','an in-kernel role NARROWS what a participant may do inside one kernel','behaviour','BROKEN',SQLERRM);
 END $$;
 
 -- ═══ C-7 · onBehalfOf stamped ══════════════════════════════════════════════
+-- Declared law since the root shipped (subPropertyOf prov:actedOnBehalfOf, on
+-- InstanceShape maxCount 1), emitted by NOTHING. Now the seal derives it from
+-- ckp.on_behalf_of — set by the trusted ingress beside ckp.requester, never
+-- read from the payload — and ABSENCE IS THE SIGNAL: a direct seal carries
+-- none, and a payload claim is stripped, not sealed.
 DO $$
-DECLARE n int;
+DECLARE C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+        agent jsonb; direct jsonb; forged jsonb;
 BEGIN
-  SELECT count(*) INTO n FROM ckp.instances WHERE body ? 'https://conceptkernel.org/ontology/v3.11/core#onBehalfOf';
-  IF n = 0 THEN
+  PERFORM set_config('ckp.requester','svc:tdd-c7-agent',true);
+  PERFORM set_config('ckp.on_behalf_of','tdd-c7-human',true);
+  PERFORM ckp.seal('tdd-c7-agent', jsonb_build_object('type',C||'Vote','@id','ckp://Vote#tdd-c7-agent',
+    C||'about','ckp://Proposal#tdd-c7-x', C||'voteValue','approve'));
+  SELECT body INTO agent FROM ckp.instances WHERE id='tdd-c7-agent';
+
+  PERFORM set_config('ckp.on_behalf_of','',true);
+  PERFORM ckp.seal('tdd-c7-direct', jsonb_build_object('type',C||'Vote','@id','ckp://Vote#tdd-c7-direct',
+    C||'about','ckp://Proposal#tdd-c7-x', C||'voteValue','approve'));
+  SELECT body INTO direct FROM ckp.instances WHERE id='tdd-c7-direct';
+
+  PERFORM ckp.seal('tdd-c7-forged', jsonb_build_object('type',C||'Vote','@id','ckp://Vote#tdd-c7-forged',
+    C||'about','ckp://Proposal#tdd-c7-x', C||'voteValue','approve',
+    C||'onBehalfOf','urn:ckp:participant:tdd-c7-victim'));
+  SELECT body INTO forged FROM ckp.instances WHERE id='tdd-c7-forged';
+  DELETE FROM ckp.instances WHERE id IN ('tdd-c7-agent','tdd-c7-direct','tdd-c7-forged');
+
+  IF agent->>(C||'onBehalfOf') IS DISTINCT FROM 'urn:ckp:participant:tdd-c7-human' THEN
     PERFORM tdd('C-7','an agent seal carries onBehalfOf; a direct human seal does NOT (absence is the signal)',
-      'existence','RED','declared in core with rdfs:subPropertyOf prov:actedOnBehalfOf, and written by NOTHING — 0 instances carry it');
+      'behaviour','RED','an agent seal did not carry the server-derived onBehalfOf — got '||COALESCE(agent->>(C||'onBehalfOf'),'nothing'));
+  ELSIF direct ? (C||'onBehalfOf') THEN
+    PERFORM tdd('C-7','an agent seal carries onBehalfOf; a direct human seal does NOT (absence is the signal)',
+      'behaviour','RED','a DIRECT seal carries onBehalfOf — absence was the signal and it is gone');
+  ELSIF forged ? (C||'onBehalfOf') THEN
+    PERFORM tdd('C-7','an agent seal carries onBehalfOf; a direct human seal does NOT (absence is the signal)',
+      'behaviour','RED','a client-supplied onBehalfOf claim SEALED — the agent/direct distinction is forgeable from the payload');
   ELSE
     PERFORM tdd('C-7','an agent seal carries onBehalfOf; a direct human seal does NOT (absence is the signal)',
-      'existence','RED', n||' instances carry it — now prove the ABSENCE case too, or the stamp means nothing');
+      'behaviour','GREEN','agent seal stamped server-derived onBehalfOf; direct seal carries none; a payload claim is stripped, not sealed');
   END IF;
 EXCEPTION WHEN OTHERS THEN
-  PERFORM tdd('C-7','an agent seal carries onBehalfOf; a direct human seal does NOT (absence is the signal)','existence','BROKEN',SQLERRM);
+  BEGIN
+    PERFORM set_config('ckp.on_behalf_of','',true);
+    DELETE FROM ckp.instances WHERE id IN ('tdd-c7-agent','tdd-c7-direct','tdd-c7-forged');
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+  PERFORM tdd('C-7','an agent seal carries onBehalfOf; a direct human seal does NOT (absence is the signal)','behaviour','BROKEN',SQLERRM);
 END $$;
 
 -- ═══ C-8 · Signal + dwellMillis ════════════════════════════════════════════
