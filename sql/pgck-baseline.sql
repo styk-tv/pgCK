@@ -158,6 +158,26 @@ ALTER TABLE ckp.instances ADD CONSTRAINT instances_meta_not_null NOT NULL meta;
 ALTER TABLE ckp.instances ADD CONSTRAINT instances_ts_created_not_null NOT NULL ts_created;
 ALTER TABLE ckp.instances ADD CONSTRAINT instances_ts_updated_not_null NOT NULL ts_updated;
 
+-- 0.4.109 (C-11) — THE ORBIT QUEUE. A crossing ENQUEUES and never executes;
+-- the drain is bounded, counts attempts, and is fair across kernels. Both
+-- lessons this table inherits are paid for: attempt_count because a failing
+-- job re-selected forever starves every kernel behind it and at any cadence
+-- that presents as THE LOOP WORKING (0.4.80); one-job-per-kernel-per-drain
+-- because a single FIFO makes one kernel's backlog every other kernel's wait
+-- (SUBSTRATE-SCOPE §4.2 — the wait must scale with how many kernels are
+-- busy, not how much the busiest one queued).
+CREATE TABLE IF NOT EXISTS ckp.orbit_job (
+  id            bigserial PRIMARY KEY,
+  kernel        text NOT NULL,
+  crossing_at   timestamptz NOT NULL,
+  state         text NOT NULL DEFAULT 'queued' CHECK (state IN ('queued','done','failed')),
+  attempt_count int NOT NULL DEFAULT 0,
+  last_error    text,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  done_at       timestamptz,
+  UNIQUE (kernel, crossing_at)
+);
+
 CREATE TABLE IF NOT EXISTS ckp.kernel_epoch (
   kernel text NOT NULL,
   epoch integer DEFAULT 1 NOT NULL
@@ -330,6 +350,8 @@ INSERT INTO ckp.affordance_registry (kernel, verb, in_topic, plane) VALUES
   -- 0.4.108 (C-10): the orbit read. Routed here, declared by the boot
   -- backfill (C-14) — both halves in the same act, or the gap regrows.
   ('pgck','orbit.next',          'input.kernel.pgck.action.orbit.next',          'instance'),
+  ('pgck','signal.boundary',     'input.kernel.pgck.action.signal.boundary',     'instance'),
+  ('pgck','score.tick',          'input.kernel.pgck.action.score.tick',          'instance'),
   ('pgck','integrity.check',     'input.kernel.pgck.action.integrity.check',     'instance'),
   ('pgck','authority.mine',      'input.kernel.pgck.action.authority.mine',      'instance'),
   -- 0.4.51 — the checker surface. Seeded here so they are DISPATCHABLE, and
@@ -4815,6 +4837,273 @@ END;
 $function$
 ;
 
+CREATE OR REPLACE FUNCTION ckp.signal_boundary(p_payload jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_about  text := p_payload->>'about';
+  v_dwell  bigint := (p_payload->>'dwellMillis')::bigint;
+  v_events int := COALESCE((p_payload->>'events')::int,
+                           CASE WHEN p_payload ? 'dwellMillis' THEN 1 ELSE 0 END);
+  v_id text;
+BEGIN
+  -- 0.4.109 (C-8) — ONE HASH-CHAINED BOUNDARY HEAD, NEVER PER EVENT. Presence
+  -- and dwell TRACES accumulate in the caller's own organ (R-14 — the raw
+  -- trace never crosses); what seals is ONE implicit Signal per boundary,
+  -- carrying the aggregated dwellMillis. The hash chain is not new machinery:
+  -- every seal already lands on the HMAC ledger with a prev_seq backlink, so
+  -- the boundary head is chained by the same instrument that chains
+  -- everything — one chain, not a bespoke second one.
+  --
+  -- NEVER-SAW SEALS NOTHING, and that is a SUCCESS, not a refusal: the
+  -- never-saw state is the absence of a Signal, which is correctly free.
+  -- Sealing a zero would manufacture evidence of an encounter that did not
+  -- happen.
+  IF v_about IS NULL OR btrim(v_about) = '' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'missing_param', 'sqlstate', '22004',
+      'hint', 'signal.boundary needs {about: <concept IRI>, dwellMillis, events}');
+  END IF;
+  IF v_events = 0 OR v_dwell IS NULL THEN
+    RETURN jsonb_build_object('ok', true, 'sealed', false, 'reason', 'never_saw',
+      'hint', 'the never-saw state is the absence of a Signal, which is correctly free — nothing seals');
+  END IF;
+  v_id := 'sigb-'||(extract(epoch from clock_timestamp())*1e9)::bigint::text;
+  PERFORM ckp.seal(v_id, jsonb_build_object(
+    'type', C||'Signal', '@id', 'ckp://Signal#'||v_id,
+    C||'about', v_about,
+    C||'signalPolarity', 'implicit',
+    C||'dwellMillis', to_jsonb(v_dwell)));
+  RETURN jsonb_build_object('ok', true, 'sealed', true, 'id', v_id,
+    'verified', ckp.verify(v_id), 'events', v_events,
+    'note', format('one boundary head for %s event(s); the raw trace stays organ-local (R-14); the ledger chain IS the hash chain', v_events));
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp.score_tick(p_kernel text DEFAULT NULL)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_proj  text := COALESCE(p_kernel, ckp._project());
+  v_kbody jsonb;
+  v_wa numeric; v_wd numeric; v_wi numeric; v_tau numeric; v_promote numeric;
+  v_epoch_before int; v_epoch_after int;
+  v_run text; v_now text;
+  r record;
+  v_scores jsonb := '[]'::jsonb;
+  v_drafted jsonb := '[]'::jsonb;
+  v_pid text;
+BEGIN
+  -- 0.4.109 (C-9) — THE TICK MAY DRAFT ONLY. Scores are DERIVED, never
+  -- asserted: computed from sealed Signals under the kernel's OWN law
+  -- (weights and tau from the sealed Kernel, substrate defaults where the
+  -- kernel declares none — 1.0 / -0.8 / 0.5 / 60000ms, each named in the
+  -- law's own comments), sealed with wasGeneratedBy naming a real ckp:Run
+  -- whose realizes names the sealed score.tick Affordance — every link of
+  -- F-P2-5's phantom chain made to resolve. A score crossing
+  -- thresholdPromote DRAFTS a Proposal (proposalState 'draft', in the closed
+  -- set since wave-3.12-pass-3) and the tick seals NO votes, applies
+  -- NOTHING, and bumps NO epoch — promotion to pending is a party's own
+  -- sealed act. A kernel declaring no thresholdPromote crosses nothing:
+  -- absence imposes nothing, exactly as everywhere else.
+  SELECT i.body INTO v_kbody FROM ckp.instances i
+   WHERE i.body->>'@id' = 'urn:ckp:'||v_proj||'/kernel' AND i.body->>'type' = C||'Kernel'
+   ORDER BY i.ts_created DESC LIMIT 1;
+  IF v_kbody IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'unknown_instance', 'sqlstate', '42704',
+      'hint', format('no sealed ckp:Kernel at urn:ckp:%s/kernel — a score must be computed under SOMEONE''S law', v_proj));
+  END IF;
+  v_wa      := COALESCE((v_kbody->>(C||'weightAssent'))::numeric,   1.0);
+  v_wd      := COALESCE((v_kbody->>(C||'weightDissent'))::numeric, -0.8);
+  v_wi      := COALESCE((v_kbody->>(C||'weightImplicit'))::numeric, 0.5);
+  v_tau     := COALESCE((v_kbody->>(C||'tauImplicitMillis'))::numeric, 60000);
+  v_promote := (v_kbody->>(C||'thresholdPromote'))::numeric;
+  SELECT epoch INTO v_epoch_before FROM ckp.kernel_epoch WHERE kernel = v_proj;
+
+  -- one Run for this computation — sealed FIRST so every Score's
+  -- wasGeneratedBy resolves the moment it lands.
+  v_now := to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"');
+  v_run := 'run-scoretick-'||(extract(epoch from clock_timestamp())*1e9)::bigint::text;
+  PERFORM ckp.seal(v_run, jsonb_build_object(
+    'type', C||'Run', '@id', 'urn:ckp:'||v_proj||'/run/'||v_run,
+    C||'realizes', 'ckp://Affordance#pgck.score.tick',
+    C||'runOf', 'urn:ckp:'||v_proj||'/kernel/ck',
+    C||'startedAt', v_now, C||'endedAt', v_now,
+    C||'runState', 'completed'));
+
+  FOR r IN
+    SELECT i.body->>(C||'about') AS about,
+           round(sum(CASE i.body->>(C||'signalPolarity')
+                       WHEN 'assent'  THEN v_wa
+                       WHEN 'dissent' THEN v_wd
+                       WHEN 'implicit' THEN v_wi * (1 - exp(-COALESCE((i.body->>(C||'dwellMillis'))::numeric,0) / v_tau))
+                       ELSE 0 END)::numeric, 4) AS score
+      FROM ckp.instances i
+     WHERE i.body->>'type' = C||'Signal'
+       AND i.body->>(C||'producedBy') = 'urn:ckp:'||v_proj||'/kernel/ck'
+       AND i.body->>(C||'about') IS NOT NULL
+     GROUP BY 1 ORDER BY 1
+  LOOP
+    PERFORM ckp.seal('score-'||md5(v_proj||r.about)||'-'||COALESCE(v_epoch_before,0), jsonb_build_object(
+      'type', C||'Score', '@id', 'ckp://Score#'||md5(v_proj||r.about)||'-'||COALESCE(v_epoch_before,0),
+      C||'about', r.about,
+      C||'scoreValue', to_jsonb(r.score),
+      C||'computedAtEpoch', to_jsonb(COALESCE(v_epoch_before,0)),
+      C||'wasGeneratedBy', 'urn:ckp:'||v_proj||'/run/'||v_run));
+    v_scores := v_scores || jsonb_build_object('about', r.about, 'score', r.score);
+    IF v_promote IS NOT NULL AND r.score >= v_promote
+       -- one standing draft per concept: a crossing that has already drafted
+       -- does not draft AGAIN on every tick — a queue of identical drafts is
+       -- pressure, not information, and the tick must never generate pressure.
+       AND NOT EXISTS (SELECT 1 FROM ckp.instances d
+                        WHERE d.body->>'type' = C||'Proposal'
+                          AND d.body->>(C||'about') = r.about
+                          AND d.body->>(C||'proposalState') = 'draft') THEN
+      v_pid := 'proposal-draft-'||(extract(epoch from clock_timestamp())*1e9)::bigint::text;
+      PERFORM ckp.seal(v_pid, jsonb_build_object(
+        'type', C||'Proposal', '@id', 'ckp://Proposal#'||v_pid,
+        C||'about', r.about,
+        C||'proposalState', 'draft',
+        C||'proposalOp', 'add_class',
+        C||'requiresQuorum', '2',
+        'proposalDetail', jsonb_build_object('class', r.about,
+          'draftedBecause', format('score %s crossed thresholdPromote %s at epoch %s', r.score, v_promote, COALESCE(v_epoch_before,0)))));
+      v_drafted := v_drafted || jsonb_build_object('proposal', v_pid, 'about', r.about, 'score', r.score);
+    END IF;
+  END LOOP;
+
+  SELECT epoch INTO v_epoch_after FROM ckp.kernel_epoch WHERE kernel = v_proj;
+  RETURN jsonb_build_object('ok', true, 'kernel', v_proj,
+    'epoch', COALESCE(v_epoch_before,0),
+    'epochUnchanged', v_epoch_before IS NOT DISTINCT FROM v_epoch_after,
+    'run', 'urn:ckp:'||v_proj||'/run/'||v_run,
+    'scores', v_scores, 'drafted', v_drafted,
+    'law', jsonb_build_object('weightAssent', v_wa, 'weightDissent', v_wd,
+      'weightImplicit', v_wi, 'tauImplicitMillis', v_tau,
+      'thresholdPromote', v_promote,
+      'defaultsNote', 'values absent from the sealed Kernel are the NAMED substrate defaults, never invented per call'),
+    'note', 'the tick may DRAFT only — no vote sealed, nothing applied, no epoch advanced; promotion to pending is a party''s own act');
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp.orbit_enqueue()
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  r record; v_n int := 0; v_due timestamptz;
+BEGIN
+  -- 0.4.109 (C-11) — A CROSSING ENQUEUES AND NEVER EXECUTES. For every sealed
+  -- Kernel declaring orbit law, the most recent PAST crossing is computed
+  -- (the same arithmetic next_crossing exposes) and enqueued exactly once —
+  -- UNIQUE (kernel, crossing_at) makes re-detection free. Nothing runs here:
+  -- detection and execution are different acts with different budgets.
+  FOR r IN
+    SELECT substring(i.body->>'@id' from '^urn:ckp:([a-z0-9-]+)/kernel$') AS kernel,
+           (i.body->>(C||'orbitPeriodSeconds'))::int AS period,
+           (i.body->>(C||'orbitAnchor'))::timestamptz AS anchor
+      FROM ckp.instances i
+     WHERE i.body->>'type' = C||'Kernel'
+       AND i.body->>(C||'orbitPeriodSeconds') IS NOT NULL
+       AND i.body->>(C||'orbitAnchor') IS NOT NULL
+  LOOP
+    CONTINUE WHEN r.kernel IS NULL OR r.period IS NULL OR r.period <= 0 OR r.anchor IS NULL OR r.anchor > now();
+    v_due := r.anchor + (floor(EXTRACT(epoch FROM (now() - r.anchor)) / r.period)::bigint * r.period) * interval '1 second';
+    CONTINUE WHEN v_due <= r.anchor;
+    INSERT INTO ckp.orbit_job(kernel, crossing_at) VALUES (r.kernel, v_due)
+      ON CONFLICT (kernel, crossing_at) DO NOTHING;
+    IF FOUND THEN v_n := v_n + 1; END IF;
+  END LOOP;
+  RETURN v_n;
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp.orbit_drain(p_max integer DEFAULT 4)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  r record; v_res jsonb; v_done int := 0; v_failed int := 0; v_report jsonb := '[]'::jsonb;
+BEGIN
+  -- 0.4.109 (C-11) — BOUNDED, ATTEMPT-COUNTED, FAIR. At most p_max jobs per
+  -- drain and AT MOST ONE PER KERNEL — round-robin, so the wait scales with
+  -- how many kernels are busy, never with how much the busiest one queued
+  -- (SUBSTRATE-SCOPE §4.2). A failing job counts its attempts and at five is
+  -- parked as 'failed' with its last error — re-selected-forever presents as
+  -- THE LOOP WORKING (0.4.80), and a parked job is visible where a spinning
+  -- one is not. The work itself is the DRAFT-only score tick: even executed,
+  -- a crossing seals no vote and applies nothing.
+  FOR r IN
+    SELECT DISTINCT ON (kernel) id, kernel, crossing_at, attempt_count
+      FROM ckp.orbit_job
+     WHERE state = 'queued'
+     ORDER BY kernel, crossing_at
+     LIMIT GREATEST(p_max, 1)
+  LOOP
+    BEGIN
+      PERFORM 1 FROM ckp.orbit_job WHERE id = r.id FOR UPDATE SKIP LOCKED;
+      IF NOT FOUND THEN CONTINUE; END IF;
+      v_res := ckp.score_tick(r.kernel);
+      IF (v_res->>'ok')::boolean IS TRUE THEN
+        UPDATE ckp.orbit_job SET state='done', done_at=now(), attempt_count=attempt_count+1 WHERE id = r.id;
+        v_done := v_done + 1;
+        v_report := v_report || jsonb_build_object('kernel', r.kernel, 'job', r.id, 'state', 'done',
+                                                   'drafted', v_res->'drafted');
+      ELSE
+        RAISE EXCEPTION '%', COALESCE(v_res->>'error','score_tick refused');
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      UPDATE ckp.orbit_job
+         SET attempt_count = attempt_count + 1,
+             last_error = SQLERRM,
+             state = CASE WHEN attempt_count + 1 >= 5 THEN 'failed' ELSE 'queued' END
+       WHERE id = r.id;
+      v_failed := v_failed + 1;
+      v_report := v_report || jsonb_build_object('kernel', r.kernel, 'job', r.id, 'state', 'attempt_failed', 'error', SQLERRM);
+    END;
+  END LOOP;
+  RETURN jsonb_build_object('ok', true, 'done', v_done, 'failed', v_failed, 'report', v_report);
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION ckp.orbit_tick()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE v_q int; v_d jsonb; v_prev text := current_setting('ckp.requester', true);
+BEGIN
+  -- The bgworker's one call per tick: detect crossings, drain fairly. The
+  -- tick names its service identity (0.4.64) for the seals the DRAFT-only
+  -- work produces, and restores whatever the session carried.
+  IF COALESCE(NULLIF(trim(v_prev), ''), '') = '' THEN
+    PERFORM set_config('ckp.requester', 'svc:orbit-tick', true);
+  END IF;
+  v_q := ckp.orbit_enqueue();
+  v_d := ckp.orbit_drain(4);
+  PERFORM set_config('ckp.requester', COALESCE(v_prev, ''), true);
+  RETURN jsonb_build_object('enqueued', v_q) || v_d;
+END;
+$function$
+;
+
 CREATE OR REPLACE FUNCTION ckp._role_permits(p_project text, p_participant text, p_action text)
  RETURNS boolean
  LANGUAGE plpgsql
@@ -5199,6 +5488,10 @@ BEGIN
   -- and legitimate drift exists. Findings name what was measured; empty = pass.
   WHEN 'orbit.next' THEN
     res := ckp.next_crossing(COALESCE(p_payload->>'kernel', v_proj));
+  WHEN 'signal.boundary' THEN
+    res := ckp.signal_boundary(p_payload);
+  WHEN 'score.tick' THEN
+    res := ckp.score_tick(COALESCE(p_payload->>'kernel', v_proj));
   WHEN 'surface.check' THEN
     res := ckp.surface_check(v_proj);
 

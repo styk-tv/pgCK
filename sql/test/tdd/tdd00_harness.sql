@@ -31,9 +31,11 @@
 -- whether the claim held, and said so instead of guessing. Run this when the
 -- gate is idle.
 --
--- This file is a STATUS REPORT, not a gate. It exits 0 whatever it finds, so it
--- can be run every release to watch obligations flip. It becomes a gate on the
--- day every row is GREEN, and not before.
+-- This file WAS a status report; since 0.4.109 it is a GATE. Every row went
+-- GREEN on 2026-09-02 — measured on the compose rig and on a virgin install —
+-- and tdd99_report now refuses on any non-GREEN row, so the ledger can never
+-- quietly slide back below the floor it reached. New obligations are authored
+-- RED here first, flipped by their fix, and join the floor when they flip.
 \set ON_ERROR_STOP 0
 
 DROP TABLE IF EXISTS tdd_result;

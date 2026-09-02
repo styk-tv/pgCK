@@ -191,6 +191,14 @@ pub fn tick() {
     // tick regardless of feature set. Normally a cheap no-op (Model A is lazy — the job queue
     // is empty unless a read handed a build off over budget).
     let _ = crate::materialize_drain::drain_once();
+
+    // Orbit queue (C-11, 0.4.109): detect due crossings (enqueue — a crossing
+    // never executes at detection) and drain fairly, at most one job per
+    // kernel per tick. The work is the DRAFT-only score tick; the
+    // constitutional limit — the tick seals no vote, applies nothing, bumps
+    // no epoch — lives in SQL where the probes measure it. Guarded inside on
+    // to_regprocedure, so a pre-0.4.109 catalog keeps a silent no-op tick.
+    let _ = crate::orbit_drain::drain_once();
 }
 
 #[cfg(all(test, feature = "embedded-nats"))]

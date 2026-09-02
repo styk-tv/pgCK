@@ -52,6 +52,7 @@ mod nats_client;
 mod publish_drain;
 // ε-materialize over-budget drain (T6). SPI-only, no NATS dependency — always compiled.
 mod materialize_drain;
+mod orbit_drain;
 // Auth-callout JWT verifier (F-A / SPEC.OAUTH2 §3.3). Pure, offline EdDSA verification against an
 // in-memory realm JWK — no NATS, no network, no pg — so it compiles + unit-tests under any feature.
 mod jwt_verify;

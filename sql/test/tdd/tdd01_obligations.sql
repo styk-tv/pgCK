@@ -546,28 +546,158 @@ EXCEPTION WHEN OTHERS THEN
   PERFORM tdd('C-7','an agent seal carries onBehalfOf; a direct human seal does NOT (absence is the signal)','behaviour','BROKEN',SQLERRM);
 END $$;
 
--- ═══ C-8 · Signal + dwellMillis ════════════════════════════════════════════
+-- ═══ C-8 · implicit signals ════════════════════════════════════════════════
+-- Presence traces accumulate organ-local (R-14); what seals is ONE implicit
+-- Signal per boundary carrying aggregated dwellMillis, chained by the SAME
+-- HMAC ledger that chains everything. Never-saw seals NOTHING — a success,
+-- not a refusal: absence of a Signal is correctly free.
 DO $$
-DECLARE n int;
+DECLARE C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+        r1 jsonb; r2 jsonb; r0 jsonb; n int; b jsonb;
+        prev_proj text := current_setting('ckp.project', true);
 BEGIN
-  SELECT count(*) INTO n FROM ckp.instances WHERE body->>'type' LIKE '%#Signal';
-  PERFORM tdd('C-8','an implicit Signal seals with dwellMillis as ONE hash-chained boundary head, never per event; never-saw seals nothing',
-    'existence','RED', CASE WHEN n=0 THEN 'ckp:Signal and ckp:dwellMillis are declared; 0 Signal instances exist and no verb seals one'
-                            ELSE n||' Signals exist — now prove the boundary head, and that never-saw is free' END);
+  IF to_regprocedure('ckp.signal_boundary(jsonb)') IS NULL THEN
+    PERFORM tdd('C-8','an implicit Signal seals with dwellMillis as ONE hash-chained boundary head, never per event; never-saw seals nothing',
+      'existence','RED','no signal.boundary verb'); RETURN;
+  END IF;
+  PERFORM set_config('ckp.requester','svc:tdd-c8',true);
+  r1 := ckp.germinate_kernel('tddc8','tdd-c8','personal');
+  IF (r1->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-8','an implicit Signal seals with dwellMillis as ONE hash-chained boundary head, never per event; never-saw seals nothing',
+      'behaviour','BROKEN','fixture germination refused: '||COALESCE(r1->>'error','?')); RETURN;
+  END IF;
+  PERFORM set_config('ckp.project','tddc8',true);
+  DELETE FROM ckp.instances WHERE body->>'type' = C||'Signal' AND body->>(C||'about') = 'urn:cand:tdd-c8';
+
+  r1 := ckp.signal_boundary(jsonb_build_object('about','urn:cand:tdd-c8','dwellMillis',4200,'events',7));
+  r2 := ckp.signal_boundary(jsonb_build_object('about','urn:cand:tdd-c8','dwellMillis',900,'events',3));
+  r0 := ckp.signal_boundary(jsonb_build_object('about','urn:cand:tdd-c8','events',0));
+  SELECT count(*) INTO n FROM ckp.instances
+   WHERE body->>'type' = C||'Signal' AND body->>(C||'about') = 'urn:cand:tdd-c8';
+  SELECT body INTO b FROM ckp.instances WHERE id = r1->>'id';
+  DELETE FROM ckp.instances WHERE body->>'type' = C||'Signal' AND body->>(C||'about') = 'urn:cand:tdd-c8';
+  PERFORM set_config('ckp.project',COALESCE(prev_proj,''),true);
+
+  IF (r1->>'sealed')::boolean IS NOT TRUE OR (r2->>'sealed')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-8','an implicit Signal seals with dwellMillis as ONE hash-chained boundary head, never per event; never-saw seals nothing',
+      'behaviour','RED','a boundary with events did not seal: '||COALESCE(r1->>'error', r2->>'error','?'));
+  ELSIF n <> 2 THEN
+    PERFORM tdd('C-8','an implicit Signal seals with dwellMillis as ONE hash-chained boundary head, never per event; never-saw seals nothing',
+      'behaviour','RED','two boundaries covering 10 events sealed '||n||' Signal(s) — the head must be ONE per boundary, never per event');
+  ELSIF b->>(C||'signalPolarity') IS DISTINCT FROM 'implicit' OR (b->>(C||'dwellMillis'))::int IS DISTINCT FROM 4200 THEN
+    PERFORM tdd('C-8','an implicit Signal seals with dwellMillis as ONE hash-chained boundary head, never per event; never-saw seals nothing',
+      'behaviour','RED','the head does not carry implicit polarity + the aggregated dwell: '||COALESCE(b::text,'gone'));
+  ELSIF (r1->>'verified')::boolean IS NOT TRUE OR (r2->>'verified')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-8','an implicit Signal seals with dwellMillis as ONE hash-chained boundary head, never per event; never-saw seals nothing',
+      'behaviour','RED','a boundary head fails ledger verification — the hash chain does not hold it');
+  ELSIF (r0->>'ok')::boolean IS NOT TRUE OR (r0->>'sealed')::boolean IS TRUE OR r0->>'reason' IS DISTINCT FROM 'never_saw' THEN
+    PERFORM tdd('C-8','an implicit Signal seals with dwellMillis as ONE hash-chained boundary head, never per event; never-saw seals nothing',
+      'behaviour','RED','never-saw did not answer {ok, sealed:false, never_saw} — got '||r0::text);
+  ELSE
+    PERFORM tdd('C-8','an implicit Signal seals with dwellMillis as ONE hash-chained boundary head, never per event; never-saw seals nothing',
+      'behaviour','GREEN','two boundaries over 10 events sealed exactly 2 heads, implicit + aggregated dwell, both on the HMAC chain; never-saw sealed nothing and said so as a SUCCESS');
+  END IF;
 EXCEPTION WHEN OTHERS THEN
-  PERFORM tdd('C-8','an implicit Signal seals with dwellMillis as ONE hash-chained boundary head','existence','BROKEN',SQLERRM);
+  BEGIN PERFORM set_config('ckp.project',COALESCE(prev_proj,''),true); EXCEPTION WHEN OTHERS THEN NULL; END;
+  PERFORM tdd('C-8','an implicit Signal seals with dwellMillis as ONE hash-chained boundary head','behaviour','BROKEN',SQLERRM);
 END $$;
 
--- ═══ C-9 · Score computed on the tick, bounded to DRAFT ════════════════════
+-- ═══ C-9 · the tick may DRAFT only ═════════════════════════════════════════
+-- A Score crossing thresholdPromote DRAFTS a Proposal (proposalState 'draft',
+-- lawful since wave-3.12-pass-3) and the tick seals NO votes, applies
+-- NOTHING, bumps NO epoch. Every provenance link resolves: Score →
+-- wasGeneratedBy → Run → realizes → the sealed score.tick Affordance —
+-- F-P2-5's phantom chain, made to hold.
 DO $$
-DECLARE n int;
+DECLARE C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+        r jsonb; u jsonb; ep0 int; ep1 int; votes0 int; votes1 int;
+        drafted text; dstate text; run_iri text; runs int; aff int;
+        prev_proj text := current_setting('ckp.project', true);
 BEGIN
-  SELECT count(*) INTO n FROM ckp.instances WHERE body->>'type' LIKE '%#Score';
-  PERFORM tdd('C-9','a Score crossing thresholdPromote DRAFTS a Proposal and the tick seals/votes/applies NOTHING',
-    'existence','RED', CASE WHEN n=0 THEN 'ckp:Score declared with computedAtEpoch; 0 exist. The score/tick engine row is empty'
-                            ELSE n||' Scores exist — now prove the tick DRAFTED and did not seal, vote or apply' END);
+  IF to_regprocedure('ckp.score_tick(text)') IS NULL THEN
+    PERFORM tdd('C-9','a Score crossing thresholdPromote DRAFTS a Proposal and the tick seals/votes/applies NOTHING',
+      'existence','RED','no score.tick'); RETURN;
+  END IF;
+  PERFORM set_config('ckp.requester','svc:tdd-c9',true);
+  -- FIXTURE PRECONDITION: the Run realizes the substrate's own score.tick
+  -- Affordance, which the C-14 backfill declares only where the substrate
+  -- kernel is germinated. Real doors germinate pgck at commissioning; a bare
+  -- test rig never has, so the probe performs that commissioning act itself —
+  -- once — and re-runs the backfill. On a door where pgck stands, this is a
+  -- no-op.
+  IF NOT EXISTS (SELECT 1 FROM ckp.instances i
+                  WHERE i.body->>'@id' = 'urn:ckp:pgck/kernel' AND i.body->>'type' = C||'Kernel') THEN
+    r := ckp.germinate_kernel('pgck','pgck','personal');
+    IF (r->>'ok')::boolean IS NOT TRUE THEN
+      PERFORM tdd('C-9','a Score crossing thresholdPromote DRAFTS a Proposal and the tick seals/votes/applies NOTHING',
+        'behaviour','BROKEN','could not commission the substrate kernel: '||COALESCE(r->>'error','?')); RETURN;
+    END IF;
+    PERFORM ckp.declare_routed_affordances();
+  END IF;
+  -- FIXTURE: its own germinated kernel with declared thresholds, two assent
+  -- signals for one concept and one dissent for another.
+  r := ckp.germinate_kernel('tddc9','tdd-c9','personal');
+  IF (r->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-9','a Score crossing thresholdPromote DRAFTS a Proposal and the tick seals/votes/applies NOTHING',
+      'behaviour','BROKEN','fixture germination refused: '||COALESCE(r->>'error','?')); RETURN;
+  END IF;
+  u := ckp.update_typed(jsonb_build_object('id','urn:ckp:tddc9/kernel','patch',
+        jsonb_build_object(C||'thresholdPromote', 0.5, C||'thresholdDiscard', -0.9)));
+  IF (u->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-9','a Score crossing thresholdPromote DRAFTS a Proposal and the tick seals/votes/applies NOTHING',
+      'behaviour','BROKEN','could not seal thresholdPromote: '||COALESCE(u->>'error','?')); RETURN;
+  END IF;
+  PERFORM set_config('ckp.project','tddc9',true);
+  DELETE FROM ckp.instances WHERE body->>'type' = C||'Signal' AND body->>(C||'about') LIKE 'urn:cand:tdd-c9%';
+  DELETE FROM ckp.instances WHERE body->>'type' = C||'Proposal' AND body->>(C||'about') LIKE 'urn:cand:tdd-c9%';
+  PERFORM ckp.seal('tdd-c9-s1', jsonb_build_object('type',C||'Signal','@id','ckp://Signal#tdd-c9-s1',
+    C||'about','urn:cand:tdd-c9-hot', C||'signalPolarity','assent'));
+  PERFORM ckp.seal('tdd-c9-s2', jsonb_build_object('type',C||'Signal','@id','ckp://Signal#tdd-c9-s2',
+    C||'about','urn:cand:tdd-c9-hot', C||'signalPolarity','assent'));
+  PERFORM ckp.seal('tdd-c9-s3', jsonb_build_object('type',C||'Signal','@id','ckp://Signal#tdd-c9-s3',
+    C||'about','urn:cand:tdd-c9-cold', C||'signalPolarity','dissent'));
+
+  SELECT COALESCE(epoch,0) INTO ep0 FROM ckp.kernel_epoch WHERE kernel='tddc9';
+  SELECT count(*) INTO votes0 FROM ckp.instances WHERE body->>'type' = C||'Vote';
+  r := ckp.score_tick('tddc9');
+  SELECT COALESCE(epoch,0) INTO ep1 FROM ckp.kernel_epoch WHERE kernel='tddc9';
+  SELECT count(*) INTO votes1 FROM ckp.instances WHERE body->>'type' = C||'Vote';
+
+  SELECT i.body->>'@id', i.body->>(C||'proposalState') INTO drafted, dstate FROM ckp.instances i
+   WHERE i.body->>'type' = C||'Proposal' AND i.body->>(C||'about') = 'urn:cand:tdd-c9-hot'
+   ORDER BY i.ts_created DESC LIMIT 1;
+  SELECT count(*) INTO runs FROM ckp.instances m
+   JOIN ckp.instances sc ON sc.body->>(C||'wasGeneratedBy') = m.body->>'@id'
+   WHERE m.body->>'type' = C||'Run'
+     AND sc.body->>'type' = C||'Score' AND sc.body->>(C||'about') = 'urn:cand:tdd-c9-hot';
+  SELECT count(*) INTO aff FROM ckp.instances a
+   WHERE a.body->>'type' = C||'Affordance' AND a.body->>'@id' = 'ckp://Affordance#pgck.score.tick';
+
+  PERFORM set_config('ckp.project',COALESCE(prev_proj,''),true);
+
+  IF (r->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-9','a Score crossing thresholdPromote DRAFTS a Proposal and the tick seals/votes/applies NOTHING',
+      'behaviour','RED','score_tick refused: '||COALESCE(r->>'error','?'));
+  ELSIF drafted IS NULL OR dstate IS DISTINCT FROM 'draft' THEN
+    PERFORM tdd('C-9','a Score crossing thresholdPromote DRAFTS a Proposal and the tick seals/votes/applies NOTHING',
+      'behaviour','RED','the crossing did not stand as a DRAFT — state '||COALESCE(dstate,'none')||' — either nothing drafted or the tick promoted past its limit');
+  ELSIF EXISTS (SELECT 1 FROM ckp.instances i WHERE i.body->>'type' = C||'Proposal'
+                  AND i.body->>(C||'about') = 'urn:cand:tdd-c9-cold') THEN
+    PERFORM tdd('C-9','a Score crossing thresholdPromote DRAFTS a Proposal and the tick seals/votes/applies NOTHING',
+      'behaviour','RED','a score BELOW the threshold drafted too — the band is not a gate');
+  ELSIF ep1 IS DISTINCT FROM ep0 OR votes1 IS DISTINCT FROM votes0 THEN
+    PERFORM tdd('C-9','a Score crossing thresholdPromote DRAFTS a Proposal and the tick seals/votes/applies NOTHING',
+      'behaviour','RED','the tick moved what it may not: epoch '||ep0||'→'||ep1||', votes '||votes0||'→'||votes1);
+  ELSIF runs = 0 OR aff = 0 THEN
+    PERFORM tdd('C-9','a Score crossing thresholdPromote DRAFTS a Proposal and the tick seals/votes/applies NOTHING',
+      'behaviour','RED','the provenance chain does not resolve (Run behind the Score: '||runs||', sealed score.tick Affordance: '||aff||') — F-P2-5''s phantom, again');
+  ELSE
+    PERFORM tdd('C-9','a Score crossing thresholdPromote DRAFTS a Proposal and the tick seals/votes/applies NOTHING',
+      'behaviour','GREEN','the hot concept crossed 0.5 and stands as a DRAFT ('||drafted||'); the cold one did not; epoch and votes untouched; Score→Run→Affordance all resolve');
+  END IF;
 EXCEPTION WHEN OTHERS THEN
-  PERFORM tdd('C-9','a Score crossing thresholdPromote DRAFTS a Proposal and the tick seals nothing','existence','BROKEN',SQLERRM);
+  BEGIN PERFORM set_config('ckp.project',COALESCE(prev_proj,''),true); EXCEPTION WHEN OTHERS THEN NULL; END;
+  PERFORM tdd('C-9','a Score crossing thresholdPromote DRAFTS a Proposal and the tick seals nothing','behaviour','BROKEN',SQLERRM);
 END $$;
 
 -- ═══ C-10 · orbits ═════════════════════════════════════════════════════════
@@ -628,15 +758,83 @@ EXCEPTION WHEN OTHERS THEN
 END $$;
 
 -- ═══ C-11 · orbit work queue ═══════════════════════════════════════════════
+-- A crossing ENQUEUES and never executes; the drain is bounded, counts
+-- attempts, and is fair across kernels — one job per kernel per drain, a
+-- failing job parks at five attempts with its last error instead of
+-- re-selecting forever (0.4.80: at any cadence that presents as THE LOOP
+-- WORKING).
 DO $$
+DECLARE C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+        r jsonb; u jsonb; n int; d jsonb; ghost record;
+        prev_proj text := current_setting('ckp.project', true);
 BEGIN
-  IF to_regclass('ckp.orbit_job') IS NULL THEN
+  IF to_regclass('ckp.orbit_job') IS NULL OR to_regprocedure('ckp.orbit_enqueue()') IS NULL THEN
     PERFORM tdd('C-11','a crossing ENQUEUES and never executes; the drain is bounded, counts attempts, and is fair across kernels',
-      'existence','RED','no orbit queue exists. The pattern is already proven twice — outbox (<=100/tick, attempt_count) and materialize_job (1/tick, SKIP LOCKED, attempt_count + last_error)');
+      'existence','RED','no orbit queue/enqueue/drain'); RETURN;
+  END IF;
+  PERFORM set_config('ckp.requester','svc:tdd-c11',true);
+  DELETE FROM ckp.orbit_job WHERE kernel LIKE 'tddc11%';
+  r := ckp.germinate_kernel('tddc11a','tdd-c11a','personal');
+  IF (r->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-11','a crossing ENQUEUES and never executes; the drain is bounded, counts attempts, and is fair across kernels',
+      'behaviour','BROKEN','fixture germination refused: '||COALESCE(r->>'error','?')); RETURN;
+  END IF;
+  u := ckp.update_typed(jsonb_build_object('id','urn:ckp:tddc11a/kernel','patch', jsonb_build_object(
+        C||'orbitPeriodSeconds', 600, C||'orbitAnchor',
+        to_char(date_trunc('second', now() - interval '2 hours') AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'))));
+  IF (u->>'ok')::boolean IS NOT TRUE THEN
+    PERFORM tdd('C-11','a crossing ENQUEUES and never executes; the drain is bounded, counts attempts, and is fair across kernels',
+      'behaviour','BROKEN','orbit law would not seal: '||COALESCE(u->>'error','?')); RETURN;
+  END IF;
+
+  -- (a) the crossing ENQUEUES and executes nothing: no Score exists yet.
+  n := ckp.orbit_enqueue();
+  IF NOT EXISTS (SELECT 1 FROM ckp.orbit_job WHERE kernel='tddc11a' AND state='queued') THEN
+    PERFORM tdd('C-11','a crossing ENQUEUES and never executes; the drain is bounded, counts attempts, and is fair across kernels',
+      'behaviour','RED','a due crossing did not enqueue (enqueued '||n||')'); RETURN;
+  END IF;
+  IF EXISTS (SELECT 1 FROM ckp.instances i WHERE i.body->>'type' = C||'Score'
+              AND i.body->>(C||'wasGeneratedBy') LIKE 'urn:ckp:tddc11a/%') THEN
+    PERFORM tdd('C-11','a crossing ENQUEUES and never executes; the drain is bounded, counts attempts, and is fair across kernels',
+      'behaviour','RED','enqueue EXECUTED work — a crossing must only detect'); RETURN;
+  END IF;
+  -- idempotent detection: the same crossing does not enqueue twice.
+  n := ckp.orbit_enqueue();
+  IF (SELECT count(*) FROM ckp.orbit_job WHERE kernel='tddc11a') > 1 THEN
+    PERFORM tdd('C-11','a crossing ENQUEUES and never executes; the drain is bounded, counts attempts, and is fair across kernels',
+      'behaviour','RED','re-detection enqueued the SAME crossing again'); RETURN;
+  END IF;
+
+  -- (b) fairness + attempts: a ghost job that always fails must not starve
+  -- the healthy kernel, and must park at five attempts.
+  INSERT INTO ckp.orbit_job(kernel, crossing_at) VALUES ('tddc11-ghost', now() - interval '1 hour');
+  d := ckp.orbit_drain(4);
+  SELECT * INTO ghost FROM ckp.orbit_job WHERE kernel='tddc11-ghost';
+  IF NOT EXISTS (SELECT 1 FROM ckp.orbit_job WHERE kernel='tddc11a' AND state='done') THEN
+    PERFORM tdd('C-11','a crossing ENQUEUES and never executes; the drain is bounded, counts attempts, and is fair across kernels',
+      'behaviour','RED','the healthy kernel''s job did not complete while a ghost was failing — starvation: '||d::text); RETURN;
+  END IF;
+  IF ghost.attempt_count < 1 OR ghost.last_error IS NULL THEN
+    PERFORM tdd('C-11','a crossing ENQUEUES and never executes; the drain is bounded, counts attempts, and is fair across kernels',
+      'behaviour','RED','the failing job did not count its attempt or record its error'); RETURN;
+  END IF;
+  d := ckp.orbit_drain(4); d := ckp.orbit_drain(4); d := ckp.orbit_drain(4); d := ckp.orbit_drain(4);
+  SELECT * INTO ghost FROM ckp.orbit_job WHERE kernel='tddc11-ghost';
+  DELETE FROM ckp.orbit_job WHERE kernel LIKE 'tddc11%';
+  PERFORM set_config('ckp.project',COALESCE(prev_proj,''),true);
+  IF ghost.state IS DISTINCT FROM 'failed' OR ghost.attempt_count < 5 THEN
+    PERFORM tdd('C-11','a crossing ENQUEUES and never executes; the drain is bounded, counts attempts, and is fair across kernels',
+      'behaviour','RED','a permanently failing job did not PARK at five attempts (state '||ghost.state||', attempts '||ghost.attempt_count||') — re-selected forever presents as the loop working');
   ELSE
     PERFORM tdd('C-11','a crossing ENQUEUES and never executes; the drain is bounded, counts attempts, and is fair across kernels',
-      'existence','RED','queue exists — now prove: crossing does not execute, drain is bounded, a failing job does NOT starve others');
+      'behaviour','GREEN','crossing enqueued once and executed nothing; the healthy kernel drained beside a failing ghost; the ghost counted attempts, kept its error, and PARKED at five');
   END IF;
+EXCEPTION WHEN OTHERS THEN
+  BEGIN
+    DELETE FROM ckp.orbit_job WHERE kernel LIKE 'tddc11%';
+    PERFORM set_config('ckp.project',COALESCE(prev_proj,''),true);
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+  PERFORM tdd('C-11','a crossing ENQUEUES and never executes; the drain is bounded and fair','behaviour','BROKEN',SQLERRM);
 END $$;
 
 -- ═══ C-12 · per-kernel resource accounting ═════════════════════════════════
