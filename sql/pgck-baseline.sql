@@ -2143,6 +2143,84 @@ END;
 $function$
 ;
 
+-- 0.4.112 — the ADOPTION REFERENCE CHECKS, one body serving two earlier moments
+-- of the validation ladder (operator ruling 2026-09-04: "validation is cheap —
+-- run it and know BEFORE you act"). The census (fleet.adoptions) and the
+-- post-hoc audit (adoption.check) already run these three lookups DOWNSTREAM;
+-- this function is the same checks exposed at PRE (instance.validate dry-run)
+-- and AT (the seal reply's warnings). REPORTS, never gates (B4): a reference
+-- failure warns; refusal remains the jurisdiction of the adopted obligations
+-- (digest-match / adopts-resolves), by agreement, per kernel. Measured origin,
+-- twice with independent authors: a wave Adoption citing the v3.12-dir file's
+-- digest (doctrine) over the v3.11-dir bytes actually placed (f4ad27ce…) —
+-- caught only downstream by adoption.check sourceDigestMatch:FALSE.
+CREATE OR REPLACE FUNCTION ckp._adoption_reference(p_body jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'ckp', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  C text := 'https://conceptkernel.org/ontology/v3.11/core#';
+  v_adopts text := COALESCE(p_body->>(C||'adopts'), p_body->>'adopts');
+  v_into   text := COALESCE(p_body->>(C||'intoProject'), p_body->>'intoProject');
+  v_claim  text := COALESCE(p_body->>(C||'sourceDigest'), p_body->>'sourceDigest');
+  v_has_src boolean := EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema='pgrdf' AND table_name='_pgrdf_graphs' AND column_name='source_sha256');
+  v_src text; v_resolves boolean; v_target boolean; v_match boolean;
+  v_warn jsonb := '[]'::jsonb;
+BEGIN
+  -- No adopts IRI: nothing to judge — required-ness is the SHAPE's jurisdiction,
+  -- and duplicating it here would be a second gate that can disagree with the first.
+  IF v_adopts IS NULL THEN RETURN NULL; END IF;
+
+  v_resolves := EXISTS (SELECT 1 FROM pgrdf._pgrdf_quads q
+                  JOIN pgrdf._pgrdf_graphs g ON g.graph_id = q.graph_id
+                 WHERE g.iri = v_adopts AND NOT q.is_inferred);
+  IF v_has_src THEN
+    SELECT g.source_sha256 INTO v_src FROM pgrdf._pgrdf_graphs g WHERE g.iri = v_adopts;
+  END IF;
+  v_match := CASE WHEN v_src IS NULL OR v_claim IS NULL THEN NULL ELSE (v_src = v_claim) END;
+  IF v_into IS NULL THEN v_target := NULL;
+  ELSE
+    -- the SAME four-spelling reduction fleet.adoptions and _adopted_graphs use —
+    -- a fifth implementation here would be a probe that tests the probe.
+    v_target := EXISTS (SELECT 1 FROM pgrdf._pgrdf_graphs g3
+      WHERE g3.iri LIKE 'urn:ckp:'
+        || regexp_replace(
+             regexp_replace(v_into, '^urn:ckp:project[:/]', ''),
+             '^(urn:ckp:)?([^/]+)(/.*)?$', '\2')
+        || '/%');
+  END IF;
+
+  IF NOT v_resolves THEN
+    v_warn := v_warn || jsonb_build_object('check','moduleResolves','ok',false,
+      'resultSeverity','sh:Warning',
+      'resultMessage','the adopts IRI ('||v_adopts||') names NO non-empty graph in this store — sealed, this adoption composes NOTHING (the census''s malformed class). Place the module first (pgRDF plane, source_sha256 recorded at load); proximity is not adoption');
+  END IF;
+  IF v_match IS FALSE THEN
+    v_warn := v_warn || jsonb_build_object('check','sourceDigestMatch','ok',false,
+      'resultSeverity','sh:Warning',
+      'resultMessage','the claimed sourceDigest does not match the loader''s record for these bytes (sourceRecorded '||v_src||') — doctrine wearing a digest. Cite the digest the loader measured, never a transcription; adoption.check explains per-module');
+  ELSIF v_match IS NULL AND v_claim IS NOT NULL AND v_resolves THEN
+    v_warn := v_warn || jsonb_build_object('check','sourceDigestMatch','ok',NULL,
+      'resultSeverity','sh:Info',
+      'resultMessage','no loader record exists for these bytes (loaded before recording, or via an unrecorded path) — the sourceDigest claim cannot be checked here. Null is this row''s history, not a pass');
+  END IF;
+  IF v_target IS FALSE THEN
+    v_warn := v_warn || jsonb_build_object('check','targetHasGraphs','ok',false,
+      'resultSeverity','sh:Warning',
+      'resultMessage','intoProject ('||v_into||') reduces to a project segment with NO graphs in this store — this adoption would be reachable by no composed surface (the census''s orphaned class). Germinate or name the project that exists');
+  END IF;
+
+  RETURN jsonb_build_object(
+    'sourceDigestMatch', v_match, 'sourceRecorded', v_src,
+    'moduleResolves', v_resolves, 'targetHasGraphs', v_target,
+    'warnings', v_warn);
+END;
+$function$
+;
+
 -- 0.4.67 — surface.grounding: the three-digest-plane census of this kernel's
 -- ground, as a verb (a check that is not a verb does not exist). Per graph in
 -- the kernel's world — composed surface, own kernel graph, every adopted
@@ -3870,13 +3948,27 @@ BEGIN
   -- Warning/Info-severity results in a txn-local GUC (cleared at each seal
   -- start); surfacing them here is what makes warning-shapes GUIDANCE instead
   -- of noise — sealed, and told why the fleet would prefer it shaped better.
-  RETURN jsonb_build_object('ok', true, 'id', v_iid, 'type', v_type,
-    'verified', ckp.verify(v_iid),
-    'proof_digest', (SELECT digest FROM ckp.proof WHERE about = v_iid ORDER BY id DESC LIMIT 1))
-    || ckp._stamped(v_iid)
-    || CASE WHEN NULLIF(current_setting('ckp.last_warnings', true), '') IS NOT NULL
-            THEN jsonb_build_object('warnings', current_setting('ckp.last_warnings', true)::jsonb)
-            ELSE '{}'::jsonb END;
+  -- 0.4.112 — AT: for an Adoption, the reply answers the reference questions
+  -- AT THE ACT (operator ruling 2026-09-04: everything needed is in the store
+  -- at seal time — one cheap lookup each). WARNINGS, never a gate (B4): the
+  -- seal stands; kernels that adopted the obligation pair get refusal there.
+  DECLARE v_ref jsonb; v_warnout jsonb;
+  BEGIN
+    IF v_type = 'https://conceptkernel.org/ontology/v3.11/core#Adoption' THEN
+      v_ref := ckp._adoption_reference(v_body);
+    END IF;
+    v_warnout := COALESCE(NULLIF(current_setting('ckp.last_warnings', true), '')::jsonb, '[]'::jsonb)
+              || COALESCE(v_ref->'warnings', '[]'::jsonb);
+    RETURN jsonb_build_object('ok', true, 'id', v_iid, 'type', v_type,
+      'verified', ckp.verify(v_iid),
+      'proof_digest', (SELECT digest FROM ckp.proof WHERE about = v_iid ORDER BY id DESC LIMIT 1))
+      || ckp._stamped(v_iid)
+      || CASE WHEN jsonb_array_length(v_warnout) > 0
+              THEN jsonb_build_object('warnings', v_warnout)
+              ELSE '{}'::jsonb END
+      || CASE WHEN v_ref IS NOT NULL THEN jsonb_build_object('reference', v_ref - 'warnings')
+              ELSE '{}'::jsonb END;
+  END;
 EXCEPTION WHEN OTHERS THEN
   RETURN jsonb_build_object('ok', false, 'error', SQLERRM, 'sqlstate', SQLSTATE);
 END;
@@ -5915,7 +6007,7 @@ INSERT INTO ckp.refusal_registry (code, sqlstate, teaches) VALUES
   ('type_is_a_curie',          '22023', NULL),
   ('type_must_be_iri',         '22023', NULL),
   ('detail_projects_nothing',  '22023', NULL),
-  ('op_has_no_projector',      '22023', NULL),
+  ('op_has_no_projector',      '22023', 'the governed ops project SHAPE and LAW changes only. ADOPTION is not one of them: a module is adopted by sealing a core#Adoption through instance.create {type, adopts, intoProject, intoEpoch, sourceDigest} — learn the declared keys from surface.declared, take sourceDigest from the loader''s record (adoption.check: sourceRecorded), never from doctrine. Affordance registration is the op add_affordance'),
   ('no self-loops (v3.7 Edge rule)', '22023', NULL),
   -- 42704 undefined_object — the name cited resolves to nothing declared
   ('unknown_proposal',         '42704', 'lookup is by the proposal @id (ckp://Proposal#…) — a bare local id matches nothing'),
@@ -6577,7 +6669,11 @@ BEGIN
   END IF;
   IF v_op IS NULL OR NOT (v_op = ANY(v_ops)) THEN
     RETURN jsonb_build_object('ok', false, 'error', 'op_has_no_projector', 'sqlstate', '22023', 'op', v_op,
-                              'hint', 'a governed op is refused at propose unless it can project a change (P0-E, pgCK#28)',
+                              -- 0.4.112 (rule 19): a refusal that closes a route must OPEN the
+                              -- intended one. Measured: a stranger seat read the six-op list and
+                              -- was left with no next act — the closed world refused correctly
+                              -- and taught nothing (USER-EXPERIENCE-PASS-5 D-2).
+                              'hint', 'a governed op is refused at propose unless it can project a change (P0-E, pgCK#28). If your intent is ADOPTING A MODULE: adoption is not a governance op — seal a core#Adoption via instance.create (learn the declared keys from surface.declared; dry-run first with instance.validate, which now answers the reference questions too)',
                               'allowed', to_jsonb(v_ops));
   END IF;
   IF v_about IS NULL OR v_about !~ '^[A-Za-z][A-Za-z0-9+.:#/_-]*$' THEN
@@ -8535,18 +8631,31 @@ BEGIN
   -- does not make — the exact split class this function exists to prevent.
   -- Partition identically: `conforms` reflects Violations; `warnings` carries
   -- the guidance band.
-  DECLARE v_viol jsonb; v_warn jsonb;
+  DECLARE v_viol jsonb; v_warn jsonb; v_ref jsonb;
   BEGIN
     SELECT COALESCE(jsonb_agg(r) FILTER (WHERE r->>'resultSeverity' IS DISTINCT FROM 'sh:Warning'
                                            AND r->>'resultSeverity' IS DISTINCT FROM 'sh:Info'), '[]'::jsonb),
            COALESCE(jsonb_agg(r) FILTER (WHERE r->>'resultSeverity' IN ('sh:Warning','sh:Info')), '[]'::jsonb)
       INTO v_viol, v_warn
       FROM jsonb_array_elements(COALESCE(v_report->'results', '[]'::jsonb)) r;
+    -- 0.4.112 — PRE: the dry-run answers the REFERENCE questions too, for the
+    -- one type whose failures were previously discoverable only downstream.
+    -- Same checks the seal reply now carries (AT), so validate PREDICTS seal
+    -- holds on the new axis exactly as it holds on shapes. conforms stays
+    -- SHAPE-only: the seal does not refuse on reference either (B4), and a
+    -- dry-run that predicted a refusal the seal does not make would be the
+    -- split class this function exists to prevent.
+    IF v_type = 'https://conceptkernel.org/ontology/v3.11/core#Adoption' THEN
+      v_ref := ckp._adoption_reference(v_resolved);
+      v_warn := v_warn || COALESCE(v_ref->'warnings', '[]'::jsonb);
+    END IF;
     RETURN jsonb_build_object('ok', true, 'type', v_type,
       'conforms',   (jsonb_array_length(v_viol) = 0),
       'violations', v_viol,
       'warnings',   v_warn,
-      'report',     v_report);
+      'report',     v_report)
+      || CASE WHEN v_ref IS NOT NULL THEN jsonb_build_object('reference', v_ref - 'warnings')
+              ELSE '{}'::jsonb END;
   END;
 END;
 $function$
