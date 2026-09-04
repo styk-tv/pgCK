@@ -48,7 +48,7 @@
 CREATE OR REPLACE FUNCTION ckp.fleet_adoptions(p_payload jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
- STABLE SECURITY DEFINER
+ SECURITY DEFINER
  SET search_path TO 'ckp', 'public', 'pg_temp'
 AS $function$
 DECLARE
