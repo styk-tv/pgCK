@@ -1,4 +1,4 @@
--- pgck 0.4.109 -> 0.4.110
+-- pgck 0.4.109 -> 0.4.111
 --
 -- THE CENSUS HAD A FLAG FOR A DANGLING MODULE AND NONE FOR A DANGLING PROJECT.
 --
@@ -73,7 +73,7 @@ BEGIN
       'malformed',   NOT EXISTS (SELECT 1 FROM pgrdf._pgrdf_quads q2
                         JOIN pgrdf._pgrdf_graphs g2 ON g2.graph_id = q2.graph_id
                        WHERE g2.iri = a.body->>(N||'adopts') AND NOT q2.is_inferred),
-      -- 0.4.110: the OTHER half of malformed. The adopts IRI can name a real
+      -- 0.4.111: the OTHER half of malformed. The adopts IRI can name a real
       -- module while intoProject names a project with no graphs at all — the
       -- adoption is then sealed, judged, stamped and reachable by nobody.
       -- All four intoProject spellings reduce to the same bare segment

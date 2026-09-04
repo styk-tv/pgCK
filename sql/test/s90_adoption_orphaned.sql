@@ -1,6 +1,6 @@
 -- s90 — THE CENSUS MUST FLAG A DANGLING TARGET PROJECT, NOT ONLY A DANGLING MODULE
 --
--- 0.4.110. `fleet.adoptions` has flagged `malformed` since 0.4.68 (the ADOPTS IRI
+-- 0.4.111. `fleet.adoptions` has flagged `malformed` since 0.4.68 (the ADOPTS IRI
 -- names no non-empty graph). The mirror case went unreported: the module resolves
 -- and `intoProject` names a project with NO graphs at all, so the adoption is
 -- sealed, judged, four-stamped — and reachable by no composed surface.
