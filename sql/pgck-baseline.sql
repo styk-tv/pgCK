@@ -2251,10 +2251,12 @@ DECLARE
   N text := 'https://conceptkernel.org/ontology/v3.11/core#';
   v_rows jsonb;
   v_bad  int;
+  v_orph int;
 BEGIN
   SELECT COALESCE(jsonb_agg(row ORDER BY row->>'intoProject', row->>'adopts'), '[]'::jsonb),
-         COALESCE(sum(CASE WHEN (row->>'malformed')::boolean THEN 1 ELSE 0 END), 0)
-    INTO v_rows, v_bad
+         COALESCE(sum(CASE WHEN (row->>'malformed')::boolean THEN 1 ELSE 0 END), 0),
+         COALESCE(sum(CASE WHEN (row->>'orphaned')::boolean  THEN 1 ELSE 0 END), 0)
+    INTO v_rows, v_bad, v_orph
   FROM (
     SELECT jsonb_build_object(
       'adoption',   a.id,
@@ -2267,6 +2269,16 @@ BEGIN
       'malformed',   NOT EXISTS (SELECT 1 FROM pgrdf._pgrdf_quads q2
                         JOIN pgrdf._pgrdf_graphs g2 ON g2.graph_id = q2.graph_id
                        WHERE g2.iri = a.body->>(N||'adopts') AND NOT q2.is_inferred),
+      -- 0.4.110: the OTHER half of malformed. The adopts IRI can name a real
+      -- module while intoProject names a project with NO graphs at all — the
+      -- adoption is then sealed, judged, stamped, and reachable by nobody.
+      -- All four intoProject spellings reduce to the same bare segment.
+      'orphaned',    NOT EXISTS (SELECT 1 FROM pgrdf._pgrdf_graphs g3
+                       WHERE g3.iri LIKE 'urn:ckp:'
+                         || regexp_replace(
+                              regexp_replace(a.body->>(N||'intoProject'), '^urn:ckp:project[:/]', ''),
+                              '^(urn:ckp:)?([^/]+)(/.*)?$', '\2')
+                         || '/%'),
       'structuralPin', (SELECT p.structural_digest FROM ckp.adoption_pins p
                          WHERE p.graph_iri = a.body->>(N||'adopts'))) AS row
     FROM ckp.instances a
@@ -2278,7 +2290,8 @@ BEGIN
   RETURN jsonb_build_object('ok', true,
     'adoptions', v_rows,
     'malformedCount', v_bad,
-    'note', 'malformed:true = the adopts IRI names NO non-empty graph in this store — a judged Adoption composing NOTHING (module-IRI-is-graph-IRI; the namespace-instead-of-graph and blank-adopts classes). The cure is Supersession + a fresh Adoption naming the module GRAPH IRI. Per-kernel enforcement of this exists as the adopts-resolves obligation, adopted by agreement.',
+    'orphanedCount', v_orph,
+    'note', 'malformed:true = the adopts IRI names NO non-empty graph in this store — a judged Adoption composing NOTHING (module-IRI-is-graph-IRI; the namespace-instead-of-graph and blank-adopts classes). The cure is Supersession + a fresh Adoption naming the module GRAPH IRI. Per-kernel enforcement of this exists as the adopts-resolves obligation, adopted by agreement. orphaned:true = the MODULE resolves but the intoProject names a project with NO graphs in this store — the module is loaded and the adoption is unreachable by any composed surface, so the kernel that was configured cannot use the law that was shipped. Neither flag gates a seal (B4: a report may be wrong cheaply, a gate may not); both are the census telling the truth about an install.',
     'completeness', jsonb_build_object(
       'verdict', 'complete for sealed, unsuperseded Adoptions in this store',
       'counters', ckp._engine_counters()));
